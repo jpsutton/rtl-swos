@@ -451,14 +451,3 @@ void telnetd_appcall(void) __banked
 
 	tn_pump();
 }
-
-
-/* uIP has a single TCP application callback; the telnet server is the
- * only TCP application. */
-void tcp_appcall(void)
-{
-	if (uip_conn->lport == HTONS(TELNET_PORT))
-		telnetd_appcall();
-	else
-		uip_abort();
-}
