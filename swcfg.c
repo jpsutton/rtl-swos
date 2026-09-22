@@ -77,6 +77,10 @@ void sw_init(void) __banked
 	sw_igmp = 0;
 	sw_deferred = 0;
 	sw_dirty = 0;
+	/* vlan_setup() leaves every port accepting all frames; push the
+	 * access-port defaults now, a config without switchport lines never
+	 * would. */
+	sw_apply();
 }
 
 

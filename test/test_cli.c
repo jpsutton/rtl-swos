@@ -1206,6 +1206,8 @@ static void test_l2_extensions(void)
 
 	printf("[test] tagged-only trunks, per-port STP off, mrouter ports\n");
 	wipe_all();
+	CHECK(port_ingress_filter_get(0) == VLAN_UNTAGGED && port_ingress_filter_get(8) == VLAN_UNTAGGED,
+	      "the access-port default is pushed at init, before any switchport line");
 	run("enable");
 	run("configure terminal");
 	run("vlan 20");

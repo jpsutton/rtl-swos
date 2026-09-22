@@ -192,7 +192,7 @@ static void print_bridge_id(uint8_t prio, uint8_t ext, __xdata uint8_t *mac) __r
  * formatter. The state indices are the ASIC's own two bits, in the order
  * stp_state_set() writes them. */
 static __code const char stp_state_txt[] = "off  blocklearnfwd  ";
-static __code const char stp_role_txt[]  = "desgroot";
+static __code const char stp_role_txt[]  = "desgrootoff ";
 static __code const char stp_edge_txt[]  = "no  yes ";
 
 static uint8_t stp_ent_active(uint8_t e) __reentrant;
@@ -256,7 +256,7 @@ void stp_status(void) __banked
 		}
 		print_field(stp_state_txt, (sfr_data[3 - (stp_st_of >> 2)] >> ((stp_st_of << 1) & 0x7)) & 0x3, 5);
 		write_char(' ');
-		print_field(stp_role_txt, stp_i == stp_root_port ? 1 : 0, 4);
+		print_field(stp_role_txt, !(stp_pflags[stp_i] & STP_PF_ENABLED) ? 2 : stp_i == stp_root_port ? 1 : 0, 4);
 		write_char(' ');
 		print_field(stp_edge_txt, stp_pflags[stp_i] & STP_PF_OPEREDGE ? 1 : 0, 4);
 		write_char(' ');
