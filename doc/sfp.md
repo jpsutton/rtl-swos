@@ -105,3 +105,19 @@ apart, solder wires to the pins of the on-board PCB which are then routed back t
 the end of the module. By pulling e.g. TX-Fault low while printing out the GPIOs, the
 correct GPIO can be identified.
 
+
+## SFP ports on the CLI
+`show interfaces transceiver` prints, for every SFP port, the module
+information read from the EEPROM and, when the module supports diagnostics,
+its temperature, voltage and RX/TX power; an empty slot shows `no module`.
+
+The bit-rate normally comes from byte 12 of the EEPROM. `speed` in interface
+configuration mode overrides it for modules that report a wrong rate (the
+SFP+ slot of an 8+1 board is port 9):
+```
+switch(config)# interface ethernet 1/9
+switch(config-if)# speed 2500
+```
+The SFP ports accept `speed 100`, `1000`, `2500`, `10000` and `auto` (use the
+EEPROM rate, the default); the module setup is re-run with the forced rate.
+`shutdown` and `duplex` are not supported on SFP ports.

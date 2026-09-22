@@ -53,6 +53,6 @@ The peripherial functions are accessed through 2 different mechanisms:
   of the RTL838x, for which source code and datasheets are available. This
   controls clock dividers, GPIO/LEDs and general  switch functionality. 
 
-The playground image shows access to the different types of memory using the
+The firmware image shows access to the different types of memory using the
 SDCC compiler. Any support of Linux or e.g. Zephyr would require porting gcc.
 There are FreeRTOS ports to 8051 processors using sdcc, however.

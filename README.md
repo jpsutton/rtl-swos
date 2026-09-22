@@ -1,363 +1,210 @@
-# RTLPlayground
-A Playground for Firmware development for advanced user of RTL8372/RTL8373 based 2.5GBit Switches.
+# rtl-swos
 
-For each hardware configuration of these devices, there is usually a managed and an
-unmanaged version sold, with mostly identical hardware. The aim is to provide management
-features also for unmanaged devices with additional features such as Management VLAN,
-DHCP servers, multi-language support, IPv6 and TLS-encrypted web-pages. At present, however
-only the following features are provided:
-- A modern web-interface with mouse-over to display further information
-- A serial console interface to configure all features
-- IGMP to configure Multicast streaming
-- Port configuration showing detailed information about own and Link-partner advertised
-  Speed settings and configuration of these settings on the local side
-- Per-port configuration of frame sizes (MTUs) for Jumbo-Frame support or limiting MTUs
-  for particular devices
-- EEE (Energy Efficient Ethernet) can be configured per-port. Detailed information is
-  provided for support offered by the link partner and the EEE status of a port.
-- VLAN configuration
-- SFP information is displayed on the inserted modules, the current sensor values such as
-  temperatures, RX and TX power are displayed in the CLI and as mouse-over on the web
-- Mirror configuration
-- Link Aggregation Groups can be set up
-- Detailed information on port packet statistics
-- Configuration saved to flash via the web-interface
-- Firmware updates via the web
-- Installation as a firmware upgrade from the original web-interface
+Command-line switch firmware for RTL8372/RTL8373 based 2.5 GBit switches.
 
-<img width="1673" height="977" alt="GUI" src="doc/images/gui.png" />
+rtl-swos is a hard fork of RTLPlayground. It drops the web interface and
+manages the switch through an industry-standard modal CLI on the serial
+console and over telnet, with a block-structured running configuration
+that is saved to flash and replayed at boot:
 
-While the firmware provides already considerable improvements over the original managed firmware,
-the firmware still lacks support for the proprietary loop prevention
-protocols as well as DHCP. Spanning Tree is available (see doc/stp.md), but is
-a simplified implementation - read that document before enabling it on a
-switch you administer over the network. If you need these features, do not install the playground on your managed
-devices. In any case, installation is strongly discouraged unless you can at least make
-a backup of the original flash content via a SOIC clamp such as also used for BIOS
-backups and can re-install that firmware in case something is wrong. For this no soldering
-skills are necessary.
-
-The firmware supports all hardware features of devices with
-- 4 2.5GBit ports + 2 SFP+ ports
-- 5 2.5GBIT + 1 SFP+ port
-- 8 2.5GBit + 1 SFP+ port
-Devices sold usually have a fairly common design, however there may be differences in the LED
-configuration (switches have LEDs with different colours and use types of LEDs). The list
-of tested devices can be found in [Supported devices](doc/supported_devices.md).
-
-To do meaningful development you will need to use a serial console, so soldering skills
-are required. Flashing must be done via a SOIC-8 PatchClamp or by soldering a socket
-for the flash chip.
-
-If you don't want to open your device, you can use the project's code to learn about the
-devices by looking at the image using e.g. Ghidra. If you want to contribute to the
-design of the web-interface or get a feeling for the interface first, a standalone
-device simulator is provided, which runs entirely under Linux as a local webserver.
-
-## (0) Compiling Requirements
-
-Install the following particular build requisites (Debian 12/13), note that Ubuntu 24.04
-still has an older version of sdcc, but you will need sdcc version 4.5 for the code to compile:
 ```
-sudo apt install make gcc sdcc xxd python-is-python3 libjson-c-dev zlib1g-dev
+hostname lab-sw1
+!
+vlan 10
+ name home
+vlan 20
+ name work
+!
+interface ethernet 1/1
+ description uplink
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20
+!
+interface ethernet 1/2
+ switchport access vlan 20
+!
+interface vlan 10
+ ip address 192.168.0.25 255.255.254.0
+!
+ip default-gateway 192.168.0.1
+feature telnet
+!
+end
+```
+
+Features, as far as the hardware supports them:
+- VLANs: access and trunk ports, native VLAN, allowed lists, protected ports
+- Per-port speed, duplex, MTU (jumbo frames), Energy Efficient Ethernet and
+  shutdown, with link-partner information
+- Static link aggregation (port-channels) with a configurable hash
+- Port mirroring (one session, several sources)
+- Ingress and egress rate limiting
+- Spanning tree (RSTP/STP, simplified; read [doc/stp.md](doc/stp.md) first)
+- IGMP snooping
+- SFP+ module information and diagnostics
+- Management interface on any VLAN, static or DHCP; remote syslog
+- In-band firmware and configuration transfer over TFTP
+- Show commands for interfaces, counters, VLANs, MAC table, port-channels,
+  spanning tree and transceivers
+
+The [command line reference](doc/cli.md) lists every command.
+
+The firmware supports devices with
+- 4 2.5GBit ports + 2 SFP+ ports
+- 5 2.5GBit ports + 1 SFP+ port
+- 8 2.5GBit ports + 1 SFP+ port
+
+Devices sold usually share a common design, but LED wiring and colours
+differ. The tested boards are listed in
+[Supported devices](doc/supported_devices.md).
+
+> [!CAUTION]
+> The firmware lacks the proprietary loop prevention of the original
+> managed firmware. Install it only if you can back up and restore the
+> flash chip with a SOIC-8 clip and a programmer such as a CH341A. No
+> soldering is needed for that.
+
+## Building
+
+Build requirements (Debian 12/13; sdcc 4.5 or newer is needed, Ubuntu
+24.04 ships an older one):
+```
+sudo apt install make gcc sdcc python3 zlib1g-dev
 ```
 
 <details>
-<summary>If using Docker (click to expand)</summary>
-
-### Prerequisites
-
-Install Docker for your platform:
-
-- **Linux (Debian/Ubuntu)**: `sudo apt install docker.io` then `sudo usermod -aG docker $USER` (log out and back in)
-- **Linux (other distros)**: Follow the [Docker Engine install guide](https://docs.docker.com/engine/install/)
-- **Windows**: Install [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/)
-- **macOS**: Install [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/)
-
-### Usage
-
-A Dockerfile is provided for a reproducible build environment:
+<summary>Building with Docker</summary>
 
 ```
-docker build -t rtlplayground-dev .
+docker build -t rtl-swos-dev .
+docker run --rm -v $(pwd):/workspace rtl-swos-dev make MACHINE=DEFAULT_8C_1SFP
 ```
 
-Build the firmware (replace MACHINE with your target, e.g. `DEFAULT_8C_1SFP`):
-
-```
-docker run --rm -v $(pwd):/workspace rtlplayground-dev make MACHINE=DEFAULT_8C_1SFP
-```
-
-The resulting `.bin` file appears in `output/` on your host.
-
-Build host tools only:
-
-```
-docker run --rm -v $(pwd):/workspace rtlplayground-dev make -C tools
-```
-
-Run the web-interface simulator locally:
-
-```
-docker run --rm -p 8080:8080 -v $(pwd):/workspace rtlplayground-dev \
-  tools/output/httpd_sim /workspace/html
-```
-
-Edit `machine.h` or `config.txt` on your host, then re-run `make` — the
-source directory is mounted into the container, so changes take effect
-immediately. To build for a different machine, pass `MACHINE=...`.
-
+The image appears in `output/` on the host. The source directory is
+mounted, so edits to `machine.h` or `config.txt` take effect on the next
+`make`.
 </details>
 
-## (1) Compiling for direct chip flashing AND upgrading an existing RTLPlayground running device
-
-Edit machine.h with an editor like vi or nano. Select the correct machine the firmware should build for.
-
-> [!TIP]
-> You can write configuration parameters in config.txt (see below) in order your switch to get
-> straight at the first boot, a correct IP configuration.
-
-Now, building the firmware image should work:
+Select the board in `machine.h`, or pass it on the command line, and
+build:
 ```
-make 
+make MACHINE=SWTGW218AS
 ```
-Note, that the image generated ends in .bin, not .img, in order to make IMSProg happy.
 
-image location is stored in `RTLPlayground/output/rtlplayground_version_machine.bin`
-for example
+The image is written to `output/<MACHINE>/rtl-swos-<version>-<MACHINE>.bin`,
+with a link at `output/rtl-swos.bin`. It is a complete 512 KB flash image:
+it can be written to the flash chip directly or loaded in-band.
+
+`config.txt` becomes the initial startup configuration inside the image.
+Put the management address in it so the switch is reachable on first
+boot, for example:
 ```
-rtlplayground-v0.1.0-12c98ba-dirty-LIANGUO_ZX_SWTGW215AS.bin
+interface vlan 1
+ ip address 192.168.10.247 255.255.255.0
+!
+ip default-gateway 192.168.10.1
+feature telnet
 ```
+
+Host-side tests of the CLI, configuration model and serializer run without
+hardware:
+```
+make -C test
+```
+
+## Installing
+
+### Flashing the chip (first install, and recovery)
+
+This is the only way to install on unmanaged switches, and the way to
+recover from a bad image.
+
+- Disconnect power and open the switch. The warranty is gone.
+- Attach the SOIC-8 clip to the flash chip (red wire to pin 1, marked by a
+  dot). The switch's power LED lights up from the programmer.
+- Detect the chip with IMSProg, flashrom or similar.
+- **Read and keep a backup of the original firmware.**
+- Erase the chip, write `output/rtl-swos.bin`, verify, remove the clip.
+
+### From the original managed firmware
+
+Managed switches can be upgraded from the OEM web interface with a special
+image. Build the firmware first, then:
+```
+make -C installer
+```
+and upload `installer/output/rtl-swos_oem_upgrade.bin` through the OEM
+firmware update page. This is needed once; later updates go in-band.
 
 > [!CAUTION]
-> This image can be flashed directly to the chip OR through the firmware update/upgrade
-> interface of RTLPlayground interface
+> Check that the machine type matches the device before flashing.
 
-## (2) Compiling for OEM running device with management options (web upgrade)
+### In-band updates
 
-Managed switches can be updated from the existing original firmware using a SPECIFIC upgrade image.
-You first need to build the firmware for direct chip flashing : See below (1)
+On a running rtl-swos switch, serve the image from a TFTP server and run:
+```
+switch# copy tftp flash 192.168.10.2 rtl-swos.bin
+```
+The image is staged in flash, checked, and copied into place by the boot
+loader on the next start; the switch reboots when the transfer completes.
+`show tftp` reports progress and the result. The startup configuration is
+not touched by a firmware update.
 
-Then
+The configuration can be moved the same way:
+`copy tftp startup-config SERVER FILE` and
+`copy startup-config tftp SERVER FILE`.
+
+## Using the switch
+
+Connect a serial adapter to the UART header (115200 8N1), or enable
+`feature telnet` and connect to the management address. The telnet
+password is `1234` until changed under `line vty`.
 
 ```
-cd installer
-make 
-```
-image location is stored in  `RTLPlayground/installer/output/rtlplayground_oem_upgrade.bin`
-
-> [!CAUTION]
-> This image must ONLY be used for original OEM firmware web interface firmware upgrade.
-> You do not need this image if you are already on RTLplayground firmware.
-> Unless you go back to the original OEM firmware, you would only flash this specific firmware
-> only once. Future upgrades of RTLPlayground will only need to follow (1)
-
-example of compilation console output
-
-```
-RTLPlayground/installer$ make
-mkdir -p output
-gcc updatebuilder.c -o output/updatebuilder
-sdas8051 -plosgff -o output/crtstart.rel crtstart.asm
-sdcc -mmcs51 --code-loc 0x1000 -o output/installer.rel -c installer.c
-sdcc -mmcs51 -Wl-bHOME=0x1100 -Wl-r -o output/rtlinstaller.ihx output/crtstart.rel output/installer.rel
-./output/updatebuilder -i output/rtlinstaller.ihx -o output/rtlplayground_oem_upgrade.bin ../output/rtlplayground.bin
-Input file size: 524288
-Bytes read: 524288
-EOF
-Payload sum 1 is: 0x25100
-Payload sum 2 is: 0x25100
-Payload sum with header is: 0x264ec
-Payload sum is: 0xf8fe94
-Header checksum is: 0x5a1
+rtl-swos-94830a> enable
+rtl-swos-94830a# show interfaces status
+Port      Name              Status      Vlan     Speed  Type
+--------  ----------------  ----------  -------  -----  ------
+Eth1/1                      notconnect  1        auto   copper
+Eth1/2                      connected   1        1000   copper
+...
+rtl-swos-94830a# configure terminal
+rtl-swos-94830a(config)# interface ethernet 1/3-5
+rtl-swos-94830a(config-if-range)# switchport access vlan 20
+% VLAN 20 did not exist, created it
+rtl-swos-94830a(config-if-range)# end
+rtl-swos-94830a# write memory
 ```
 
-## (3) Sandbox Usage with Ghidra (optional)
+`?` shows what may follow at any point, Tab completes, and keywords can be
+abbreviated. Changes apply immediately; `write memory` makes them survive
+a reload.
 
-You can play with the image using ghidra or flash real Switch Hardware. For
-ghidra see this information about [Ghidra images](doc/ghidra.md).
+### Configurations from RTLPlayground
 
-## (4) Installation through the Web interface (software way)
-
-Managed switches (OEM firmware of RTLplayground firmware) can be upgraded via the web interface.
-Unmanaged switch cannot be flashed this way (see 5).
-
-Go to "Firmware update" tab, select the correct file.
-
-> [!IMPORTANT]
-> If your device already runs RTLPlayground, you must upload the binary file /RTLPlayground/output/rtlplayground_Version_Machine.bin
-> If your device is OEM, you must upload the binary file /RTLPlayground/installer/outputrtlplayground_oem_upgrade.bin
-
-> [!CAUTION]
-> Check one more time that your device matches the machine type before flashing.
-> Be sure you have a backup of the original firmware before diving in RTLPlayground.
-
-Finally, push the Upload File Button and you're done !
-
-
-## (5) Flashing the ROM directly (hardware way, but also only way to rescue)
-
-This procedure is the only way to flash unmanaged switches, if the ROM chip is large enough.
-This is also the only way to unbrick your device if something went wrong.
-
-> [!IMPORTANT]
-> You need a SOIC-8 clip to flash the ROM chip directly onboard.
-> Alternatively you can de-solder the flash chip and install a SOIC adapter).
-> For flashing the chip directly, you must use the binary file /RTLPlayground/output/rtlplayground_Version_Machine.bin
-
-> [!CAUTION]
-> As you need to open your switch case, consider that the warranty is gone.
-
-- Disconnect power from switch.
-- Open the switch.
-- Attach the clip onto the flash chip (Red line on Pin 1, Pin 1 has a point marker).
-- Connect USB of flash programmer, the power LED on the switch will light up, check cabling if not.
-- Don't panic, mixing up GND and 3.3V usually does not destroy the switch.
-- Use IMSProg, Flashrom, or whatever Programmer to detect the chip.
-- MAKE A BACKUP (DUMP) OF THE EXISTING FIRMWARE !
-- ERASE THE ROM (BLANK) !
-- Load the firmware into IMSProg.
-- Flash is to the ROM chip.
-- Disconnect the clip from the ROM chip.
-- You're done, ready for the first boot.
-
-## (6) Connecting a serial interface (optional)
-
-You can connect a serial cable to the UART port found on all the devices, set 8N1 @ 115200 baud.
-
-## (7) Power Up
-
-When you power up the switch, the device will perform some examples and provide a minimal console
-(if wired to a serial interface), the documentation of which can be found in the source code rtlplayground.c`.
-
-## (8) The web-interface
-
-The web-interface can be reached under the [default 192.168.10.247](http://192.168.10.247) unless you
-specified an IP address in the config.txt before compilation.
-
-> [!TIP]
-> The default password is `1234`.
-
-## (9) The command line
-
-The command line is very rudimentary and mostly for testing purposes.
-The following is a boot-log with some examples:
+The startup configuration of RTLPlayground used a flat command syntax
+(`vlan 10 home 2 3 9t`, `pvid 1 20`, ...). Convert it before loading it:
 ```
-Detecting CPU
-RTL8373 detected
-Starting up...
-  Flash controller
-
-NIC reset
-rtl8372_init called
-
-RTL837X_REG_SDS_MODES: 0x00000bed
-
-phy_config_8224 called
-
-phy_config_8224 done
-
-rtl8224_phy_enable called
-
-rtl8224_phy_enable done
-
-rtl8372_init done
-
-A minimal prompt to explore the RTL8372:
-
-CPU detected: RTL8373
-Clock register: 0x00001101
-Register 0x7b20/RTL837X_REG_SDS_MODES: 0x00000bed
-Verifying PHY settings:
-
- Port   State   Link    TxGood          TxBad           RxGood          RxBad
-1       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-2       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-3       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-4       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-5       On      2.5G    0x00000008      0x00000000      0x00000000      0x00000000
-6       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-7       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-8       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-9       NO SFP  Down    0x00000000      0x00000000      0x00000000      0x00000000
-
-> port 5 1g
-  CMD: port 5 1g
-PORT 04 1G
-
-> stat
-  CMD: stat
- Port   State   Link    TxGood          TxBad           RxGood          RxBad
-1       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-2       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-3       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-4       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-5       On      1000M   0x00000035      0x00000000      0x00000017      0x00000000
-6       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-7       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-8       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-9       NO SFP  Down    0x00000000      0x00000000      0x00000000      0x00000000
-
->
-<SFP-RX OK>
-
-<MODULE INSERTED>  Rate: 67  Encoding: 01
-Lightron Inc.   WSPXG-ES3LC-IHA 0000
-
-> stat
-  CMD: stat
- Port   State   Link    TxGood          TxBad           RxGood          RxBad
-1       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-2       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-3       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-4       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-5       On      1000M   0x00000065      0x00000000      0x0000003b      0x00000000
-6       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-7       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-8       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-9       SFP OK  10G     0x00000000      0x00000000      0x0000001c      0x00000000
-
-> sfp
-  CMD: sfp
-Rate: 67  Encoding: 01
-Lightron Inc.   WSPXG-ES3LC-IHA 0000
+tools/convert-legacy-config.py old.cfg > new.cfg
 ```
+The converter marks anything without an exact equivalent with a
+`! NOTE:` comment. `make -C test && test/build/test_replay new.cfg` replays
+the result through the real CLI on the host and fails on any error.
 
-## (10) Advanced configuration
+## Other documents
 
-You can configure more deeply the switch without the need of the console mode.
-
-While in compilation part, you might write directly to config.txt file before making the binary firmware
-
-```
-nano config.txt
-```
-
-If you want to modify settings after the flash is done, go to the System tab and find the Startup Configuration.
-
-<img width="1673" height="978" alt="ADVANCED SETTINGS" src="doc/images/advanced_settings.png" />
-
-```
-ip xxx.xxx.xxx.xxx      = IP address of the switch
-gw yyy.yyy.yyy.yyy      = IP address of the gateway
-netmask zzz.zzz.zzz.zzz = Network mask of the switch 
-port x name xxx         = Name xxx the port number x
-port z 1g               = Set 1g speed for port z
-igmp on/off             = Turn IGMP on or off
-```
-[To be continue]
-
-Enjoy playing!
-
-## (11) Other documents
-
-The following documents give further documentation on specific features of the RTL837x SoCs:
-- [RTL8372/3 Feature support](doc/hardware.md)
-- [CPU Port](doc/CpuPort.md)
-- [L2 learning](doc/l2.md) 
-- [IGMP (IP-MC streaming)](doc/igmp.md)
-- [SFP+ ports](doc/sfp.md) 
-- [Trunking aka. port aggregation](doc/trunking.md)
+- [Command line reference](doc/cli.md)
+- [RTL8372/3 feature support](doc/hardware.md)
+- [CPU port](doc/CpuPort.md)
+- [L2 learning](doc/l2.md)
 - [VLAN](doc/vlan.md)
-- [Modifications and Flash replacement](doc/mods.md)
+- [Link aggregation](doc/link_aggregation.md)
+- [Mirroring](doc/mirroring.md)
+- [Bandwidth control](doc/bandwidth.md)
+- [Spanning tree](doc/stp.md)
+- [IGMP (IP multicast)](doc/igmp.md)
+- [SFP+ ports](doc/sfp.md)
+- [Automation](doc/automation.md)
+- [Modifications and flash replacement](doc/mods.md)
+- [Ghidra](doc/ghidra.md)
 - [XRAM above 0x4000 is not zero-initialized](doc/xram.md) - read before adding `__xdata` state

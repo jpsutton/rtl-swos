@@ -45,36 +45,42 @@ void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banke
 void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash_bits) __banked;
 ```
 
-## LAG configuration on the Serial Console
-For testing the following commands are provided on the serial console:
+## LAG configuration on the CLI
+A LAG is a port-channel, numbered 1 to 4. Ports join it with `channel-group`
+in interface configuration mode. The aggregation is static: there is no LACP,
+and `mode on` is the only mode (it may be omitted).
 ```
-> lag <LAG-ID> <p1> [p2]...
-  Create or set a LAG. LAG-ID is 1 to 4. Ports are physical ports.
-
-> lag <LAG-ID> d
-  Delete the LAG.
-
-> lag show
-  Shows information on all 4 lags
-
-> laghash 0 [hash1] [hash2]...
-  Uses the given packet properties when hashing the packet to select the link
-  Names for the hashes are spa, smac, dmac, sip, dip, sport, dport
+switch(config)# interface ethernet 1/1-2
+switch(config-if-range)# channel-group 1 mode on
+switch(config-if-range)# exit
 ```
-When a lag is creates, by default the hash is based on smac, dmac, sip, dip, sport, dport. When you
-use your own hash settings, make sure that the hash always uses both the source and destination
-property of the packet, as otherwise pakets will not be routed symmetrically.
+`channel-group` on a port that is already in another port-channel moves it;
+`no channel-group` removes the port from its port-channel. Removing the
+last member deletes the LAG. VLAN settings are not copied between members,
+so give all members the same `switchport` configuration.
 
-## LAG configuration via the Web Interface
-In the web-interface select Link Aggregation in the left navigation panel. The page will look like this:
-![Alt text](images/LAG_config.png?raw=true "Link Aggregation Web-Page")
-Each of th 4 LAGs is configured separately. After the web-page has loaded, the current configuration
-can be edited by clicking on the port-images to include that port or exclude it from a LAG.
-When pressing on the Create/Update button, the LAG will be automatically created if not yet done, or
-updated. If a lage is updated to not having any members, then it is effectively deleted.
+The hash is configured on the port-channel:
+```
+switch(config)# interface port-channel 1
+switch(config-if)# load-balance src-mac dst-mac src-ip dst-ip
+switch(config-if)# no load-balance
+```
+The fields are `src-port` (the ingress port), `src-mac`, `dst-mac`, `src-ip`,
+`dst-ip`, `l4-src-port` and `l4-dst-port`, in any combination; `no
+load-balance` restores the default. When a LAG is created, by default the
+hash is based on src-mac, dst-mac, src-ip, dst-ip, l4-src-port and
+l4-dst-port. When you use your own hash settings, make sure that the hash
+always uses both the source and destination property of the packet, as
+otherwise packets will not be routed symmetrically.
 
-All LAGs are created with the default hash-function (see above). This currently cannot be changed
-from the Web.
+Spanning-tree settings of a LAG are also made under `interface port-channel`,
+see [STP](stp.md).
+
+`show port-channel summary` lists the members (a member whose link is down is
+marked `(D)`) and the hash of each port-channel; `show interfaces status`
+shows `Po<N>` in the VLAN column of a member port. In `show running-config`
+the port-channels come before the ethernet interfaces, and each member carries
+` channel-group <N> mode on`.
 
 ## A Test using a single Linux Desktop
 The following is a simple test using 2 RTL 2.5 GBit switches with at least 1 SFP+-port each. You
@@ -94,7 +100,8 @@ The following shows the network configuration
 On _both_ switches create a LAG with ports 1 and 2 inside and the default hash algorithm which takes
 source and destination ports into account, e.g. just use the default:
 ```
-> lag 1 1 2
+switch(config)# interface ethernet 1/1-2
+switch(config-if-range)# channel-group 1 mode on
 ```
 
 

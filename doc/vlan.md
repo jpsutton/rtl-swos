@@ -66,36 +66,69 @@ void vlan_delete(uint16_t vlan) __banked;
 
 ```
 
-# VLAN configuration on the Serial Console
-For testing the following commands are provided on the serial console:
+# VLAN configuration on the CLI
+VLANs are configured per port in configuration mode, on the serial console or
+over telnet. A port is either an access port (an untagged member of one VLAN)
+or a trunk (a tagged member of the VLANs in its allowed list, plus an untagged
+native VLAN). The firmware derives the member/tagged masks of the VLAN table,
+the PVIDs and the ingress acceptance from that per-port state:
+
+* an access port gets its access VLAN as PVID and admits untagged frames only;
+* a trunk port gets its native VLAN as PVID and admits tagged and untagged
+  frames.
+
+A port that admits tagged frames only, which the ingress register supports,
+cannot be configured from the CLI.
+
 ```
-vlan <VLAN-ID> p[t]...
-  create or set vlan with given ID and the list of ports as members, a `t`
-  behind a port defines the port as a tagged member.
-
-vlan <VLAN-ID> d
-  deletes the VLAN
-
-vlan show
-  Dumps the current ingress vlan settings.
-
-vlan <VLAN-ID> mgmt
-  Restricts network access to the switch (web UI, syslog) to the given
-  VLAN. Use `vlan 0 mgmt` to disable the filter. Default is `vlan 1 mgmt`.
-  Warning: setting this to an unreachable VLAN locks out the web UI;
-  recovery requires serial console.
-
-pvid <port> <VLAN-ID>
-  assigns PVID to a port. ports are numbered as on the casing
-
-ingress [p]<t|u|a>...
-  Allows ingress packages on port `p` only when `t`agged, `u`ntagged or `a`ny.
-  Multiple ports can be given at once as in vlan. When `p` is missing, all ports
-  are assigned the same mode. CPU port can not be changed.
-
-  Use `vlan show` to see current configuration.
-
-  Example:
-  `ingress 1t 2a` -> Set port 1 as tagged input only, set port 2 accepting any frames.
-  `ingress a` -> Set all ports to accept both tagged and untagged frames (default behaviour).
+switch# configure terminal
+switch(config)# vlan 10
+switch(config-vlan)# name home
+switch(config-vlan)# exit
+switch(config)# interface ethernet 1/1-8
+switch(config-if-range)# switchport access vlan 10
+switch(config-if-range)# exit
+switch(config)# interface ethernet 1/9
+switch(config-if)# switchport mode trunk
+switch(config-if)# switchport trunk allowed vlan 10,20-30
+switch(config-if)# end
+switch# write memory
 ```
+
+`switchport access vlan N` creates VLAN N if it does not exist yet. The
+allowed list of a trunk accepts `all` (the default), `none`, a list such as
+`10,20-30`, or `add LIST` / `remove LIST`; at most 8 ranges are kept.
+`no vlan N` deletes a VLAN; VLAN 1 cannot be deleted. `no switchport mode`
+returns a port to access mode.
+
+The management interface of the switch (telnet, TFTP, syslog, DHCP) lives in
+one VLAN, selected by the VLAN interface that carries its address:
+
+```
+switch(config)# interface vlan 10
+switch(config-if)# ip address 192.168.0.25 255.255.254.0
+switch(config-if)# exit
+switch(config)# ip default-gateway 192.168.0.1
+```
+
+`ip address dhcp` obtains the address with DHCP instead. Moving the
+management interface to a VLAN that no port of your workstation reaches locks
+out telnet; recovery then requires the serial console. The management
+interface is always bound to one VLAN; the old `vlan 0 mgmt`, which lifted the
+restriction, has no equivalent.
+
+The state is shown with:
+
+```
+show vlan brief          # VLANs and their access ports
+show interfaces trunk    # trunk ports, native VLAN and allowed list
+show interfaces status   # per port: access VLAN, "trunk" or port-channel
+show running-config
+```
+
+A startup config written in the old flat syntax (`vlan 10 home 2 3 9t`,
+`pvid 1 20`, `ingress 1a 2u`, `vlan 10 mgmt`) can be converted with
+`tools/convert-legacy-config.py`, see `doc/examples/legacy-lab.cfg` and
+`doc/examples/lab-converted.cfg`. The old model (member lists per VLAN plus
+a PVID and ingress mode per port) does not always map exactly onto access and
+trunk ports; the converter notes every such case in a `!` comment.

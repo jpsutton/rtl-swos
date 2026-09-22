@@ -1,0 +1,208 @@
+# Command line reference
+
+rtl-swos is configured through a modal command line in the industry-standard
+style: user EXEC, privileged EXEC, global configuration and per-object
+submodes. The same CLI runs on the serial console (115200 8N1) and, with
+`feature telnet`, over telnet. Each has its own session: mode, submode and
+privilege level are not shared.
+
+```
+rtl-swos-94830a> enable
+rtl-swos-94830a# configure terminal
+Enter configuration commands, one per line. End with 'end'.
+rtl-swos-94830a(config)# interface ethernet 1/3
+rtl-swos-94830a(config-if)# description printer
+rtl-swos-94830a(config-if)# switchport access vlan 20
+rtl-swos-94830a(config-if)# end
+rtl-swos-94830a# write memory
+```
+
+## Editing and help
+
+- Every keyword can be abbreviated to a unique prefix: `conf t`, `sh int st`,
+  `wr`. An ambiguous prefix (`sp` in interface mode: `speed` or
+  `spanning-tree`) is reported as `% Ambiguous command`.
+- `?` lists what may follow at the cursor, with a short description;
+  after a partial word it lists the matching keywords. Tab completes a
+  unique prefix.
+- An unknown or malformed word is marked:
+
+  ```
+  rtl-swos-94830a# show vlan brieff
+                             ^
+  % Invalid input detected at '^' marker.
+  ```
+
+- `no <command>` removes a setting or returns it to its default.
+- EXEC commands (`show`, `write`, `copy`, `reload`, ...) work in every
+  configuration mode without a `do` prefix.
+- A global configuration command typed in a submode runs in global
+  configuration mode and leaves the submode, so a pasted configuration
+  needs no `exit` lines.
+- On the serial console the arrow keys recall and edit earlier lines;
+  `show history` lists them. Telnet sessions get `?` help and Tab
+  completion, but no line history.
+- Lines starting with `!` are comments.
+
+## Modes
+
+| Prompt | Mode | Entered with |
+|---|---|---|
+| `host>` | user EXEC | login |
+| `host#` | privileged EXEC | `enable` |
+| `host(config)#` | global configuration | `configure terminal` |
+| `host(config-if)#` | ethernet interface | `interface ethernet 1/N` |
+| `host(config-if-range)#` | several ethernet interfaces | `interface ethernet 1/1-4,1/7` |
+| `host(config-if)#` | port-channel | `interface port-channel N` |
+| `host(config-if)#` | management interface | `interface vlan N` |
+| `host(config-vlan)#` | VLAN | `vlan N` |
+| `host(config-line)#` | telnet line | `line vty` |
+
+`exit` goes up one level, `end` returns to privileged EXEC. `disable` drops
+back to user EXEC.
+
+## Interface names
+
+Front-panel ports are `ethernet 1/1` to `ethernet 1/9` (the numbering printed
+on the case; the firmware maps them to the chip's logical ports per board).
+`ethernet` may be abbreviated or left out: `interface e1/5`,
+`interface 1/5` and `interface 5` are the same port. Show commands print
+`Eth1/N`.
+
+A port list selects several ports at once, as one word:
+`interface ethernet 1/1-4,1/7` (NX-OS form) or
+`interface range ethernet 1/1-4,1/7` (IOS form). Each item may carry the
+`ethernet` prefix (`e1/1-4,e1/7`). A command entered in the range submode
+runs once for each port, in port order.
+
+## EXEC commands
+
+| Command | |
+|---|---|
+| `show running-config` | Current configuration (non-default settings) |
+| `show startup-config` | The configuration replayed at boot |
+| `show version` | Software, build, board, flash size, MAC, uptime |
+| `show interfaces [status]` | Link, VLAN, speed and type per port |
+| `show interfaces counters` | Packet and error counters |
+| `show interfaces trunk` | Trunk ports, native and allowed VLANs |
+| `show interfaces transceiver` | SFP modules and their diagnostics (DDM) |
+| `show vlan [brief]` | VLAN database with member ports |
+| `show mac address-table` | Learned and static MAC addresses |
+| `show spanning-tree` | Bridge and port STP state |
+| `show port-channel [summary]` | Port-channels, members, hash fields |
+| `show ip interface brief` | Management address, mask, method, gateway |
+| `show ip igmp snooping` | IGMP snooping state |
+| `show monitor [session 1]` | Port mirroring |
+| `show logging` | Remote syslog |
+| `show tftp` | Progress or result of the last TFTP transfer |
+| `show history` | Serial console command history |
+| `write [memory]`, `copy running-config startup-config` | Save the configuration to flash |
+| `copy tftp flash A.B.C.D FILE` | Download a firmware image; it is applied by reloading |
+| `copy tftp startup-config A.B.C.D FILE` | Replace the startup configuration (takes effect at reload) |
+| `copy startup-config tftp A.B.C.D FILE` | Upload the startup configuration |
+| `clear mac address-table dynamic` | Flush learned addresses |
+| `reload` | Restart |
+| `debug ...` | Raw register, SerDes, PHY, XRAM, GPIO and flash access; see `debug ?` |
+
+`config` is accepted in place of `startup-config` in the `copy` commands.
+Everything except `show`, `enable` and `exit` needs privileged EXEC.
+
+## Global configuration
+
+| Command | Default |
+|---|---|
+| `hostname WORD` | `rtl-swos-XXXXXX` from the MAC |
+| `vlan N` (1-4094), `no vlan N` | VLAN 1 only; VLAN 1 cannot be deleted |
+| `interface ethernet 1/N`, `interface port-channel N` (1-4), `interface vlan N` | |
+| `ip default-gateway A.B.C.D` | none |
+| `ip igmp snooping` | off |
+| `logging host A.B.C.D [port N]` | off, port 514 |
+| `monitor session 1 source interface ethernet 1/N [rx\|tx\|both]` | |
+| `monitor session 1 destination interface ethernet 1/N` | |
+| `no monitor session 1` | |
+| `feature spanning-tree` | off |
+| `spanning-tree mode rstp\|stp` | rstp |
+| `spanning-tree priority N` | 32768 |
+| `spanning-tree hello-time N`, `forward-time N`, `max-age N`, `transmit hold-count N` | 2, 15, 20, 6 |
+| `feature telnet` | off |
+| `line vty` | |
+
+The hardware has one mirror session; several sources may be added to it
+one line at a time.
+
+## Ethernet interface
+
+| Command | Default |
+|---|---|
+| `description LINE` | none |
+| `shutdown` | up (not available on SFP ports) |
+| `speed auto\|10\|100\|1000\|2500\|5000\|10000` | auto |
+| `duplex auto\|full\|half` | auto; half only at 10/100 |
+| `mtu 64-16383` | 16383 |
+| `power efficient-ethernet auto`, `no power efficient-ethernet` | on |
+| `switchport mode access\|trunk` | access |
+| `switchport access vlan N` | 1 |
+| `switchport trunk native vlan N` | 1 |
+| `switchport trunk allowed vlan LIST\|add LIST\|remove LIST\|all\|none` | all |
+| `switchport protected` | off |
+| `rate-limit input KBPS [drop]`, `rate-limit output KBPS` | none; input sends pause frames unless `drop` |
+| `channel-group N mode on` | none |
+| `spanning-tree portfast [disable]`, `bpduguard enable`, `bpdufilter enable`, `guard root`, `cost N`, `port-priority N`, `link-type point-to-point\|shared` | |
+
+A VLAN list is `10,20-30` style. Referring to a VLAN that does not exist
+creates it, with a note.
+
+A port with a `channel-group` takes its spanning-tree settings from its
+port-channel.
+
+## Port-channel
+
+`interface port-channel N` holds the settings of a static link aggregation
+group:
+
+| Command | Default |
+|---|---|
+| `load-balance FIELD...` | `src-mac dst-mac src-ip dst-ip l4-src-port l4-dst-port` |
+| `spanning-tree ...` | as on an ethernet interface |
+
+Fields: `src-port`, `src-mac`, `dst-mac`, `src-ip`, `dst-ip`, `l4-src-port`,
+`l4-dst-port`.
+
+## Management interface
+
+The switch has one IP interface. `interface vlan N` selects the management
+VLAN:
+
+| Command | |
+|---|---|
+| `ip address A.B.C.D MASK` | static address |
+| `ip address dhcp` | DHCP client |
+| `mac-address aabb.ccdd.eeff` | management MAC; `no mac-address` restores the one read at boot |
+
+## VLAN
+
+`vlan N` creates the VLAN and enters its submode; `name WORD` names it (up to
+32 characters).
+
+## Telnet line
+
+`line vty` (line numbers, as in `line vty 0 4`, are accepted and ignored; there is one telnet session):
+
+| Command | Default |
+|---|---|
+| `password WORD` | `1234` |
+| `exec-timeout MIN [SEC]` | 10 minutes; at least 30 seconds, `0 0` = never |
+
+## Startup configuration
+
+`write memory` stores the running configuration in the flash sector at
+0x70000. At boot it is replayed line by line in global configuration mode;
+a line that fails is printed together with its error and skipped, the rest
+of the configuration still applies. The image built by `make` carries
+`config.txt` from the source tree as its initial startup configuration.
+
+A configuration in the flat command syntax of earlier firmware can be
+converted with `tools/convert-legacy-config.py old.cfg > new.cfg`; it
+writes a `! NOTE:` line wherever the old state has no exact equivalent.
+`test/build/test_replay new.cfg` (built by `make -C test`) replays a file
+through the real CLI on the host and fails on any error line.

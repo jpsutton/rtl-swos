@@ -28,12 +28,30 @@ void port_mirror_set(register uint8_t port, __xdata uint16_t rx_pmask, __xdata u
 void port_mirror_del(void)
 ```
 
-# Mirroring on the Serial Console
-For testing the following commands are provided on the serial console:
+# Mirroring on the CLI
+Mirroring is configured as SPAN session 1 in global configuration mode. There
+is one session, with one destination port and any number of source ports:
 ```
-mirror <mirroring port> <P1>[r|t] [P2][r|t] ...
-  mirror to port <mirroring port>, source ports are P1 with the givent packet types, P2 and so on
+monitor session 1 source interface ethernet 1/<N> [rx|tx|both]
+monitor session 1 destination interface ethernet 1/<N>
+no monitor session 1 source interface ethernet 1/<N>
+no monitor session 1 destination
+no monitor session 1
+```
+A source mirrors received (`rx`), transmitted (`tx`) or, by default, both
+kinds of packets. The destination cannot also be a source. `no monitor
+session 1` deletes the whole configuration.
 
-mirror d
-  Deletes mirroring configuration
+To mirror what port 1 receives and everything port 2 sends and receives to
+port 4:
+```
+switch(config)# monitor session 1 source interface ethernet 1/1 rx
+switch(config)# monitor session 1 source interface ethernet 1/2
+switch(config)# monitor session 1 destination interface ethernet 1/4
+switch(config)# end
+switch# show monitor session 1
+Session 1 (active)
+  Source rx:    Eth1/1 Eth1/2
+  Source tx:    Eth1/2
+  Destination:  Eth1/4
 ```
