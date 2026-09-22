@@ -1,3 +1,21 @@
-ip 192.168.10.247
-gw 192.168.10.1
-netmask 255.255.255.0
+vlan 10 home 2 3 4 5 6 7 8 9t
+vlan 20 work 1 9t
+vlan 40 barrier 1t 2 9t
+pvid 1 20
+pvid 2 40
+pvid 3 10
+pvid 4 10
+pvid 5 10
+pvid 6 10
+pvid 7 10
+pvid 8 10
+ingress 1a 2u 3u 4u 5u 6u 7u 8u 9t
+vlan 10 mgmt
+vlan 1 d
+ip 192.168.0.25
+netmask 255.255.254.0
+gw 192.168.0.1
+port 3 name testlab
+telnet bind 192.168.0.25
+telnet timeout 1800
+telnet on
