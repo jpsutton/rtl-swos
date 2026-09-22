@@ -977,6 +977,30 @@ static __code const struct cli_node n_arg_cg = {
 static __code const struct cli_node * __code const ch_cg[] = {
 	&n_arg_cg, 0
 };
+/* ip igmp snooping mrouter: a static multicast router port. The chip
+ * has one router port mask, so unlike IOS/NX-OS this is not per VLAN. */
+static __code const struct cli_node n_if_mrouter = {
+	"mrouter", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_MROUTER,
+	"Static multicast router port"
+};
+static __code const struct cli_node * __code const ch_if_snoop[] = {
+	&n_if_mrouter, 0
+};
+static __code const struct cli_node n_if_snoop = {
+	"snooping", 0, CLI_F_NO_OK, 0, 0, ch_if_snoop, ACT_NONE, "IGMP snooping"
+};
+static __code const struct cli_node * __code const ch_if_igmp[] = {
+	&n_if_snoop, 0
+};
+static __code const struct cli_node n_if_igmp = {
+	"igmp", 0, CLI_F_NO_OK, 0, 0, ch_if_igmp, ACT_NONE, "IGMP"
+};
+static __code const struct cli_node * __code const ch_if_ip[] = {
+	&n_if_igmp, 0
+};
+static __code const struct cli_node n_if_ip = {
+	"ip", 0, CLI_F_NO_OK, 0, 0, ch_if_ip, ACT_NONE, "IP settings"
+};
 static __code const struct cli_node n_if_cg = {
 	"channel-group", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_cg, ACT_CHGRP,
 	"Add the port to a port-channel"
@@ -1056,8 +1080,13 @@ static __code const struct cli_node n_stpi_lt = {
 	"link-type", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPI_P2P, 0, ch_stpi_lt, ACT_STP_IF,
 	"Link type (default: auto)"
 };
+/* not an IOS/NX-OS command: they can only take a whole VLAN out of STP */
+static __code const struct cli_node n_stpi_disable = {
+	"disable", 0, CLI_F_NO_OK, STPI_DISABLE, 0, NO_CHILDREN, ACT_STP_IF,
+	"Leave spanning tree and always forward"
+};
 static __code const struct cli_node * __code const ch_stp_if[] = {
-	&n_stpi_bfilter, &n_stpi_bguard, &n_stpi_cost, &n_stpi_guard,
+	&n_stpi_bfilter, &n_stpi_bguard, &n_stpi_cost, &n_stpi_disable, &n_stpi_guard,
 	&n_stpi_lt, &n_stpi_pprio, &n_stpi_portfast, 0
 };
 static __code const struct cli_node n_if_stp = {
@@ -1081,7 +1110,7 @@ static __code const struct cli_node n_if_duplex = {
 	"Set the duplex mode"
 };
 static __code const struct cli_node * __code const cli_root_if[] = {
-	&n_end, &n_exit_cfg, &n_if_cg, &n_if_description, &n_if_duplex, &n_if_mtu,
+	&n_end, &n_exit_cfg, &n_if_cg, &n_if_description, &n_if_duplex, &n_if_ip, &n_if_mtu,
 	&n_if_power, &n_if_rl, &n_if_shutdown, &n_if_speed, &n_if_stp, &n_if_switchport, 0
 };
 

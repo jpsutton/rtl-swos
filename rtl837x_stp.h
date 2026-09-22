@@ -12,6 +12,8 @@ void stp_status(void) __banked;
 uint8_t stp_cfg_entity(uint8_t port) __banked;
 void stp_cfg_enable(uint8_t on) __banked;
 void stp_cfg_prio(uint8_t prio) __banked;
+/* on = 0: the entity leaves spanning tree and forwards */
+void stp_cfg_port(uint8_t ent, __xdata uint8_t on) __banked;
 
 /* Tick rate of stp_timers(), also used by the web UI. */
 #define STP_HZ 50

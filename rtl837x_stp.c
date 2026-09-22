@@ -989,6 +989,28 @@ void stp_cfg_enable(uint8_t on) __banked
 }
 
 
+/* Take an entity (port or lag) out of spanning tree, where it forwards
+ * unconditionally, or put it back, where it listens first. */
+void stp_cfg_port(uint8_t ent, __xdata uint8_t on) __banked
+{
+	static __xdata uint8_t e;
+
+	e = ent;
+	if (on) {
+		stp_pflags[e] |= STP_PF_ENABLED;
+		stp_pflags[e] &= ~STP_PF_TRIPPED;
+		if (stp_enabled) {
+			stp_state_set(e, STP_ST_BLOCKING);
+			port_timers[e] = (uint16_t)stp_fwddelay_s * STP_HZ;
+		}
+	} else {
+		stp_pflags[e] &= ~STP_PF_ENABLED;
+		if (stp_enabled)
+			stp_state_set(e, STP_ST_FORWARDING);
+	}
+}
+
+
 /* prio: the high byte of the bridge priority (priority / 256) */
 void stp_cfg_prio(uint8_t prio) __banked
 {

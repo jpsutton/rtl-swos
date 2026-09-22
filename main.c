@@ -127,6 +127,7 @@ __xdata uint8_t tx_seq;
 
 __xdata bool stp_enabled;
 __xdata uint8_t igmpEnabled;
+__xdata uint16_t igmp_mrouter;	/* static multicast router ports, logical port mask */
 __xdata char hostname[24];	/* device hostname, default set at boot, see rtl837x_common.h */
 
 __code const uint16_t bit_mask[16] = {

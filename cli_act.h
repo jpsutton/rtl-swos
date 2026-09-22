@@ -62,6 +62,7 @@
 #define ACT_COPY	49	/* TFTP_OP_* in ->lo */
 #define ACT_DUPLEX	50	/* PHY_DUPLEX_* in ->lo */
 #define ACT_MACADDR	51
+#define ACT_MROUTER	52	/* interface: ip igmp snooping mrouter */
 
 #define SHOW_IF_STATUS	1
 #define SHOW_IF_COUNT	2
@@ -97,6 +98,7 @@
 #define STPI_PPRIO	7
 #define STPI_P2P	8
 #define STPI_SHARED	9
+#define STPI_DISABLE	10
 
 void cli_act(uint8_t action) __banked;
 /* Run the action on every port of cli.ctx_range. */

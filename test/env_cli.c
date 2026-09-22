@@ -37,8 +37,10 @@ void phy_set_speed(void)
 	last_port = phy_settings.port;
 }
 
+extern uint16_t igmp_mrouter;
 void env_cli_reset(void)
 {
+	igmp_mrouter = 0;
 	last_fallback[0] = 0;
 	n_fallback = n_save = n_reset = n_showver = n_setspeed = 0;
 	n_igmp_on = n_igmp_off = n_hostdef = n_dhcp_start = n_dhcp_stop = 0;
@@ -89,6 +91,8 @@ void reset_chip(void)
 
 void igmp_enable(void) { n_igmp_on++; }
 void igmp_setup(void) { n_igmp_off++; }
+uint16_t igmp_mrouter;
+void igmp_router_port_set(uint16_t pmask) { igmp_mrouter = pmask; }
 
 /* boot.c: derives a name from the MAC when none is configured */
 void set_hostname_default(void)
@@ -176,6 +180,13 @@ void stp_cfg_enable(uint8_t on)
 		n_stp_disable++;
 }
 void stp_cfg_prio(uint8_t prio) { stp_prio = prio; n_stp_prio++; }
+void stp_cfg_port(uint8_t ent, uint8_t on)
+{
+	if (on)
+		stp_pflags[ent] |= STP_PF_ENABLED;
+	else
+		stp_pflags[ent] &= ~STP_PF_ENABLED;
+}
 
 /* what stp_defaults() establishes */
 void stp_test_defaults(void)

@@ -364,8 +364,11 @@ void sw_apply(void) __banked
 			port_pvid_set(p, sp->access_vid);
 			port_ingress_filter(p, VLAN_UNTAGGED);
 		} else {
+			/* A trunk whose native VLAN is not allowed carries no
+			 * untagged traffic: accept tagged frames only. */
 			port_pvid_set(p, sp->native_vid);
-			port_ingress_filter(p, VLAN_ALL);
+			port_ingress_filter(p, sw_port_allows(p, sp->native_vid)
+					    ? VLAN_ALL : VLAN_TAGGED);
 		}
 	}
 }

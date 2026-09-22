@@ -249,9 +249,13 @@ def emit(st, out):
             if extra:
                 o.append(f"! NOTE: port {p} carried VLANs {ranges(extra)} untagged besides "
                          f"its PVID {native}; they are tagged on the trunk now")
-            if ing == "t" and native in st.vlans and native in allowed:
-                o.append(f"! NOTE: port {p} dropped untagged frames; its native VLAN {native} "
-                         "now accepts them")
+            if ing == "t" and native in allowed:
+                # A trunk accepts tagged frames only when its native VLAN is
+                # not allowed; that also ends the port's membership in it.
+                allowed.remove(native)
+                o.append(f"! NOTE: port {p} accepted tagged frames only; VLAN {native} (its "
+                         "PVID) is left off the trunk to keep that, so the port no longer "
+                         f"carries VLAN {native}")
             cfg.append(" switchport mode trunk")
             if native != 1:
                 cfg.append(f" switchport trunk native vlan {native}")

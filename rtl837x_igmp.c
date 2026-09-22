@@ -162,6 +162,7 @@ void igmp_enable(void) __banked
  */
 void igmp_router_port_set(uint16_t pmask) __banked
 {
+	igmp_mrouter = pmask;
 	reg_read_m(RTL837X_IGMP_ROUTER_PORT);
 #ifdef DEBUG
 	print_string("igmp_router_port_set: "); print_short(pmask); print_string(", currently set to:\n");
@@ -179,8 +180,19 @@ void igmp_show(void) __banked
 #ifdef DEBUG
 	print_string("igmp_show called\n");
 #endif
+	print_string(igmpEnabled ? "IGMP snooping: enabled\n" : "IGMP snooping: disabled\n");
+	print_string("Multicast router ports:");
+	if (!igmp_mrouter)
+		print_string(" none");
 	for (uint8_t i = machine.min_port; i <= machine.max_port; i++) {
-		write_char('0' + i); write_char(':');
+		if (igmp_mrouter & ((uint16_t)1 << i)) {
+			print_string(" Eth1/");
+			write_char('0' + machine.log_to_phys_port[i]);
+		}
+	}
+	print_string("\nPort configuration registers:\n");
+	for (uint8_t i = machine.min_port; i <= machine.max_port; i++) {
+		write_char(' '); write_char('0' + machine.log_to_phys_port[i]); write_char(':');
 		reg_read_m(RTL837X_IGMP_PORT_CFG + (i << 2));
 		print_sfr_data();
 		write_char('\n');
@@ -305,6 +317,7 @@ void igmp_packet_handler(void) __banked
 		}
 		// Update (found) entry with portmask from trapped Packet
 		entry.pmask |= ((uint16_t)1) << ((IGMP_I->rtl_tag.pmask >> 8) & 0x0f);  // Swap bytes from network order, only 4 LSB count
+		entry.pmask |= igmp_mrouter;	// router ports get every group
 //		print_string("\nPort-Mask: "); print_short(entry.pmask); write_char('\n');
 	} else if (IGMP_I->igmp_rtype == 0x3){  // Leave group
 		if (sfr_data[2] & 0x10) {
@@ -327,7 +340,8 @@ void igmp_packet_handler(void) __banked
 			dbg_string("IGMP Entry already deleted\n");
 			return;
 		}
-		if (!entry.pmask && idx) { // No more ports in that group and an actual entry?
+		/* Router ports alone do not keep a group alive */
+		if (!(entry.pmask & ~igmp_mrouter) && idx) { // No more listeners in that group and an actual entry?
 			// Delete Entry
 			reg_read_m(RTL837x_TBL_DATA_0);
 			sfr_data[1] |= 0x04;	// Clear entry
@@ -343,8 +357,9 @@ void igmp_packet_handler(void) __banked
 		return;
 	}
 
-	if (!entry.pmask)
+	if (!(entry.pmask & ~igmp_mrouter))
 		return;
+	entry.pmask |= igmp_mrouter;
 #ifdef DEBUG
 	print_string("Updating IGMP entry\n");
 #endif

@@ -262,6 +262,12 @@ void cli_act(uint8_t action) __banked
 			print_string("% The MAC must be unicast and globally administered\n");
 		break;
 	}
+	case ACT_MROUTER:
+		if (cli.no)
+			igmp_router_port_set(igmp_mrouter & ~((uint16_t)1 << cli.ctx_lport));
+		else
+			igmp_router_port_set(igmp_mrouter | ((uint16_t)1 << cli.ctx_lport));
+		break;
 	case ACT_SHOW_START:
 		startup_show();
 		break;
@@ -743,6 +749,9 @@ void cli_act(uint8_t action) __banked
 			break;
 		case STPI_SHARED:
 			stp_pp2p[e] = 2;
+			break;
+		case STPI_DISABLE:
+			stp_cfg_port(e, cli.no);
 			break;
 		}
 		break;

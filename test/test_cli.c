@@ -796,6 +796,7 @@ extern uint32_t bw_in[10], bw_out[10];
 extern uint8_t bw_in_drop[10];
 extern int n_stp_enable, n_stp_disable, n_stp_prio;
 extern bool stp_enabled;
+extern uint16_t igmp_mrouter;
 
 static void test_port_features(void)
 {
@@ -1199,6 +1200,57 @@ static void test_interface_range(void)
 	      "a range replays from a startup config");
 }
 
+static void test_l2_extensions(void)
+{
+	char cfg[CONFIG_LEN];
+
+	printf("[test] tagged-only trunks, per-port STP off, mrouter ports\n");
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	run("vlan 20");
+	run("vlan 30");
+	to_if("ethernet 1/9");			/* logical 8 */
+	run("switchport mode trunk");
+	run("switchport trunk allowed vlan 20,30");
+	CHECK(port_ingress_filter_get(8) == VLAN_TAGGED,
+	      "trunk without its native vlan accepts tagged frames only");
+	CHECK(port_pvid_get(8) == 1 && !vl_member(1, 8), "and is no member of the native vlan");
+	run("switchport trunk native vlan 20");
+	CHECK(port_ingress_filter_get(8) == VLAN_ALL && vl_member(20, 8) && !vl_tagged(20, 8),
+	      "an allowed native vlan accepts untagged again");
+	run("switchport trunk native vlan 40");
+	CHECK(port_ingress_filter_get(8) == VLAN_TAGGED, "native moved out of the list: tagged only");
+
+	to_if("ethernet 1/2");
+	run("spanning-tree disable");
+	CHECK(!(stp_pflags[1] & STP_PF_ENABLED), "spanning-tree disable takes the port out");
+	run("ip igmp snooping mrouter");
+	CHECK(igmp_mrouter == (1 << 1), "mrouter adds the port to the router mask");
+	to_if("ethernet 1/4-5");
+	run("ip igmp snooping mrouter");
+	CHECK(igmp_mrouter == ((1 << 1) | (1 << 3) | (1 << 4)), "mrouter on a range");
+	run("ip igmp snooping");
+	CHECK(sw_igmp && cli.mode == CLI_MODE_CONFIG, "global ip igmp snooping still runs from a submode");
+
+	render_into(cfg);
+	CHECK(strstr(cfg, "interface ethernet 1/2\n ip igmp snooping mrouter\n spanning-tree disable\n"),
+	      "running config shows mrouter and spanning-tree disable");
+	CHECK(strstr(cfg, "switchport trunk native vlan 40\n switchport trunk allowed vlan 20,30\n"),
+	      "a tagged-only trunk renders as its native and allowed list");
+
+	to_if("ethernet 1/2");
+	run("no spanning-tree disable");
+	run("no ip igmp snooping mrouter");
+	CHECK((stp_pflags[1] & STP_PF_ENABLED) && igmp_mrouter == ((1 << 3) | (1 << 4)),
+	      "no forms restore both");
+
+	wipe_all();
+	replay_text(cfg);
+	CHECK(!(stp_pflags[1] & STP_PF_ENABLED) && igmp_mrouter == ((1 << 1) | (1 << 3) | (1 << 4))
+	      && port_ingress_filter_get(8) == VLAN_TAGGED, "all three replay from a saved config");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1234,6 +1286,7 @@ int main(void)
 	test_show();
 	test_step4();
 	test_interface_range();
+	test_l2_extensions();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

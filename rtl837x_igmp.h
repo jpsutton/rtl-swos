@@ -5,6 +5,9 @@
 
 void igmp_setup(void) __banked;
 void igmp_enable(void) __banked;
+/* Static multicast router ports (logical port mask): they receive IGMP
+ * reports and are added to every group the switch learns. */
+extern __xdata uint16_t igmp_mrouter;
 void igmp_router_port_set(uint16_t pmask) __banked;
 void igmp_packet_handler(void) __banked;
 void igmp_show(void) __banked;

@@ -26,6 +26,7 @@
 #include "uip/uip.h"
 #include "swcfg.h"
 #include "rtl837x_stp.h"
+#include "rtl837x_igmp.h"
 #include "runcfg.h"
 
 #pragma codeseg BANK3
@@ -226,6 +227,8 @@ static void rc_stp_ent(__xdata uint8_t e)
 	static __xdata uint8_t f;
 
 	f = stp_pflags[e];
+	if (!(f & STP_PF_ENABLED))
+		rc_s(" spanning-tree disable\n");
 	if (f & STP_PF_ADMEDGE)
 		rc_s(" spanning-tree portfast\n");
 	else if (!(f & STP_PF_AUTOEDGE))
@@ -365,6 +368,8 @@ static void rc_interfaces(void)
 			rc_dec32(sp->rl_out);
 			rc_c('\n');
 		}
+		if (igmp_mrouter & ((uint16_t)1 << lp))
+			rc_s(" ip igmp snooping mrouter\n");
 		g = port_lag_of(lp);
 		if (g != PORT_LAG_NONE) {
 			rc_s(" channel-group ");
