@@ -95,7 +95,8 @@ struct vlan_tag {
  * instead of zero (found on SWTGW218AS hardware). Every ordinary
  * __xdata variable therefore stays below 0x4000 - the build fails
  * otherwise, see the Makefile - and only large scratch buffers that
- * never rely on their initial contents are pinned above it. */
+ * never rely on their initial contents are pinned above it. See
+ * doc/xram.md for the measurements and the path to lifting the limit. */
 #define XRAM_LOW_LIMIT		0x4000
 #define XRAM_CFG_BUF		0x4000	/* cfg_buf, CONFIG_LEN bytes */
 #define XRAM_TELNET_OUTBUF	0x5000	/* telnet_outbuf, TELNET_OUTBUF bytes */

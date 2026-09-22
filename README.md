@@ -360,3 +360,4 @@ The following documents give further documentation on specific features of the R
 - [Trunking aka. port aggregation](doc/trunking.md)
 - [VLAN](doc/vlan.md)
 - [Modifications and Flash replacement](doc/mods.md)
+- [XRAM above 0x4000 is not zero-initialized](doc/xram.md) - read before adding `__xdata` state
