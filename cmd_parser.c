@@ -20,6 +20,8 @@
 #include "syslog.h"
 #include "telnetd.h"
 #include "tftp.h"
+#include "runcfg.h"
+#include "cli.h"
 #include "uip/uip.h"
 #include "version.h"
 
@@ -64,7 +66,6 @@ __xdata uint8_t hexvalue[4] = { 0 };
 __xdata uint8_t cmd_buffer[CMD_BUF_SIZE];
 __xdata uint8_t cmd_available;
 
-__xdata	char save_cmd;
 
 __xdata uint8_t ip[4];
 __xdata uint8_t mac_parse_result[6];
@@ -1698,96 +1699,6 @@ void print_sw_version(void) __banked {
 }
 
 
-/* Only configuration commands belong in the command journal: `save`
- * appends the journal to the startup config, so a journaled `stat` or
- * `copy` would be replayed at every boot. */
-static __code const char * __code const config_cmds[] = {
-	"ip", "gw", "netmask", "hostname", "port", "mtu", "vlan", "pvid",
-	"ingress", "isolate", "mirror", "lag", "laghash", "stp", "eee",
-	"bw", "igmp", "telnet", "syslog", "passwd", "mac", "sfp", 0
-};
-
-static uint8_t is_config_cmd(void)
-{
-	uint8_t i;
-
-	for (i = 0; config_cmds[i]; i++) {
-		if (cmd_compare(0, (__code const uint8_t *)config_cmds[i]))
-			return 1;
-	}
-	return 0;
-}
-
-
-/* Interim `save` until the modal CLI brings `write memory`: the startup
- * config is replayed at boot, so the stored text plus every command
- * journaled in cmd_history since boot equals the running state. Append
- * the journal to the stored text and burn the result back to the config
- * sector. Superseded lines accumulate across saves until the sector
- * limit; boot replay applies them in order, so the result stays correct. */
-__xdata uint8_t cfg_buf[CONFIG_LEN];
-
-void cmd_save_config(void) __banked
-{
-	__xdata uint16_t n = 0;
-	__xdata uint32_t pos = CONFIG_START;
-	__xdata uint16_t p;
-	__xdata uint16_t i;
-	uint8_t found_begin = 0;
-	uint8_t c;
-
-	/* A running TFTP transfer owns cfg_buf and may touch the config sector */
-	if (tftp_busy()) {
-		cmd_error("TFTP transfer in progress, try again later\n");
-		return;
-	}
-
-	/* Stored startup config, up to its terminator (0xff = erased sector) */
-	while (pos < CONFIG_START + CONFIG_LEN) {
-		flash_region.addr = pos;
-		flash_region.len = FLASH_BUF_SIZE;
-		flash_read_bulk(flash_buf);
-		for (i = 0; i < FLASH_BUF_SIZE; i++) {
-			c = flash_buf[i];
-			if (c == 0 || c == 0xff)
-				goto stored_done;
-			cfg_buf[n++] = c;
-		}
-		pos += FLASH_BUF_SIZE;
-	}
-stored_done:
-	if (n && cfg_buf[n - 1] != '\n')
-		cfg_buf[n++] = '\n';
-
-	/* Commands journaled since boot, oldest first (the walk `history` uses) */
-	p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
-	while (p != cmd_history_ptr) {
-		c = cmd_history[p];
-		if (!c || c == '\n')
-			found_begin = 1;
-		if (found_begin && c) {
-			if (n >= CONFIG_LEN - 1) {
-				cmd_error("Config exceeds the flash sector, not saved\n");
-				return;
-			}
-			cfg_buf[n++] = c;
-		}
-		p = (p + 1) & CMD_HISTORY_MASK;
-	}
-
-	cfg_buf[n] = 0;
-	flash_region.addr = CONFIG_START;
-	flash_sector_erase();
-	flash_region.addr = CONFIG_START;
-	flash_region.len = n + 1;
-	flash_write_bytes(cfg_buf);
-	clear_command_history();
-	print_string("Startup config saved (");
-	itoa_short(n);
-	print_string(" bytes)\n");
-}
-
-
 /* copy tftp flash|config <server-ip> <filename>
  * copy config tftp <server-ip> <filename> */
 static void parse_copy(void)
@@ -2064,7 +1975,7 @@ void cmd_parser(void) __banked
 			print_sfr_data();
 			write_char('\n');
 		} else if (cmd_compare(0, "save")) {
-			cmd_save_config();
+			runcfg_save();
 		} else if (cmd_compare(0, "copy")) {
 			parse_copy();
 		} else if (cmd_compare(0, "history")) {
@@ -2088,24 +1999,6 @@ void cmd_parser(void) __banked
 		}
 
 
-		if (save_cmd && cmd_words_len && err_status == ERR_OK
-		    && is_config_cmd()) {
-			// Find end of the cmd-buffer, looking for the NUL-byte.
-			uint8_t i = cmd_words_b[cmd_words_len - 1];
-			do {
-				i++;
-			} while(cmd_buffer[i] != NUL);
-
-			// Copy last cmd-buffer to history.
-			cmd_history_ptr = (cmd_history_ptr + i) & CMD_HISTORY_MASK;
-			__xdata uint16_t p = cmd_history_ptr;
-			cmd_history[cmd_history_ptr] = '\n';
-			cmd_history_ptr = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
-			do {
-				i--;
-				cmd_history[--p & CMD_HISTORY_MASK] = cmd_buffer[i];
-			} while (i);
-		}
 	}
 }
 
@@ -2119,7 +2012,6 @@ void clear_command_history(void) __banked
 
 
 #define FLASH_READ_BURST_SIZE 0x100
-#define PASSWORD "1234"
 
 #if CONFIG_LEN % FLASH_READ_BURST_SIZE
 	#error "CONFIG_LEN not a multiple of FLASH_READ_BURST_SIZE"
@@ -2128,10 +2020,11 @@ void execute_config(void) __banked
 {
 	__xdata uint32_t pos = CONFIG_START;
 	__xdata uint8_t pages_left = CONFIG_LEN / FLASH_READ_BURST_SIZE;
+	__xdata uint8_t skipping = 0;
 
 	// Set default password, it can be overwritten in the configuration file
-	strtox(passwd, PASSWORD);
-	save_cmd = 0;
+	strtox(passwd, DEFAULT_PASSWORD);
+	cli_replay_begin();
 
 	uint8_t cmd_idx = 0;
 	do {
@@ -2142,29 +2035,30 @@ void execute_config(void) __banked
 		__xdata uint8_t cfg_idx = 0;
 		uint8_t c = 0;
 		do {
-			if (cmd_idx >= (CMD_BUF_SIZE - 1)) {
-				cmd_buffer[cmd_idx] = NUL;
-				print_string("ERROR: Command too long: ");
-				print_string_x(cmd_buffer);
-				write_char('\n');
-				err_status = ERR_CMD_TOO_LONG;
-				goto config_done;
-			}
 			c = flash_buf[cfg_idx++];
-			if (c == 0 || c == '\n') {
+			if (c == '\r')
+				continue;	/* configs uploaded over TFTP may be CRLF */
+			/* NUL ends a saved config; 0xff is erased flash */
+			if (c == 0 || c == 0xff || c == '\n') {
 				cmd_buffer[cmd_idx] = NUL;
-				if (cmd_idx) {
-					cmd_tokenize();
-					if (err_status != ERR_OK)
-						goto config_done;
-					cmd_parser();
-				}
-				if (c == 0)
+				if (cmd_idx && !skipping)
+					cli_replay_line((__xdata char *)cmd_buffer);
+				if (c != '\n')
 					goto config_done;
 				cmd_idx = 0;
+				skipping = 0;
 				continue;
 			}
-
+			if (skipping)
+				continue;
+			if (cmd_idx >= (CMD_BUF_SIZE - 1)) {
+				cmd_buffer[cmd_idx] = NUL;
+				print_string("% Config line too long, skipped: ");
+				print_string_x(cmd_buffer);
+				write_char('\n');
+				skipping = 1;
+				continue;
+			}
 			cmd_buffer[cmd_idx] = c;
 			cmd_idx++;
 		} while (cfg_idx);
@@ -2174,9 +2068,29 @@ void execute_config(void) __banked
 	} while(pages_left);
 
 config_done:
-	// Start saving commands to cmd_history
+	cli_replay_end();
 	clear_command_history();
-	save_cmd = 1;
+}
+
+
+/* Append one line to the serial line editor's recall history. The ring
+ * holds lines separated by '\n', oldest first. */
+void cmd_history_add(__xdata const char * __xdata line) __banked
+{
+	static __xdata uint8_t n, i;
+	static __xdata uint16_t p;
+
+	for (n = 0; line[n] && n < CMD_BUF_SIZE - 1; n++)
+		;
+	if (!n)
+		return;
+	p = cmd_history_ptr;
+	for (i = 0; i < n; i++) {
+		cmd_history[p] = line[i];
+		p = (p + 1) & CMD_HISTORY_MASK;
+	}
+	cmd_history[p] = '\n';
+	cmd_history_ptr = (p + 1) & CMD_HISTORY_MASK;
 }
 
 // Execute multiple commands

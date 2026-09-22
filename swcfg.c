@@ -9,6 +9,7 @@
 #include "rtl837x_regs.h"
 #include "rtl837x_sfr.h"
 #include "rtl837x_port.h"
+#include "rtl837x_phy.h"
 #include "machine.h"
 #include "dhcp.h"
 #include "syslog.h"
@@ -27,6 +28,8 @@ extern __xdata struct dhcp_state dhcp_state;
 
 __xdata uint16_t sw_vlans[SW_MAX_VLANS];
 __xdata struct sw_port sw_ports[SW_NPORTS];
+__xdata uint8_t sw_igmp;
+static __xdata uint8_t sw_deferred, sw_dirty;
 
 #define SW_NAME_MAX 32
 
@@ -51,7 +54,12 @@ void sw_init(void) __banked
 		sw_ports[k].nranges = 1;
 		sw_ports[k].allowed[0].lo = 1;
 		sw_ports[k].allowed[0].hi = SW_VID_MAX;
+		sw_ports[k].speed = PHY_SPEED_AUTO;
+		sw_ports[k].shut = 0;
 	}
+	sw_igmp = 0;
+	sw_deferred = 0;
+	sw_dirty = 0;
 }
 
 
@@ -305,6 +313,11 @@ void sw_apply(void) __banked
 	static __xdata uint16_t vid, bit, members, tagged;
 	static __xdata struct sw_port * __xdata sp;
 
+	if (sw_deferred) {
+		sw_dirty = 1;
+		return;
+	}
+	sw_dirty = 0;
 	for (k = 0; k < SW_MAX_VLANS; k++) {
 		vid = sw_vlans[k];
 		if (!vid)
@@ -338,6 +351,14 @@ void sw_apply(void) __banked
 			port_ingress_filter(p, VLAN_ALL);
 		}
 	}
+}
+
+
+void sw_defer(uint8_t on) __banked
+{
+	sw_deferred = on;
+	if (!on && sw_dirty)
+		sw_apply();
 }
 
 

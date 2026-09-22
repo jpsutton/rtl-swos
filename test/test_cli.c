@@ -20,8 +20,12 @@
 #include "uip.h"
 #include "syslog.h"
 #include "hw_mock.h"
+#include "runcfg.h"
+#include "telnetd.h"
+#include "dhcp.h"
+#include "rtl837x_regs.h"
 extern char last_fallback[];
-extern int n_fallback, n_save, n_reset, n_showver, n_setspeed;
+extern int n_fallback, n_reset, n_showver, n_setspeed;
 extern uint8_t last_speed, last_port;
 extern char port_names[9][PORT_NAME_SIZE];
 void env_cli_reset(void);
@@ -42,9 +46,14 @@ extern uint16_t vlan_ptr;
 extern uint8_t vlan_names[];
 extern int n_igmp_on, n_igmp_off, n_hostdef, n_dhcp_start, n_syslog_start, n_syslog_stop;
 
+void fake_flash_reset(void);
+
 static void reset_all(void)
 {
 	hw_reset();
+	for (int lp = 0; lp < 9; lp++)	/* MTU registers power up at 16383 */
+		hw_reg_set(RTL8373_REG_MAC_L2_PORT_MAX_LEN + (lp << 8), 0x3fff);
+	fake_flash_reset();
 	env_cli_reset();
 	vlan_setup();
 	sw_init();
@@ -75,6 +84,69 @@ static void to_if(const char *ifname)
 static int out_has(const char *needle)
 {
 	return strstr(out_buf, needle) != NULL;
+}
+
+extern uint8_t fake_cfg[];
+extern struct telnet_state_t telnet_state;
+extern char passwd[21];
+extern struct dhcp_state dhcp_state;
+
+/* The sector holds a NUL-terminated config that starts like one */
+static int saved_ok(void)
+{
+	return out_has("[OK]") && strncmp((char *)fake_cfg, "!\nhostname ", 11) == 0
+	       && memchr(fake_cfg, 0, CONFIG_LEN) != NULL;
+}
+
+/* Everything back to the power-on state, including the settings the
+ * swcfg reset does not own */
+static void wipe_all(void)
+{
+	reset_all();
+	telnet_state.enabled = 0;
+	telnet_state.idle_secs = TELNET_IDLE_DEFAULT;
+	strcpy(passwd, "1234");
+	memset(port_names, 0, 9 * PORT_NAME_SIZE);
+	memset(uip_hostaddr, 0, sizeof(uip_hostaddr));
+	memset(uip_netmask, 0, sizeof(uip_netmask));
+	memset(uip_draddr, 0, sizeof(uip_draddr));
+	syslog_state.enabled = 0;
+	syslog_state.server_port = 514;
+	dhcp_state.state = 0;
+}
+
+static char render_a[CONFIG_LEN], render_b[CONFIG_LEN];
+
+static void render_into(char *dst)
+{
+	uint16_t n = runcfg_render();
+	memcpy(dst, cfg_buf, n == 0xffff ? 0 : n + 1);
+	if (n == 0xffff)
+		dst[0] = 0;
+}
+
+/* Feed a NUL-terminated config text through the boot replay, line by
+ * line, like execute_config() does */
+static void replay_text(const char *t)
+{
+	char line[CMD_BUF_SIZE];
+	int n = 0;
+
+	cli_replay_begin();
+	for (;; t++) {
+		if (*t == '\n' || *t == 0) {
+			line[n] = 0;
+			if (n)
+				cli_replay_line(line);
+			n = 0;
+			if (!*t)
+				break;
+			continue;
+		}
+		if (n < CMD_BUF_SIZE - 1)
+			line[n++] = *t;
+	}
+	cli_replay_end();
 }
 
 static void test_modes(void)
@@ -165,8 +237,9 @@ static void test_exec_anywhere(void)
 	run("show version");
 	CHECK(n_showver == 1, "show version works in config mode");
 	CHECK(cli.mode == CLI_MODE_CONFIG, "mode unchanged");
+	fake_flash_reset();
 	run("write memory");
-	CHECK(n_save == 1, "write memory works in config mode");
+	CHECK(saved_ok(), "write memory works in config mode");
 }
 
 static void test_write_and_copy(void)
@@ -174,10 +247,12 @@ static void test_write_and_copy(void)
 	printf("[test] write memory / copy running-config startup-config\n");
 	reset_all();
 	run("enable");
+	fake_flash_reset();
 	run("write");
-	CHECK(n_save == 1, "bare 'write' saves");
+	CHECK(saved_ok(), "bare 'write' saves");
+	fake_flash_reset();
 	run("copy running-config startup-config");
-	CHECK(n_save == 2, "copy run start saves");
+	CHECK(saved_ok(), "copy run start saves");
 	run("copy tftp flash 10.0.0.1 fw.bin");
 	CHECK(n_fallback == 1 &&
 	      strcmp(last_fallback, "copy tftp flash 10.0.0.1 fw.bin") == 0,
@@ -524,6 +599,175 @@ static void test_block_replay(void)
 	      "'ex' completes although exit is in several roots");
 }
 
+static void test_runcfg_defaults(void)
+{
+	printf("[test] running-config of a factory-default switch\n");
+	wipe_all();
+	uip_ipaddr(&uip_hostaddr, 192, 168, 10, 247);
+	uip_ipaddr(&uip_netmask, 255, 255, 255, 0);
+	render_into(render_a);
+	CHECK(strncmp(render_a, "!\nhostname sw\n!\ninterface ethernet 1/1\n!\n", 41) == 0,
+	      "hostname then bare interfaces");
+	CHECK(!strstr(render_a, "\nvlan 1\n"), "unnamed default vlan not listed");
+	CHECK(strstr(render_a, "interface vlan 1\n ip address 192.168.10.247 255.255.255.0\n"),
+	      "management interface always listed");
+	CHECK(!strstr(render_a, "feature telnet") && !strstr(render_a, "line vty"),
+	      "defaults for telnet and the vty are not listed");
+	CHECK(!strstr(render_a, " mtu ") && !strstr(render_a, " speed "), "no per-port defaults");
+	CHECK(strstr(render_a, "interface ethernet 1/9\n!\n") != NULL, "all 9 ports listed");
+	CHECK(strcmp(render_a + strlen(render_a) - 5, "!\nend") == 0 ||
+	      strcmp(render_a + strlen(render_a) - 6, "!\nend\n") == 0, "ends with end");
+}
+
+static void test_runcfg_roundtrip(void)
+{
+	printf("[test] running-config round trip through the boot replay\n");
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	static const char *cfg[] = {
+		"hostname lab-sw",
+		"vlan 10", " name home", "vlan 20", " name work", "vlan 40",
+		"interface ethernet 1/1", " description to-desk", " switchport access vlan 20",
+		"interface ethernet 1/2", " switchport mode trunk",
+		" switchport trunk allowed vlan 10,20,40",
+		"interface ethernet 1/3", " speed 1000", " shutdown", " mtu 9000",
+		"interface ethernet 1/9", " switchport mode trunk",
+		" switchport trunk native vlan 40", " switchport trunk allowed vlan 1-20,40",
+		"interface vlan 10", " ip address 192.168.10.247 255.255.254.0",
+		"ip default-gateway 192.168.10.1",
+		"ip igmp snooping",
+		"logging host 10.0.0.9 port 1514",
+		"feature telnet",
+		"line vty 0 4", " exec-timeout 30 0", " password s3cret",
+		0
+	};
+	for (int i = 0; cfg[i]; i++) {
+		run(cfg[i]);
+		if (out_has("%"))
+			printf("    line '%s' -> %s", cfg[i], out_buf);
+	}
+	render_into(render_a);
+	uint32_t v1 = hw_vlan_word(1), v10 = hw_vlan_word(10), v20 = hw_vlan_word(20), v40 = hw_vlan_word(40);
+	uint16_t pv0 = port_pvid_get(0), pv8 = port_pvid_get(8);
+
+	CHECK(strstr(render_a, "vlan 10\n name home\nvlan 20\n name work\nvlan 40\n!\n") != NULL,
+	      "vlans in ascending order with names");
+	CHECK(strstr(render_a, "interface ethernet 1/3\n shutdown\n speed 1000\n mtu 9000\n!\n") != NULL,
+	      "per-port physical settings");
+	CHECK(strstr(render_a, " switchport trunk native vlan 40\n switchport trunk allowed vlan 1-20,40\n"),
+	      "trunk native + allowed ranges");
+	CHECK(strstr(render_a, "interface vlan 10\n ip address 192.168.10.247 255.255.254.0\n"),
+	      "svi");
+	CHECK(strstr(render_a, "line vty\n exec-timeout 30 0\n password s3cret\n"), "vty block");
+	CHECK(strstr(render_a, "logging host 10.0.0.9 port 1514\n") && strstr(render_a, "feature telnet\n"),
+	      "services");
+
+	wipe_all();
+	CHECK(hw_vlan_word(10) == 0 && !telnet_state.enabled, "state really wiped");
+	replay_text(render_a);
+	CHECK(cli.mode == CLI_MODE_EXEC, "replay ends in user EXEC");
+	render_into(render_b);
+	CHECK(strcmp(render_a, render_b) == 0, "re-rendered config is byte-identical");
+	if (strcmp(render_a, render_b))
+		printf("--- before ---\n%s--- after ---\n%s", render_a, render_b);
+	CHECK(hw_vlan_word(1) == v1 && hw_vlan_word(10) == v10 && hw_vlan_word(20) == v20
+	      && hw_vlan_word(40) == v40, "VLAN table words identical after replay");
+	CHECK(port_pvid_get(0) == pv0 && port_pvid_get(8) == pv8, "PVIDs identical after replay");
+	CHECK(telnet_state.enabled && telnet_state.idle_secs == 1800 && strcmp(passwd, "s3cret") == 0,
+	      "telnet, timeout and password restored");
+}
+
+static void test_write_and_startup(void)
+{
+	printf("[test] write memory -> sector -> show startup-config\n");
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	run("hostname saved-sw");
+	run("end");
+	run("write memory");
+	CHECK(out_has("Building configuration") && out_has("[OK]"), "write memory reports");
+	render_into(render_a);
+	CHECK(strcmp((char *)fake_cfg, render_a) == 0, "sector holds the rendered config");
+	run("show startup-config");
+	CHECK(strcmp(out_buf, render_a) == 0, "show startup-config prints it back");
+	run("show running-config");
+	CHECK(strcmp(out_buf, render_a) == 0, "show running-config renders the same text");
+}
+
+static void test_replay_legacy_and_comments(void)
+{
+	printf("[test] boot replay: legacy syntax shim, comments, deferred push\n");
+	wipe_all();
+	unsigned long w0;
+	replay_text("! a comment\n"
+		    "ip 192.168.10.247\n"		/* legacy: invalid new syntax */
+		    "netmask 255.255.255.0\n"		/* legacy: unknown word */
+		    "telnet on\n"
+		    "   ! indented comment\n"
+		    "vlan 30\n"				/* new syntax still works */
+		    " name lab\n");
+	CHECK(n_fallback == 3, "the three legacy lines went to the legacy parser");
+	CHECK(strstr(last_fallback, "telnet on") != NULL, "verbatim");
+	CHECK(sw_vlan_exists(30) && vl_valid(30), "new-syntax lines in the same replay work");
+	CHECK(vlan_name(30) != 0xffff, "including a submode line");
+
+	/* sw_apply is deferred during replay: a replayed trunk config pushes once */
+	wipe_all();
+	cli_replay_begin();
+	w0 = hw_writes;
+	cli_replay_line("interface ethernet 1/2");
+	cli_replay_line(" switchport mode trunk");
+	CHECK(hw_writes == w0, "no hardware writes while deferred");
+	cli_replay_end();
+	CHECK(hw_writes > w0 && vl_tagged(1, 1) == 0 && vl_member(1, 1), "pushed at the end");
+
+	/* interactive: an invalid line is an error, not a legacy command */
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	run("ip 192.168.10.247");
+	CHECK(out_has("'^' marker") && n_fallback == 0, "interactive lines are not shimmed");
+}
+
+static void test_physical_shadows(void)
+{
+	printf("[test] speed/shutdown/mtu shadows\n");
+	wipe_all();
+	run("enable");
+	to_if("ethernet 1/4");
+	run("speed 1000");
+	CHECK(last_speed == PHY_SPEED_1G, "speed applied");
+	run("shutdown");
+	CHECK(last_speed == PHY_OFF, "shutdown");
+	run("speed 100");
+	CHECK(last_speed == PHY_OFF && sw_ports[3].speed == PHY_SPEED_100M,
+	      "speed on a shut port is stored, the port stays down");
+	run("no shutdown");
+	CHECK(last_speed == PHY_SPEED_100M, "no shutdown restores the configured speed");
+	run("no speed");
+	CHECK(last_speed == PHY_SPEED_AUTO && sw_ports[3].speed == PHY_SPEED_AUTO, "no speed -> auto");
+	run("mtu 9000");
+	run("no mtu");
+	CHECK((hw_reg_get(RTL8373_REG_MAC_L2_PORT_MAX_LEN + (3 << 8)) & 0x3fff) == 16383, "no mtu -> 16383");
+	run("end");
+	run("configure terminal");
+	run("line vty");
+	CHECK(cli.mode == CLI_MODE_LINE, "line vty mode");
+	run("exec-timeout 0 0");
+	CHECK(telnet_state.idle_secs == 0xffff, "0 0 = never");
+	render_into(render_a);
+	CHECK(strstr(render_a, " exec-timeout 0 0\n") != NULL, "renders back as 0 0");
+	run("exec-timeout 0 10");
+	CHECK(out_has("Minimum timeout") && telnet_state.idle_secs == 0xffff, "below 30s rejected");
+	run("no exec-timeout");
+	CHECK(telnet_state.idle_secs == TELNET_IDLE_DEFAULT, "no exec-timeout -> default");
+	run("password abc");
+	run("no password");
+	CHECK(strcmp(passwd, "1234") == 0, "no password -> default");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -545,6 +789,11 @@ int main(void)
 	test_global_config();
 	test_no_edge_cases();
 	test_block_replay();
+	test_runcfg_defaults();
+	test_runcfg_roundtrip();
+	test_write_and_startup();
+	test_replay_legacy_and_comments();
+	test_physical_shadows();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

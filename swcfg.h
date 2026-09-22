@@ -49,10 +49,15 @@ struct sw_port {
 	uint16_t native_vid;
 	uint8_t nranges;
 	struct sw_range allowed[SW_MAX_RANGES];
+	/* Settings the PHY cannot report back, shadowed for the running
+	 * config. The MTU is read back from its register instead. */
+	uint8_t speed;		/* PHY_SPEED_* as configured */
+	uint8_t shut;		/* administratively down */
 };
 
 extern __xdata uint16_t sw_vlans[SW_MAX_VLANS];	/* 0 = free slot */
 extern __xdata struct sw_port sw_ports[SW_NPORTS];
+extern __xdata uint8_t sw_igmp;		/* ip igmp snooping */
 
 void sw_init(void) __banked;
 uint8_t sw_vlan_exists(uint16_t vid) __banked;
@@ -62,8 +67,11 @@ uint8_t sw_vlan_del(uint16_t vid) __banked;
 uint8_t sw_vlan_name_set(uint16_t vid, __xdata const char * __xdata name) __banked;
 uint8_t sw_allowed_edit(uint8_t lport, __xdata uint8_t op, __xdata const char * __xdata list) __banked;
 uint8_t sw_port_allows(uint8_t lport, __xdata uint16_t vid) __banked;
-/* Push the whole state to the hardware */
+/* Push the whole state to the hardware. While deferred (boot-time config
+ * replay) it only records that a push is due; sw_defer(0) then pushes
+ * once. */
 void sw_apply(void) __banked;
+void sw_defer(uint8_t on) __banked;
 
 void sw_mtu_set(uint8_t lport, __xdata uint16_t mtu) __banked;
 

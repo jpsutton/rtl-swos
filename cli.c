@@ -25,6 +25,8 @@
 #include "rtl837x_igmp.h"
 #include "boot.h"
 #include "swcfg.h"
+#include "runcfg.h"
+#include "telnetd.h"
 #include "cli.h"
 
 #pragma codeseg BANK1
@@ -34,6 +36,7 @@ extern __xdata char hostname[24];
 extern __xdata struct phy_settings phy_settings;
 extern __code const struct machine machine;
 extern __xdata uint16_t management_vlan;
+extern __xdata char passwd[21];
 void reset_chip(void);
 
 __xdata struct cli_state_t cli;
@@ -88,6 +91,12 @@ static __code const struct cli_node * __code const * __xdata w_children;
 #define ACT_DEFGW	25
 #define ACT_IGMP	26
 #define ACT_LOG_HOST	27
+#define ACT_SHOW_RUN	28
+#define ACT_SHOW_START	29
+#define ACT_FEAT_TELNET	30
+#define ACT_LINE_VTY	31
+#define ACT_EXEC_TO	32
+#define ACT_VTY_PW	33
 
 /* ---------------- command tree ---------------- */
 
@@ -106,8 +115,16 @@ static __code const struct cli_node n_show_version = {
 	"version", 0, 0, 0, 0, NO_CHILDREN, ACT_SHOW_VER,
 	"System software and hardware status"
 };
+static __code const struct cli_node n_show_run = {
+	"running-config", 0, 0, 0, 0, NO_CHILDREN, ACT_SHOW_RUN,
+	"Current operating configuration"
+};
+static __code const struct cli_node n_show_start = {
+	"startup-config", 0, 0, 0, 0, NO_CHILDREN, ACT_SHOW_START,
+	"Configuration used at boot"
+};
 static __code const struct cli_node * __code const ch_show[] = {
-	&n_show_version, 0
+	&n_show_run, &n_show_start, &n_show_version, 0
 };
 
 static __code const struct cli_node n_write_memory = {
@@ -312,6 +329,43 @@ static __code const struct cli_node n_logging = {
 	"Message logging"
 };
 
+/* feature telnet (NX-OS style service toggle) */
+static __code const struct cli_node n_feat_telnet = {
+	"telnet", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_FEAT_TELNET,
+	"Telnet server"
+};
+static __code const struct cli_node * __code const ch_feature[] = {
+	&n_feat_telnet, 0
+};
+static __code const struct cli_node n_feature = {
+	"feature", 0, 0, 0, 0, ch_feature, ACT_NONE,
+	"Enable or disable a service"
+};
+
+/* line vty [first [last]] - the numbers are accepted and ignored: there
+ * is one telnet session */
+static __code const struct cli_node n_arg_vty_last = {
+	0, CLI_A_NUM, 0, 0, 15, NO_CHILDREN, ACT_LINE_VTY, "Last line number"
+};
+static __code const struct cli_node * __code const ch_vty_first[] = {
+	&n_arg_vty_last, 0
+};
+static __code const struct cli_node n_arg_vty_first = {
+	0, CLI_A_NUM, 0, 0, 15, ch_vty_first, ACT_LINE_VTY, "First line number"
+};
+static __code const struct cli_node * __code const ch_vty[] = {
+	&n_arg_vty_first, 0
+};
+static __code const struct cli_node n_line_vty = {
+	"vty", 0, 0, 0, 0, ch_vty, ACT_LINE_VTY, "Telnet session"
+};
+static __code const struct cli_node * __code const ch_line[] = {
+	&n_line_vty, 0
+};
+static __code const struct cli_node n_line = {
+	"line", 0, 0, 0, 0, ch_line, ACT_NONE, "Configure a terminal line"
+};
+
 static __code const struct cli_node n_exit_cfg = {
 	"exit", 0, 0, 0, 0, NO_CHILDREN, ACT_EXIT,
 	"Exit the current mode"
@@ -322,8 +376,8 @@ static __code const struct cli_node n_end = {
 };
 
 static __code const struct cli_node * __code const cli_root_config[] = {
-	&n_end, &n_exit_cfg, &n_hostname, &n_interface, &n_ip_cfg,
-	&n_logging, &n_vlan, 0
+	&n_end, &n_exit_cfg, &n_feature, &n_hostname, &n_interface, &n_ip_cfg,
+	&n_line, &n_logging, &n_vlan, 0
 };
 
 /* ---- interface configuration mode ---- */
@@ -358,7 +412,7 @@ static __code const struct cli_node * __code const ch_speed[] = {
 	&n_sp_5000, &n_sp_10000, 0
 };
 static __code const struct cli_node n_if_speed = {
-	"speed", 0, 0, 0, 0, ch_speed, ACT_NONE,
+	"speed", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, PHY_SPEED_AUTO, 0, ch_speed, ACT_SPEED,
 	"Set the interface speed"
 };
 static __code const struct cli_node n_arg_desc = {
@@ -381,7 +435,7 @@ static __code const struct cli_node * __code const ch_mtu[] = {
 	&n_arg_mtu, 0
 };
 static __code const struct cli_node n_if_mtu = {
-	"mtu", 0, 0, 0, 0, ch_mtu, ACT_NONE,
+	"mtu", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_mtu, ACT_MTU,
 	"Set the maximum frame length"
 };
 
@@ -558,8 +612,35 @@ static __code const struct cli_node * __code const cli_root_svi[] = {
 	&n_end, &n_exit_cfg, &n_svi_ip, 0
 };
 
-static __code const struct cli_node * __code const cli_root_sub[] = {
-	&n_end, &n_exit_cfg, 0
+/* ---- line configuration mode ---- */
+static __code const struct cli_node n_arg_to_sec = {
+	0, CLI_A_NUM, 0, 0, 59, NO_CHILDREN, ACT_EXEC_TO, "Seconds"
+};
+static __code const struct cli_node * __code const ch_to_min[] = {
+	&n_arg_to_sec, 0
+};
+static __code const struct cli_node n_arg_to_min = {
+	0, CLI_A_NUM, 0, 0, 1091, ch_to_min, ACT_EXEC_TO, "Minutes (0 0 = never)"
+};
+static __code const struct cli_node * __code const ch_exec_to[] = {
+	&n_arg_to_min, 0
+};
+static __code const struct cli_node n_ln_exec_to = {
+	"exec-timeout", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_exec_to, ACT_EXEC_TO,
+	"Idle timeout of the session"
+};
+static __code const struct cli_node n_arg_vty_pw = {
+	0, CLI_A_WORD, 0, 0, 0, NO_CHILDREN, ACT_VTY_PW, "Up to 20 characters"
+};
+static __code const struct cli_node * __code const ch_vty_pw[] = {
+	&n_arg_vty_pw, 0
+};
+static __code const struct cli_node n_ln_password = {
+	"password", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_vty_pw, ACT_VTY_PW,
+	"Login password"
+};
+static __code const struct cli_node * __code const cli_root_line[] = {
+	&n_end, &n_exit_cfg, &n_ln_exec_to, &n_ln_password, 0
 };
 
 
@@ -575,7 +656,7 @@ static __code const struct cli_node * __code const *root_for_mode(uint8_t mode)
 	case CLI_MODE_SVI:
 		return cli_root_svi;
 	case CLI_MODE_LINE:
-		return cli_root_sub;
+		return cli_root_line;
 	default:
 		return cli_root_exec;
 	}
@@ -1066,8 +1147,13 @@ static void cli_dispatch(uint8_t action)
 		print_sw_version();
 		break;
 	case ACT_WRITE:
-		print_string("Building configuration...\n");
-		cmd_save_config();
+		runcfg_save();
+		break;
+	case ACT_SHOW_RUN:
+		runcfg_show();
+		break;
+	case ACT_SHOW_START:
+		startup_show();
 		break;
 	case ACT_RELOAD:
 		print_string("\nRELOAD\n\n");
@@ -1133,15 +1219,21 @@ static void cli_dispatch(uint8_t action)
 		execute_commands((__xdata uint8_t *)cli_line);
 		break;
 	case ACT_SHUT:
+		/* no shutdown brings the port back at its configured speed */
+		sw_ports[cli.ctx_lport].shut = !cli.no;
 		phy_settings.port = cli.ctx_lport;
 		phy_settings.duplex = PHY_DUPLEX_BOTH;
-		phy_settings.speed = cli.no ? PHY_SPEED_AUTO : PHY_OFF;
+		phy_settings.speed = cli.no ? sw_ports[cli.ctx_lport].speed : PHY_OFF;
 		phy_set_speed();
 		break;
 	case ACT_SPEED:
+		/* a shut port keeps the speed for its no shutdown */
+		sw_ports[cli.ctx_lport].speed = cli.no ? PHY_SPEED_AUTO : w_node->lo;
+		if (sw_ports[cli.ctx_lport].shut)
+			break;
 		phy_settings.port = cli.ctx_lport;
 		phy_settings.duplex = PHY_DUPLEX_BOTH;
-		phy_settings.speed = w_node->lo;
+		phy_settings.speed = sw_ports[cli.ctx_lport].speed;
 		phy_set_speed();
 		break;
 	case ACT_DESC:
@@ -1161,7 +1253,7 @@ static void cli_dispatch(uint8_t action)
 		break;
 	}
 	case ACT_MTU:
-		sw_mtu_set(cli.ctx_lport, cli.args[0]);
+		sw_mtu_set(cli.ctx_lport, cli.no ? 16383 : cli.args[0]);
 		break;
 	case ACT_SW_MODE:
 		sw_ports[cli.ctx_lport].mode = cli.no ? SW_MODE_ACCESS : w_node->lo;
@@ -1237,6 +1329,7 @@ static void cli_dispatch(uint8_t action)
 		sw_gateway_set(cli.no ? 0 : cli.args[0]);
 		break;
 	case ACT_IGMP:
+		sw_igmp = !cli.no;
 		if (cli.no)
 			igmp_setup();
 		else
@@ -1248,6 +1341,44 @@ static void cli_dispatch(uint8_t action)
 		else
 			sw_logging_host(cli.args[0], cli.nargs >= 2 ? cli.args[1] : 0);
 		break;
+	case ACT_FEAT_TELNET:
+		if (cli.no)
+			telnet_stop();
+		else
+			telnet_start();
+		break;
+	case ACT_LINE_VTY:
+		cli.ctx_line = 1;
+		cli.mode = CLI_MODE_LINE;
+		break;
+	case ACT_EXEC_TO:
+		if (cli.no) {
+			d_v = TELNET_IDLE_DEFAULT;
+		} else {
+			d_v = cli.args[0] * 60 + (cli.nargs >= 2 ? cli.args[1] : 0);
+			if (!d_v)
+				d_v = 0xffff;	/* 0 0: effectively never */
+			else if (d_v < 30) {
+				print_string("% Minimum timeout is 30 seconds\n");
+				break;
+			}
+		}
+		telnet_set_timeout(d_v);
+		break;
+	case ACT_VTY_PW:
+	{
+		static __xdata char * __xdata ps;
+		static __xdata uint8_t pn;
+		if (cli.no) {
+			strtox((__xdata uint8_t *)passwd, DEFAULT_PASSWORD);
+			break;
+		}
+		ps = cli_line + cli.argoff[0];
+		for (pn = 0; pn < sizeof(passwd) - 1 && ps[pn] && ps[pn] != ' '; pn++)
+			passwd[pn] = ps[pn];
+		passwd[pn] = 0;
+		break;
+	}
 	}
 }
 
@@ -1335,6 +1466,8 @@ static uint8_t cli_walk_roots(uint8_t upto)
 }
 
 
+static __xdata uint8_t cli_replaying;
+
 void cli_exec_line(__xdata char *line) __banked
 {
 	cli_tokenize(line);
@@ -1342,6 +1475,8 @@ void cli_exec_line(__xdata char *line) __banked
 
 	if (!ntok)
 		return;
+	if (line[tok_off[0]] == '!')
+		return;		/* comment, as in a pasted or saved config */
 
 	cli_strip_no();
 	if (cli.no && !ntok) {
@@ -1351,6 +1486,11 @@ void cli_exec_line(__xdata char *line) __banked
 
 	if (!cli_walk_roots(ntok)) {
 		/* Nothing in the tree claims this line: legacy parser */
+		execute_commands((__xdata uint8_t *)line);
+		return;
+	}
+	if (cli_replaying && !walk_ok()) {
+		/* Boot replay of a config written in the old flat syntax */
 		execute_commands((__xdata uint8_t *)line);
 		return;
 	}
@@ -1381,6 +1521,28 @@ void cli_exec_line(__xdata char *line) __banked
 	if (w_level == WL_PARENT)
 		cli.mode = CLI_MODE_CONFIG;
 	cli_dispatch(w_node->action);
+}
+
+
+void cli_replay_begin(void) __banked
+{
+	cli.mode = CLI_MODE_CONFIG;
+	cli_replaying = 1;
+	sw_defer(1);
+}
+
+
+void cli_replay_line(__xdata char *line) __banked
+{
+	cli_exec_line(line);
+}
+
+
+void cli_replay_end(void) __banked
+{
+	cli_replaying = 0;
+	cli.mode = CLI_MODE_EXEC;
+	sw_defer(0);
 }
 
 

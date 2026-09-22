@@ -8,9 +8,6 @@
 extern __xdata uint8_t cmd_buffer[CMD_BUF_SIZE];
 extern __xdata uint8_t cmd_available;
 extern __xdata uint8_t err_status;
-/* Scratch buffer holding one full startup-config sector; shared between
- * the `save` command and the TFTP config transfer. */
-extern __xdata uint8_t cfg_buf[CONFIG_LEN];
 
 void cmd_tokenize(void) __banked;
 void cmd_parser(void) __banked;
@@ -20,6 +17,6 @@ void print_ip(__xdata uint8_t *ptr) __banked;
 void print_mac(__xdata uint8_t *ptr) __banked;
 void print_sw_version(void) __banked;
 void clear_command_history(void) __banked;
-void cmd_save_config(void) __banked;
+void cmd_history_add(__xdata const char * __xdata line) __banked;
 
 #endif

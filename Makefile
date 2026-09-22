@@ -64,6 +64,7 @@ SRCS = \
 	boot.c \
 	sfp.c \
 	swcfg.c \
+	runcfg.c \
 	tcp_app.c \
 	telnetd.c \
 	tftp.c \

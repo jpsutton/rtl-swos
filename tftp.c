@@ -23,6 +23,7 @@
 #include "cmd_parser.h"
 #include "uip/uip.h"
 #include "tftp.h"
+#include "runcfg.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3

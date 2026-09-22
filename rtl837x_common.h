@@ -84,6 +84,8 @@ struct vlan_tag {
 #define DEFAULT_CONFIG_START 0x6f000
 #define CONFIG_START 0x70000
 #define CONFIG_LEN 0x1000
+// Factory admin (telnet login) password
+#define DEFAULT_PASSWORD "1234"
 #define CODE0_SIZE 0x4000
 #define CODE_BANK_SIZE 0xc000
 

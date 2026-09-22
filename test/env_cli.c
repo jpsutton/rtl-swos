@@ -12,6 +12,8 @@
 #include "uip.h"
 #include "dhcp.h"
 #include "syslog.h"
+#include "telnetd.h"
+#include "rtl837x_flash.h"
 #include "support.h"
 
 char hostname[24] = "sw";
@@ -79,10 +81,6 @@ void print_sw_version(void)
 	n_showver++;
 }
 
-void cmd_save_config(void)
-{
-	n_save++;
-}
 
 void reset_chip(void)
 {
@@ -113,3 +111,46 @@ void dhcp_stop(void) { n_dhcp_stop++; dhcp_state.state = 0; }
 /* syslog_state itself lives in env_tables.c */
 void syslog_start(void) { n_syslog_start++; syslog_state.enabled = 1; }
 void syslog_stop(void) { n_syslog_stop++; syslog_state.enabled = 0; }
+
+/* ---- telnet server (telnetd.c is not linked) ---- */
+struct telnet_state_t telnet_state = { .idle_secs = TELNET_IDLE_DEFAULT };
+char passwd[21] = "1234";
+void telnet_start(void) { telnet_state.enabled = 1; }
+void telnet_stop(void) { telnet_state.enabled = 0; }
+void telnet_set_timeout(uint16_t secs) { telnet_state.idle_secs = secs; }
+uint8_t tftp_busy(void) { return 0; }
+
+/* ---- the startup-config sector as a fake flash; everything else reads 0xff ---- */
+uint8_t fake_cfg[CONFIG_LEN];
+uint8_t flash_buf[FLASH_BUF_SIZE];
+extern struct flash_region_t flash_region;
+
+void fake_flash_reset(void)
+{
+	for (int i = 0; i < CONFIG_LEN; i++)
+		fake_cfg[i] = 0xff;
+}
+
+void flash_sector_erase(void)
+{
+	if (flash_region.addr == CONFIG_START)
+		fake_flash_reset();
+}
+
+void flash_write_bytes(uint8_t *p)
+{
+	for (uint32_t i = 0; i < flash_region.len; i++) {
+		uint32_t a = flash_region.addr + i;
+		if (a >= CONFIG_START && a < CONFIG_START + CONFIG_LEN)
+			fake_cfg[a - CONFIG_START] &= p[i];	/* NOR: program clears bits */
+	}
+}
+
+void flash_read_bulk(uint8_t *dst)
+{
+	for (uint32_t i = 0; i < flash_region.len; i++) {
+		uint32_t a = flash_region.addr + i;
+		dst[i] = (a >= CONFIG_START && a < CONFIG_START + CONFIG_LEN)
+			 ? fake_cfg[a - CONFIG_START] : 0xff;
+	}
+}

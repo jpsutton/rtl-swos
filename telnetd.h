@@ -5,9 +5,11 @@
 #include "uip.h"
 
 /* Room for one command's captured output plus echo; a response larger
- * than this is truncated with a marker. */
-#define TELNET_OUTBUF 2048
+ * than this is truncated with a marker. Sized above the 4KB config
+ * sector so a full show running-config fits. */
+#define TELNET_OUTBUF 6144
 #define TELNET_PORT 23
+#define TELNET_IDLE_DEFAULT 600	/* seconds */
 
 struct telnet_state_t {
 	uint8_t enabled;		/* telnet on/off */

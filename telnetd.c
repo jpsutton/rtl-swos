@@ -40,7 +40,7 @@ static __xdata uip_ipaddr_t tn_bindaddr;
 
 /* Login window: password plus a TOTP code from a phone takes a while */
 #define TN_LOGIN_TICKS  (120UL * SYS_TICK_HZ)
-#define TN_IDLE_SECS_DEFAULT 600
+#define TN_IDLE_SECS_DEFAULT TELNET_IDLE_DEFAULT
 
 /* `ticks` is 4 bytes and incremented in the timer ISR: an unguarded read
  * can tear mid-increment and yield a garbage delta, which made the idle

@@ -1268,6 +1268,7 @@ void idle(void)
 	// Check whether a command is waiting in the cmd_buffer and execute
 	if (cmd_available) {
 		cmd_available = 0;
+		cmd_history_add((__xdata char *)cmd_buffer);
 		cli_exec_line((__xdata char *)cmd_buffer);
 		print_cmd_prompt();
 	}

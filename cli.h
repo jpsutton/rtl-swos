@@ -89,4 +89,12 @@ uint8_t cli_complete(__xdata char *line, uint8_t maxlen) __banked;
 /* True while the CLI expects a password on the next line (no echo). */
 uint8_t cli_hidden_input(void) __banked;
 
+/* Boot-time startup-config replay: lines run in global config mode; a
+ * line the modal parser cannot run goes to the legacy parser instead,
+ * so a config written in the old flat syntax still boots. VLAN pushes
+ * are deferred to the end. */
+void cli_replay_begin(void) __banked;
+void cli_replay_line(__xdata char *line) __banked;
+void cli_replay_end(void) __banked;
+
 #endif
