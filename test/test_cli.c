@@ -797,6 +797,7 @@ extern uint8_t bw_in_drop[10];
 extern int n_stp_enable, n_stp_disable, n_stp_prio;
 extern bool stp_enabled;
 extern uint16_t igmp_mrouter;
+extern int n_stp_sync;
 
 static void test_port_features(void)
 {
@@ -1226,7 +1227,8 @@ static void test_l2_extensions(void)
 
 	to_if("ethernet 1/2");
 	run("spanning-tree disable");
-	CHECK(!(stp_pflags[1] & STP_PF_ENABLED), "spanning-tree disable takes the port out");
+	CHECK(STP_PF_OUT(stp_pflags[1]) && (stp_pflags[1] & STP_PF_FILTER),
+	      "spanning-tree disable is bpdufilter enable");
 	run("ip igmp snooping mrouter");
 	CHECK(igmp_mrouter == (1 << 1), "mrouter adds the port to the router mask");
 	to_if("ethernet 1/4-5");
@@ -1236,20 +1238,39 @@ static void test_l2_extensions(void)
 	CHECK(sw_igmp && cli.mode == CLI_MODE_CONFIG, "global ip igmp snooping still runs from a submode");
 
 	render_into(cfg);
-	CHECK(strstr(cfg, "interface ethernet 1/2\n ip igmp snooping mrouter\n spanning-tree disable\n"),
-	      "running config shows mrouter and spanning-tree disable");
+	CHECK(strstr(cfg, "interface ethernet 1/2\n ip igmp snooping mrouter\n spanning-tree bpdufilter enable\n"),
+	      "running config shows mrouter and the canonical bpdufilter form");
 	CHECK(strstr(cfg, "switchport trunk native vlan 40\n switchport trunk allowed vlan 20,30\n"),
 	      "a tagged-only trunk renders as its native and allowed list");
+
+	to_if("ethernet 1/3");			/* logical 2 */
+	n_stp_sync = 0;
+	run("spanning-tree portfast");
+	CHECK(!STP_PF_OUT(stp_pflags[2]) && n_stp_sync == 0, "portfast keeps the port in STP");
+	run("spanning-tree bpdufilter enable");
+	CHECK(STP_PF_OUT(stp_pflags[2]) && n_stp_sync == 1, "bpdufilter alone takes the port out");
+	CHECK(out_has("% Warning: portfast has no effect"), "filtering a portfast port warns");
+	run("spanning-tree portfast");
+	CHECK(out_has("% Warning: portfast has no effect"), "and so does portfast on a filtered port");
+	run("no spanning-tree portfast");
+	CHECK(STP_PF_OUT(stp_pflags[2]) && n_stp_sync == 1 && !out_has("Warning"),
+	      "portfast makes no difference to that; its no form does not warn");
+	run("no spanning-tree disable");
+	CHECK(!STP_PF_OUT(stp_pflags[2]) && n_stp_sync == 2, "no spanning-tree disable clears the filter");
 
 	to_if("ethernet 1/2");
 	run("no spanning-tree disable");
 	run("no ip igmp snooping mrouter");
-	CHECK((stp_pflags[1] & STP_PF_ENABLED) && igmp_mrouter == ((1 << 3) | (1 << 4)),
+	CHECK(!STP_PF_OUT(stp_pflags[1]) && igmp_mrouter == ((1 << 3) | (1 << 4)),
 	      "no forms restore both");
 
 	wipe_all();
+	out_reset();
+	replay_text("interface ethernet 1/6\n spanning-tree portfast\n spanning-tree bpdufilter enable\n");
+	CHECK(!out_has("Warning"), "the warning stays quiet during the boot replay");
+	wipe_all();
 	replay_text(cfg);
-	CHECK(!(stp_pflags[1] & STP_PF_ENABLED) && igmp_mrouter == ((1 << 1) | (1 << 3) | (1 << 4))
+	CHECK(STP_PF_OUT(stp_pflags[1]) && igmp_mrouter == ((1 << 1) | (1 << 3) | (1 << 4))
 	      && port_ingress_filter_get(8) == VLAN_TAGGED, "all three replay from a saved config");
 }
 

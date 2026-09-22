@@ -41,7 +41,7 @@ void reset_chip(void);
 
 __xdata struct cli_state_t cli;
 
-static __xdata uint8_t cli_replaying;
+__xdata uint8_t cli_replaying;
 /* When help lists the EXEC root behind a config-mode root, skip words
  * the mode root already listed (exit/end live in both). */
 static __code const struct cli_node * __code const * __xdata dedupe_root;
@@ -1028,7 +1028,7 @@ static __code const struct cli_node n_stpi_bguard = {
 	"BPDU guard"
 };
 static __code const struct cli_node n_stpi_bf_en = {
-	"enable", 0, 0, STPI_BPDUFILT, 0, NO_CHILDREN, ACT_STP_IF, "Neither send nor accept BPDUs"
+	"enable", 0, 0, STPI_BPDUFILT, 0, NO_CHILDREN, ACT_STP_IF, "Leave spanning tree: no BPDUs, always forward"
 };
 static __code const struct cli_node * __code const ch_stpi_bf[] = {
 	&n_stpi_bf_en, 0
@@ -1080,10 +1080,11 @@ static __code const struct cli_node n_stpi_lt = {
 	"link-type", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPI_P2P, 0, ch_stpi_lt, ACT_STP_IF,
 	"Link type (default: auto)"
 };
-/* not an IOS/NX-OS command: they can only take a whole VLAN out of STP */
+/* alias of bpdufilter enable, easier to find with `?`; not an IOS/NX-OS
+ * command */
 static __code const struct cli_node n_stpi_disable = {
 	"disable", 0, CLI_F_NO_OK, STPI_DISABLE, 0, NO_CHILDREN, ACT_STP_IF,
-	"Leave spanning tree and always forward"
+	"Leave spanning tree (same as bpdufilter enable)"
 };
 static __code const struct cli_node * __code const ch_stp_if[] = {
 	&n_stpi_bfilter, &n_stpi_bguard, &n_stpi_cost, &n_stpi_disable, &n_stpi_guard,

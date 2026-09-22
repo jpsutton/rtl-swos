@@ -117,5 +117,7 @@ uint8_t cli_hidden_input(void) __banked;
 void cli_replay_begin(void) __banked;
 void cli_replay_line(__xdata char *line) __banked;
 void cli_replay_end(void) __banked;
+/* set while the startup config replays: handlers skip advisory warnings */
+extern __xdata uint8_t cli_replaying;
 
 #endif

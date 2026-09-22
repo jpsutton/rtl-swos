@@ -58,7 +58,7 @@ and passes through its acceptable-frame-type filter. BPDUs are untagged, so a
 port set to admit tagged frames only never delivers one to the CPU.
 `stp_setup()` prints a warning for every STP-enabled port in that state. A
 trunk whose native VLAN is not in its allowed list is such a port; give it
-`spanning-tree disable`, or allow its native VLAN.
+`spanning-tree bpdufilter enable`, or allow its native VLAN.
 
 ## Link aggregation
 
@@ -150,16 +150,10 @@ spanning-tree cost <1-200000000>       # path cost; no form = automatic (by spee
 spanning-tree port-priority <0-240>    # port priority, steps of 16, default 128
 spanning-tree bpduguard enable
 spanning-tree guard root
-spanning-tree bpdufilter enable        # neither send nor accept BPDUs
+spanning-tree bpdufilter enable        # leave STP: no BPDUs, always forward
+spanning-tree disable                  # the same, easier to find with `?`
 spanning-tree link-type point-to-point|shared   # no form = automatic
-spanning-tree disable                  # leave STP, always forward
 ```
-
-**disable** — the port does not take part in spanning tree: it forwards
-unconditionally, sends no BPDUs and ignores received ones; `show
-spanning-tree` lists its role as `off`. `no spanning-tree disable` puts it
-back, starting in the listening period. This is the old `stp port <n> off`;
-the established CLIs have no per-port equivalent (they disable STP per VLAN).
 
 **portfast** — an edge port forwards immediately and does not trigger a
 topology change when its link comes and goes; by default a port is promoted to
@@ -171,9 +165,17 @@ arrives on it (a host port should never see one); root guard keeps a port from
 ever becoming the path to the root, which protects an existing topology from a
 newly attached bridge that claims a better priority.
 
-**bpdufilter** — the port neither sends nor accepts BPDUs. Useful when the device
-on the far side reacts badly to them (some unmanaged switches with loop
-prevention cut the link) but you still want STP on the rest of the ports.
+**bpdufilter** (alias **disable**) — the port does not take part in spanning
+tree: it forwards unconditionally, sends no BPDUs and ignores received ones,
+BPDU guard included; `show spanning-tree` lists its role as `off`. This is
+what IOS documents interface-level BPDU filtering to be, and what the old
+`stp port <n> off` did. Useful when the device on the far side reacts badly to
+BPDUs (some unmanaged switches with loop prevention cut the link) but you
+still want STP on the rest of the ports. The running configuration shows
+`spanning-tree bpdufilter enable` whichever spelling was used; `no spanning-tree
+bpdufilter` or `no spanning-tree disable` puts the port back, starting in the
+listening period. Portfast makes no difference on such a port, and setting
+one on top of the other prints a warning.
 
 ## Status
 

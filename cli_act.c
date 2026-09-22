@@ -112,6 +112,19 @@ static uint8_t up_to_lp(__xdata uint16_t up)
 }
 
 
+/* Portfast is a no-op on a port that bpdufilter took out of spanning
+ * tree; say so when either is configured on top of the other. */
+static void pf_warn(uint8_t flags)
+{
+	if (cli.no || cli_replaying)
+		return;
+	if (cli.lo != STPI_PORTFAST && cli.lo != STPI_BPDUFILT && cli.lo != STPI_DISABLE)
+		return;
+	if ((flags & (STP_PF_ADMEDGE | STP_PF_FILTER)) == (STP_PF_ADMEDGE | STP_PF_FILTER))
+		print_string("% Warning: portfast has no effect, bpdufilter takes the port out of spanning tree\n");
+}
+
+
 static void bad_value(void)
 {
 	print_string("% Value out of range\n");
@@ -693,38 +706,43 @@ void cli_act(uint8_t action) __banked
 	{
 		static __xdata uint8_t e;
 		static __xdata uint32_t iv;
+		static __xdata uint8_t was_out, op, f;
 		e = stp_ctx_entity();
 		if (e == 0xff)
 			break;
 		iv = cli.args[0];
-		switch (cli.lo) {
+		f = stp_pflags[e];	/* edited in xdata: a pointer into stp_pflags spills */
+		was_out = STP_PF_OUT(f) ? 1 : 0;
+		op = cli.lo;	/* a uint16_t switch here spills into internal RAM */
+		switch (op) {
 		case STPI_PORTFAST:
-			stp_pflags[e] &= ~(STP_PF_ADMEDGE | STP_PF_AUTOEDGE | STP_PF_OPEREDGE);
+			f &= ~(STP_PF_ADMEDGE | STP_PF_AUTOEDGE | STP_PF_OPEREDGE);
 			if (cli.no)
-				stp_pflags[e] |= STP_PF_AUTOEDGE;	/* the default */
+				f |= STP_PF_AUTOEDGE;	/* the default */
 			else
-				stp_pflags[e] |= STP_PF_ADMEDGE | STP_PF_OPEREDGE;
+				f |= STP_PF_ADMEDGE | STP_PF_OPEREDGE;
 			break;
 		case STPI_PF_DIS:
-			stp_pflags[e] &= ~(STP_PF_ADMEDGE | STP_PF_AUTOEDGE | STP_PF_OPEREDGE);
+			f &= ~(STP_PF_ADMEDGE | STP_PF_AUTOEDGE | STP_PF_OPEREDGE);
 			break;
 		case STPI_BPDUGUARD:
 			if (cli.no)
-				stp_pflags[e] &= ~STP_PF_BPDUGUARD;
+				f &= ~STP_PF_BPDUGUARD;
 			else
-				stp_pflags[e] |= STP_PF_BPDUGUARD;
+				f |= STP_PF_BPDUGUARD;
 			break;
 		case STPI_BPDUFILT:
+		case STPI_DISABLE:	/* alias */
 			if (cli.no)
-				stp_pflags[e] &= ~STP_PF_FILTER;
+				f &= ~STP_PF_FILTER;
 			else
-				stp_pflags[e] |= STP_PF_FILTER;
+				f |= STP_PF_FILTER;
 			break;
 		case STPI_ROOTGUARD:
 			if (cli.no)
-				stp_pflags[e] &= ~STP_PF_ROOTGUARD;
+				f &= ~STP_PF_ROOTGUARD;
 			else
-				stp_pflags[e] |= STP_PF_ROOTGUARD;
+				f |= STP_PF_ROOTGUARD;
 			break;
 		case STPI_COST:
 			if (cli.no)
@@ -750,10 +768,10 @@ void cli_act(uint8_t action) __banked
 		case STPI_SHARED:
 			stp_pp2p[e] = 2;
 			break;
-		case STPI_DISABLE:
-			stp_cfg_port(e, cli.no);
-			break;
 		}
+		stp_pflags[e] = f;
+		stp_cfg_sync(e, was_out);
+		pf_warn(f);
 		break;
 	}
 	}

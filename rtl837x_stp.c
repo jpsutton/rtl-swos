@@ -256,7 +256,7 @@ void stp_status(void) __banked
 		}
 		print_field(stp_state_txt, (sfr_data[3 - (stp_st_of >> 2)] >> ((stp_st_of << 1) & 0x7)) & 0x3, 5);
 		write_char(' ');
-		print_field(stp_role_txt, !(stp_pflags[stp_i] & STP_PF_ENABLED) ? 2 : stp_i == stp_root_port ? 1 : 0, 4);
+		print_field(stp_role_txt, STP_PF_OUT(stp_pflags[stp_i]) ? 2 : stp_i == stp_root_port ? 1 : 0, 4);
 		write_char(' ');
 		print_field(stp_edge_txt, stp_pflags[stp_i] & STP_PF_OPEREDGE ? 1 : 0, 4);
 		write_char(' ');
@@ -368,7 +368,7 @@ static void stp_state_set(uint8_t port, uint8_t state) __reentrant
 
 static void stp_ent_apply(uint8_t e) __reentrant
 {
-	if (!(stp_pflags[e] & STP_PF_ENABLED)) {
+	if (STP_PF_OUT(stp_pflags[e])) {
 		stp_state_set(e, STP_ST_FORWARDING);
 		return;
 	}
@@ -414,7 +414,7 @@ static void stp_loop_hold_peer(uint8_t port) __reentrant
 {
 	if (port >= STP_ENTITIES || !stp_ent_active(port))
 		return;
-	if (!(stp_pflags[port] & STP_PF_ENABLED))
+	if (STP_PF_OUT(stp_pflags[port]))
 		return;
 	if (stp_pflags[port] & STP_PF_TRIPPED)
 		return;
@@ -446,7 +446,7 @@ void stp_cnf_send(uint8_t port) __reentrant
 {
 	/* A one-shot flag (TCA) belongs to the BPDU we were asked to send: drop
 	 * it with the frame, or it would surface on an unrelated port later. */
-	if (!(stp_pflags[port] & STP_PF_ENABLED) || (stp_pflags[port] & (STP_PF_FILTER | STP_PF_TRIPPED))) {
+	if (stp_pflags[port] & (STP_PF_FILTER | STP_PF_TRIPPED)) {
 		stp_tx_flags_extra = 0;
 		return;
 	}
@@ -565,7 +565,7 @@ void stp_in(void) __banked
 	              || STP_I->bpdu_type == BPDU_TYPE_TCN))))
 		return;
 
-	if (!(stp_pflags[port] & STP_PF_ENABLED) || (stp_pflags[port] & STP_PF_FILTER))
+	if (STP_PF_OUT(stp_pflags[port]))
 		return;
 
 	/* BPDU guard: an edge-facing port must never see a BPDU - shut it down. */
@@ -645,7 +645,7 @@ void stp_in(void) __banked
 			stp_tc_count++;
 			for (i = machine.min_port; i <= machine.max_port; i++)
 				if (!stp_ent_has(port, i)
-				    && (stp_pflags[stp_ent_of[i]] & STP_PF_ENABLED)
+				    && !STP_PF_OUT(stp_pflags[stp_ent_of[i]])
 				    && !(stp_pflags[stp_ent_of[i]] & STP_PF_OPEREDGE))
 					port_l2_forget_port(i);
 		}
@@ -743,7 +743,7 @@ void stp_timers(void) __banked
 					continue;
 				if (stp_i < STP_PORTS && stp_ent_of[stp_i] != stp_i)
 					continue;
-				if (!(stp_pflags[stp_i] & STP_PF_ENABLED))
+				if (STP_PF_OUT(stp_pflags[stp_i]))
 					continue;
 				if (!((stp_link_now ^ stp_link_prev) >> stp_i & 1))
 					continue;
@@ -768,7 +768,7 @@ void stp_timers(void) __banked
 	}
 
 	for (stp_i = 0; stp_i < STP_ENTITIES; stp_i++) {
-		if (!stp_ent_active(stp_i) || !(stp_pflags[stp_i] & STP_PF_ENABLED))
+		if (!stp_ent_active(stp_i) || STP_PF_OUT(stp_pflags[stp_i]))
 			continue;
 
 		if (stp_bpdu_age[stp_i] < 0xffff)
@@ -901,7 +901,7 @@ void stp_setup(void) __banked
 			continue;
 		if (stp_i < STP_PORTS && stp_ent_of[stp_i] != stp_i)
 			continue;
-		if (!(stp_pflags[stp_i] & STP_PF_ENABLED)
+		if (STP_PF_OUT(stp_pflags[stp_i])
 		    || (stp_pflags[stp_i] & STP_PF_ADMEDGE)) {
 			/* not participating, or admin edge: forwarding immediately */
 			if (stp_pflags[stp_i] & STP_PF_ADMEDGE)
@@ -923,7 +923,7 @@ void stp_setup(void) __banked
 #endif
 
 	for (stp_i = machine.min_port; stp_i <= machine.max_port; stp_i++) {
-		if (!(stp_pflags[stp_i] & STP_PF_ENABLED))
+		if (STP_PF_OUT(stp_pflags[stp_i]))
 			continue;
 		if (port_ingress_filter_get(stp_i) != VLAN_TAGGED)
 			continue;
@@ -991,25 +991,23 @@ void stp_cfg_enable(uint8_t on) __banked
 }
 
 
-/* Take an entity (port or lag) out of spanning tree, where it forwards
- * unconditionally, or put it back, where it listens first. */
-void stp_cfg_port(uint8_t ent, __xdata uint8_t on) __banked
+/* Move an entity out of spanning tree, where it forwards unconditionally,
+ * or back in, where it listens first (or forwards at once as an admin
+ * edge), when a per-port setting changed whether it takes part. */
+void stp_cfg_sync(uint8_t ent, __xdata uint8_t was_out) __banked
 {
-	static __xdata uint8_t e;
+	static __xdata uint8_t e, out;
 
 	e = ent;
-	if (on) {
-		stp_pflags[e] |= STP_PF_ENABLED;
+	out = STP_PF_OUT(stp_pflags[e]) ? 1 : 0;
+	if (out == was_out)
+		return;
+	if (!out) {
 		stp_pflags[e] &= ~STP_PF_TRIPPED;
-		if (stp_enabled) {
-			stp_state_set(e, STP_ST_BLOCKING);
-			port_timers[e] = (uint16_t)stp_fwddelay_s * STP_HZ;
-		}
-	} else {
-		stp_pflags[e] &= ~STP_PF_ENABLED;
-		if (stp_enabled)
-			stp_state_set(e, STP_ST_FORWARDING);
+		port_timers[e] = (uint16_t)stp_fwddelay_s * STP_HZ;
 	}
+	if (stp_enabled)
+		stp_ent_apply(e);
 }
 
 

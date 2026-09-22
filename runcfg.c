@@ -227,8 +227,6 @@ static void rc_stp_ent(__xdata uint8_t e)
 	static __xdata uint8_t f;
 
 	f = stp_pflags[e];
-	if (!(f & STP_PF_ENABLED))
-		rc_s(" spanning-tree disable\n");
 	if (f & STP_PF_ADMEDGE)
 		rc_s(" spanning-tree portfast\n");
 	else if (!(f & STP_PF_AUTOEDGE))

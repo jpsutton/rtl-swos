@@ -180,12 +180,11 @@ void stp_cfg_enable(uint8_t on)
 		n_stp_disable++;
 }
 void stp_cfg_prio(uint8_t prio) { stp_prio = prio; n_stp_prio++; }
-void stp_cfg_port(uint8_t ent, uint8_t on)
+int n_stp_sync;
+void stp_cfg_sync(uint8_t ent, uint8_t was_out)
 {
-	if (on)
-		stp_pflags[ent] |= STP_PF_ENABLED;
-	else
-		stp_pflags[ent] &= ~STP_PF_ENABLED;
+	if (was_out != (STP_PF_OUT(stp_pflags[ent]) ? 1 : 0))
+		n_stp_sync++;
 }
 
 /* what stp_defaults() establishes */
