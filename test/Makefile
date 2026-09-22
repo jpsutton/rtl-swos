@@ -57,6 +57,9 @@ run: $(TESTS) $(BUILDDIR)/test_replay $(CONVERTED)
 		"interface vlan 10" "ip address 192.168.0.25 255.255.254.0" \
 		"switchport trunk native vlan 20" "switchport trunk allowed vlan 10,20,40" \
 		"description testlab" "exec-timeout 30 0" "feature telnet" || exit 1; echo
+	@echo "=== default config.txt replay ==="; \
+	$(BUILDDIR)/test_replay $(SRCROOT)/config.txt \
+		"ip address dhcp" "feature telnet" || exit 1; echo
 	@fail=0; for t in $(TESTS); do \
 		echo "=== $$t ==="; \
 		$$t || fail=1; \

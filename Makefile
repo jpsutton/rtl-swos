@@ -2,6 +2,10 @@ VERSION=0.1.0
 IMAGESIZE = 524288
 DEFAULT_CONFIG_LOCATION = 454656
 CONFIG_LOCATION = 458752
+# Startup config baked into the image, also restored by a factory reset.
+# The committed config.txt is the generic default; point CONFIG at your own
+# file for a site-specific build: make CONFIG=../site.cfg
+CONFIG ?= config.txt
 
 ifeq ($(origin CC),default)
 CC = sdcc
@@ -138,15 +142,18 @@ $(BUILDDIR)/rtl-swos.img: $(BUILDDIR)/rtl-swos.ihx
 	else echo "xdata ends at $$(printf 0x%x $$end) (limit 0x4000)"; fi
 	objcopy --input-target=ihex -O binary $< $@
 
-$(BUILDDIR)/rtl-swos-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/rtl-swos.img | tools
+# Always re-assembled (cheap): which file CONFIG names can change between
+# builds without any timestamp noticing.
+$(BUILDDIR)/rtl-swos-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/rtl-swos.img $(CONFIG) FORCE | tools
 	if [ -e $@ ]; then rm $@; fi
-	tools/output/imagebuilder -i $^ $@
-	tools/output/fileadder -a $(DEFAULT_CONFIG_LOCATION) -s $(IMAGESIZE) -d config.txt $@
-	tools/output/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d config.txt $@
+	tools/output/imagebuilder -i $< $@
+	tools/output/fileadder -a $(DEFAULT_CONFIG_LOCATION) -s $(IMAGESIZE) -d $(CONFIG) $@
+	tools/output/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d $(CONFIG) $@
 	tools/output/crc_calculator -u $@
 	ln -sf $(MACHINE)/rtl-swos-$(FILENAME_EXTENSION).bin output/rtl-swos.bin
 
-.PHONY: clean distclean all $(SUBDIRS) $(SUBDIRSCLEAN) $(VERSION_HEADER) create_build_dir
+.PHONY: clean distclean all $(SUBDIRS) $(SUBDIRSCLEAN) $(VERSION_HEADER) create_build_dir FORCE
+FORCE:
 
 .PHONY:
 machine_check:

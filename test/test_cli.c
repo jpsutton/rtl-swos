@@ -1274,6 +1274,22 @@ static void test_l2_extensions(void)
 	      && port_ingress_filter_get(8) == VLAN_TAGGED, "all three replay from a saved config");
 }
 
+static void test_default_boot(void)
+{
+	printf("[test] default config: dhcp with the built-in address as fallback\n");
+	wipe_all();
+	replay_text("interface vlan 1\n ip address dhcp\n!\nfeature telnet\n");
+	CHECK(n_dhcp_start == 1 && telnet_state.enabled, "dhcp client and telnet start");
+	run("show ip interface brief");
+	CHECK(out_has("dhcp, no lease yet"), "no lease yet is shown as such");
+	dhcp_state.state = DHCP_LEASING;
+	run("show ip interface brief");
+	CHECK(out_has("  dhcp\n"), "a lease shows plain dhcp");
+	dhcp_state.state = DHCP_OFF;
+	run("show ip interface brief");
+	CHECK(out_has("static"), "without the client: static");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1310,6 +1326,7 @@ int main(void)
 	test_step4();
 	test_interface_range();
 	test_l2_extensions();
+	test_default_boot();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

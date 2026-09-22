@@ -207,7 +207,10 @@ VLAN:
 0x70000. At boot it is replayed line by line in global configuration mode;
 a line that fails is printed together with its error and skipped, the rest
 of the configuration still applies. The image built by `make` carries
-`config.txt` from the source tree as its initial startup configuration.
+`config.txt` from the source tree (or the file `CONFIG=` names) as its
+initial startup configuration; a factory reset restores it. The default
+one runs the management interface as a DHCP client on VLAN 1, answering on
+192.168.2.2/24 until a lease arrives, with telnet on.
 
 A configuration in the flat command syntax of earlier firmware can be
 converted with `tools/convert-legacy-config.py old.cfg > new.cfg`; it

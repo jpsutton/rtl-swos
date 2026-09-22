@@ -415,7 +415,14 @@ void show_ip_if_brief(void) __banked
 	sh_to(28);
 	sh_ip((__xdata uint8_t *)uip_netmask);
 	sh_to(45);
-	sh_s(dhcp_state.state != DHCP_OFF ? "dhcp" : "static");
+	/* Without a lease the address in use stays the one before DHCP
+	 * started: at boot the built-in 192.168.2.2 */
+	if (dhcp_state.state == DHCP_OFF)
+		sh_s("static");
+	else if (dhcp_state.state == DHCP_LEASING)
+		sh_s("dhcp");
+	else
+		sh_s("dhcp, no lease yet");
 	sh_s("\nDefault gateway: ");
 	sh_ip((__xdata uint8_t *)uip_draddr);
 	sh_c('\n');

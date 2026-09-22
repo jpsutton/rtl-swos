@@ -95,15 +95,26 @@ The image is written to `output/<MACHINE>/rtl-swos-<version>-<MACHINE>.bin`,
 with a link at `output/rtl-swos.bin`. It is a complete 512 KB flash image:
 it can be written to the flash chip directly or loaded in-band.
 
-`config.txt` becomes the initial startup configuration inside the image.
-Put the management address in it so the switch is reachable on first
-boot, for example:
+The image carries an initial startup configuration, `config.txt` unless
+`CONFIG=` names another file. It is also the configuration a factory reset
+(reset button held for more than 10 s) restores. The committed `config.txt`
+is a generic default:
+
+- an unmanaged-style switch: all ports access ports in VLAN 1, STP off;
+- the management interface on VLAN 1 as a DHCP client. Until a lease
+  arrives the switch answers on the built-in 192.168.2.2/24 (gateway
+  192.168.2.22), and `show ip interface brief` says `dhcp, no lease yet`;
+- telnet on, with the default password `1234`.
+
+> [!WARNING]
+> With the default configuration anyone on the LAN can log in with `1234`.
+> Set a password under `line vty` and `write memory`, or build with your
+> own configuration.
+
+For a site-specific image, keep your configuration outside the tree and
+point the build at it:
 ```
-interface vlan 1
- ip address 192.168.10.247 255.255.255.0
-!
-ip default-gateway 192.168.10.1
-feature telnet
+make MACHINE=SWTGW218AS CONFIG=../site.cfg
 ```
 
 Host-side tests of the CLI, configuration model and serializer run without
@@ -134,7 +145,10 @@ image. Build the firmware first, then:
 make -C installer
 ```
 and upload `installer/output/rtl-swos_oem_upgrade.bin` through the OEM
-firmware update page. This is needed once; later updates go in-band.
+firmware update page. This is needed once; later updates go in-band. The
+installer copies the whole image, configuration included, so the switch
+comes up with the image's startup configuration (by default: DHCP on VLAN 1,
+telnet on, 192.168.2.2 until a lease arrives).
 
 > [!CAUTION]
 > Check that the machine type matches the device before flashing.
