@@ -92,9 +92,16 @@ typedef unsigned short uip_stats_t;
 /**
  * Maximum number of TCP connections. TODO: Increase this, but also make the socket state/buffer per-connection.
  *
+ * Two slots so a telnet session and the web UI do not compete: with a
+ * single slot, and telnet exempt from the idle reaper below, an open
+ * telnet session would hold the only slot for its whole idle timeout
+ * and lock out the web UI. The packet buffer stays shared
+ * (UIP_CONF_EXTERNAL_BUFFER), so the extra slot costs only one more
+ * uip_conn in xdata.
+ *
  * \hideinitializer
  */
-#define UIP_CONF_MAX_CONNECTIONS 1
+#define UIP_CONF_MAX_CONNECTIONS 2
 
 /**
  * This httpd closes after every response, so an ESTABLISHED connection
@@ -111,12 +118,23 @@ typedef unsigned short uip_stats_t;
 #define UIP_CONF_IDLE_PERIODS 200
 #define UIP_CONF_IDLE_TIMEOUT 30
 
+/*
+ * Exempt the telnet port from the idle reaper above. The reaper frees
+ * the connection slot from an abandoned httpd connection after ~30s,
+ * but telnet is a long-lived interactive session and the telnet server
+ * enforces its own, longer idle timeout instead. httpd is unaffected.
+ */
+#define UIP_IDLE_EXEMPT_LPORT 23
+
 /**
  * Maximum number of listening TCP ports. TODO: increase this!
  *
+ * One slot for the httpd (port 80) and one for the telnet server (port
+ * 23). uip_listen() fails silently when no listen slot is free.
+ *
  * \hideinitializer
  */
-#define UIP_CONF_MAX_LISTENPORTS 1
+#define UIP_CONF_MAX_LISTENPORTS 2
 
 /**
  * uIP buffer size.

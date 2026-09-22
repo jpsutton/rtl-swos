@@ -1,6 +1,7 @@
 
 #include "httpd.h"
 #include "page_impl.h"
+#include "telnetd.h"
 #include "rtl837x_common.h"
 #include "rtl837x_regs.h"
 #include "cmd_parser.h"
@@ -104,8 +105,10 @@ void httpd_init(void) __banked
 	// Start listening to port 80
 	uip_listen(HTONS(80));
 	// Not through uip_conn: it only points at a connection while uIP is
-	// handling one, and nothing has set it yet at init time.
-	uip_conns[0].appstate.tstate = TSTATE_CLOSED;
+	// handling one, and nothing has set it yet at init time. Every slot
+	// starts closed since a telnet session may land on any of them.
+	for (uint8_t i = 0; i < UIP_CONNS; i++)
+		uip_conns[i].appstate.tstate = TSTATE_CLOSED;
 	fw_reset_pending = 0; // xdata is not zeroed by the startup code
 }
 
@@ -1079,4 +1082,14 @@ do_send:
 	} else {
 		uip_len = 0;
 	}
+}
+
+
+/* uIP has a single TCP application callback; route by local port. */
+void tcp_appcall(void)
+{
+	if (uip_conn->lport == HTONS(TELNET_PORT))
+		telnetd_appcall();
+	else
+		httpd_appcall();
 }

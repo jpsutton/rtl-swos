@@ -17,6 +17,7 @@
 #include "sfp.h"
 #include "dhcp.h"
 #include "syslog.h"
+#include "telnetd.h"
 #include "uip/uip.h"
 #include "version.h"
 
@@ -1821,6 +1822,53 @@ void cmd_parser(void) __banked
 				igmp_show();
 			else {
 				cmd_error("igmp on|off|show\n");
+			}
+		} else if (cmd_compare(0, "telnet")) {
+			if (cmd_words_len == 1) {
+				print_string("Telnet: ");
+				print_string(telnet_state.enabled ? "enabled" : "disabled");
+				print_string(", bind: ");
+				if (telnet_state.bind[0] | telnet_state.bind[1]
+				    | telnet_state.bind[2] | telnet_state.bind[3])
+					print_ip(telnet_state.bind);
+				else
+					print_string("any");
+				print_string(", timeout: ");
+				itoa_short(telnet_state.idle_secs);
+				write_char('s');
+				if (telnet_state.conn)
+					print_string(", client connected");
+				write_char('\n');
+			} else if (cmd_compare(1, "on")) {
+				telnet_start();
+			} else if (cmd_compare(1, "off")) {
+				telnet_stop();
+			} else if (cmd_compare(1, "timeout")) {
+				if (cmd_words_len == 3 && atoi_short(cmd_words_b[2])
+				    && atoi_results_short >= 30) {
+					telnet_set_timeout(atoi_results_short);
+				} else {
+					cmd_error("telnet timeout <30-65535 seconds>\n");
+				}
+			} else if (cmd_compare(1, "bind")) {
+				if (cmd_words_len < 3) {
+					cmd_error("telnet bind <ip-address|any>\n");
+				} else if (cmd_compare(2, "any")) {
+					telnet_state.bind[0] = 0; telnet_state.bind[1] = 0;
+					telnet_state.bind[2] = 0; telnet_state.bind[3] = 0;
+					print_string("Telnet accepts connections on any local IP\n");
+				} else if (parse_ip(cmd_words_b[2]) != 0) {
+					telnet_state.bind[0] = ip[0]; telnet_state.bind[1] = ip[1];
+					telnet_state.bind[2] = ip[2]; telnet_state.bind[3] = ip[3];
+					print_string("Telnet bound to ");
+					print_ip(telnet_state.bind);
+					write_char('\n');
+				} else {
+					cmd_error("Invalid IP address\n" \
+								 "Error: telnet bind <ip-address|any>\n");
+				}
+			} else {
+				cmd_error("telnet [on|off|bind <ip-address|any>|timeout <secs>]\n");
 			}
 		} else if (cmd_compare(0, "mac")) {
 			parse_mac_cmd();
