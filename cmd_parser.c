@@ -1117,6 +1117,45 @@ err:
 }
 
 
+/* xtest <hexaddr> <hexlen>: destructive pattern test of an XRAM range
+ * (debug; only for the scratch region above XRAM_LOW_LIMIT) */
+static void parse_xtest(void)
+{
+	static __xdata uint16_t a, n, i, bad;
+	static __xdata uint8_t hs, v;
+
+	if (cmd_words_len != 3)
+		goto err;
+	hs = atoi_hex(cmd_words_b[1]);
+	if (hs != 2)
+		goto err;
+	a = ((uint16_t)hexvalue[0] << 8) | hexvalue[1];
+	hs = atoi_hex(cmd_words_b[2]);
+	if (hs != 2)
+		goto err;
+	n = ((uint16_t)hexvalue[0] << 8) | hexvalue[1];
+	if (a < XRAM_LOW_LIMIT) {
+		cmd_error("refusing to test live variables below 0x4000\n");
+		return;
+	}
+	bad = 0;
+	for (v = 0; v < 3; v++) {
+		for (i = 0; i < n; i++)
+			((__xdata uint8_t *)a)[i] = v == 0 ? 0x55 : v == 1 ? 0xaa : (uint8_t)(i ^ (i >> 8));
+		for (i = 0; i < n; i++) {
+			if (((__xdata uint8_t *)a)[i] != (v == 0 ? 0x55 : v == 1 ? 0xaa : (uint8_t)(i ^ (i >> 8))))
+				bad++;
+		}
+	}
+	print_string("xtest bad bytes: ");
+	print_short(bad);
+	write_char('\n');
+	return;
+err:
+	cmd_error("xtest <hex4 addr> <hex4 len>\n");
+}
+
+
 void parse_regget(void)
 {
 	if (cmd_words_len != 2) {
@@ -1974,6 +2013,8 @@ void cmd_parser(void) __banked
 			write_char('\n');
 		} else if (cmd_compare(0, "gpio")) {
 			print_gpio_status();
+		} else if (cmd_compare(0, "xtest")) {
+			parse_xtest();
 		} else if (cmd_compare(0, "xget")) {
 			parse_xget();
 		} else if (cmd_compare(0, "regget")) {

@@ -12,7 +12,10 @@
 
 /* Scratch buffer holding one full startup-config sector; shared by
  * write memory and the TFTP config transfer. */
-extern __xdata uint8_t cfg_buf[CONFIG_LEN];
+extern __xdata __at(XRAM_CFG_BUF) uint8_t cfg_buf[CONFIG_LEN];
+#if XRAM_CFG_BUF + CONFIG_LEN > XRAM_TELNET_OUTBUF
+#error "cfg_buf overlaps telnet_outbuf"
+#endif
 
 void runcfg_show(void) __banked;	/* show running-config */
 void runcfg_save(void) __banked;	/* write memory */

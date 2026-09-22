@@ -124,7 +124,13 @@ $(BUILDDIR)/%.rel: %.asm | create_build_dir
 $(BUILDDIR)/rtl-swos.ihx: $(OBJS) $(BUILDDIR)/crtbank.rel $(BUILDDIR)/crc16.rel
 	$(CC) $(CC_FLAGS) -Wl-bHOME=0x00000 -Wl-bBANK1=0x14000 -Wl-bBANK2=0x24000 -Wl-bBANK3=0x34000 -Wl-r -o $@ $^
 
+# Ordinary __xdata must stay below 0x4000: the startup XRAM clear does
+# not reach above it (see XRAM_LOW_LIMIT in rtl837x_common.h).
 $(BUILDDIR)/rtl-swos.img: $(BUILDDIR)/rtl-swos.ihx
+	@end=$$(awk '/ s_XISEG /{s=strtonum("0x"$$2)} / l_XISEG /{l=strtonum("0x"$$2)} END{printf "%d", s+l}' $(BUILDDIR)/rtl-swos.map); \
+	if [ $$end -gt 16384 ]; then \
+		echo "ERROR: xdata ends at $$(printf 0x%x $$end), above XRAM_LOW_LIMIT 0x4000"; exit 1; \
+	else echo "xdata ends at $$(printf 0x%x $$end) (limit 0x4000)"; fi
 	objcopy --input-target=ihex -O binary $< $@
 
 $(BUILDDIR)/rtl-swos-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/rtl-swos.img | tools

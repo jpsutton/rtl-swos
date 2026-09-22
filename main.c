@@ -225,7 +225,6 @@ void isr_serial(void) __interrupt(4)
  * applied in execute_config(). */
 __xdata char passwd[21];
 
-extern __xdata uint8_t telnet_outbuf[TELNET_OUTBUF];
 extern __xdata uint16_t telnet_slen;
 extern __xdata uint8_t telnet_capture;
 

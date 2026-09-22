@@ -89,6 +89,17 @@ struct vlan_tag {
 #define CODE0_SIZE 0x4000
 #define CODE_BANK_SIZE 0xc000
 
+/* XRAM layout rule. The startup code's XRAM clear does not reach the
+ * part of XRAM at and above 0x4000: that region is not live yet when
+ * GSINIT runs, so anything placed there comes up with power-on garbage
+ * instead of zero (found on SWTGW218AS hardware). Every ordinary
+ * __xdata variable therefore stays below 0x4000 - the build fails
+ * otherwise, see the Makefile - and only large scratch buffers that
+ * never rely on their initial contents are pinned above it. */
+#define XRAM_LOW_LIMIT		0x4000
+#define XRAM_CFG_BUF		0x4000	/* cfg_buf, CONFIG_LEN bytes */
+#define XRAM_TELNET_OUTBUF	0x5000	/* telnet_outbuf, TELNET_OUTBUF bytes */
+
 // Store update image after running image
 #define FIRMWARE_UPLOAD_START 0x80000
 

@@ -38,7 +38,8 @@ extern __xdata uint8_t sfr_data[4];
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 extern __xdata struct flash_region_t flash_region;
 
-__xdata uint8_t cfg_buf[CONFIG_LEN];
+/* Scratch only: filled before every use, so it may live above XRAM_LOW_LIMIT */
+__xdata __at(XRAM_CFG_BUF) uint8_t cfg_buf[CONFIG_LEN];
 
 static __xdata uint8_t rc_tobuf;	/* 1: render into cfg_buf */
 static __xdata uint16_t rc_len;

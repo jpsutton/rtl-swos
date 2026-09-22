@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "uip.h"
+#include "rtl837x_common.h"
 
 /* Room for one command's captured output plus echo; a response larger
  * than this is truncated with a marker. Sized above the 4KB config
@@ -10,6 +11,9 @@
 #define TELNET_OUTBUF 6144
 #define TELNET_PORT 23
 #define TELNET_IDLE_DEFAULT 600	/* seconds */
+#if XRAM_TELNET_OUTBUF + TELNET_OUTBUF > 0x7000
+#error "telnet_outbuf runs past the verified upper XRAM"
+#endif
 
 struct telnet_state_t {
 	uint8_t enabled;		/* telnet on/off */
@@ -27,7 +31,7 @@ struct telnet_state_t {
 };
 
 extern __xdata struct telnet_state_t telnet_state;
-extern __xdata uint8_t telnet_outbuf[TELNET_OUTBUF];
+extern __xdata __at(XRAM_TELNET_OUTBUF) uint8_t telnet_outbuf[TELNET_OUTBUF];
 extern __xdata uint16_t telnet_slen;
 /* Set while a command runs for a telnet session so write_char_no_syslog()
  * copies its output into telnet_outbuf; 2 means the buffer overflowed. */

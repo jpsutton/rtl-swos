@@ -26,7 +26,9 @@ extern volatile __xdata uint32_t ticks;
 extern __xdata char passwd[21];
 
 __xdata struct telnet_state_t telnet_state;
-__xdata uint8_t telnet_outbuf[TELNET_OUTBUF];
+/* Scratch only: telnet_slen is reset before use, so it may live above
+ * XRAM_LOW_LIMIT */
+__xdata __at(XRAM_TELNET_OUTBUF) uint8_t telnet_outbuf[TELNET_OUTBUF];
 __xdata uint16_t telnet_slen;
 __xdata uint8_t telnet_capture;
 
