@@ -26,6 +26,7 @@
 #include "phy.h"
 #include "syslog.h"
 #include "httpd/page_impl.h"
+#include "cfgstore.h"
 #include "boot.h"
 #include "sfp.h"
 
@@ -1747,6 +1748,7 @@ void main(void)
 	early_boot_handle_button();
 
 	execute_config();
+	cfgstore_load();
 	// After the config so the entry lands in the final management VLAN
 	port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);
 	/* After the config: a name from it wins, otherwise derive one. */

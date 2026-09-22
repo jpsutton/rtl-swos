@@ -1,6 +1,7 @@
 
 #include "httpd.h"
 #include "page_impl.h"
+#include "cfgstore.h"
 #include "rtl837x_common.h"
 #include "rtl837x_regs.h"
 #include "cmd_parser.h"
@@ -426,6 +427,8 @@ static uint8_t config_take(void)
 				flash_region.addr = CONFIG_START;
 				flash_region.len = cfg_end - cfg_body + 1;
 				flash_write_bytes(config_buf + cfg_body);
+				/* keep the CLI `save` shadow in sync */
+				cfgstore_load();
 				return 1;
 			}
 			cfg_hdr++;

@@ -17,6 +17,7 @@
 #include "sfp.h"
 #include "dhcp.h"
 #include "syslog.h"
+#include "cfgstore.h"
 #include "uip/uip.h"
 #include "version.h"
 
@@ -1714,7 +1715,12 @@ void cmd_parser(void) __banked
 	print_byte(cmd_words_b[6]); write_char('\n');
 #endif
 	if (cmd_words_len >= 1) {
-		if (cmd_compare(0, "reset")) {
+		if (cmd_compare(0, "save")) {
+			if (cmd_words_len == 2 && cmd_compare(1, "show"))
+				cfgstore_show();
+			else
+				cfgstore_save();
+		} else if (cmd_compare(0, "reset")) {
 			print_string("\nRESET\n\n");
 			reset_chip();
 		} else if (cmd_compare(0, "sfp")) {
@@ -1916,6 +1922,9 @@ void cmd_parser(void) __banked
 			cmd_error("Unknown command\n");
 		}
 
+
+		if (save_cmd && cmd_words_len && err_status == ERR_OK)
+			cfgstore_note();
 
 		if (save_cmd && cmd_words_len && err_status == ERR_OK) {
 			// Find end of the cmd-buffer, looking for the NUL-byte.
