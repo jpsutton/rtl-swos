@@ -24,6 +24,7 @@
 #include "telnetd.h"
 #include "dhcp.h"
 #include "rtl837x_regs.h"
+#include "rtl837x_stp.h"
 extern char last_fallback[];
 extern int n_fallback, n_reset, n_showver, n_setspeed;
 extern uint8_t last_speed, last_port;
@@ -47,6 +48,7 @@ extern uint8_t vlan_names[];
 extern int n_igmp_on, n_igmp_off, n_hostdef, n_dhcp_start, n_syslog_start, n_syslog_stop;
 
 void fake_flash_reset(void);
+void stp_test_defaults(void);
 
 static void reset_all(void)
 {
@@ -55,6 +57,7 @@ static void reset_all(void)
 		hw_reg_set(RTL8373_REG_MAC_L2_PORT_MAX_LEN + (lp << 8), 0x3fff);
 	fake_flash_reset();
 	env_cli_reset();
+	stp_test_defaults();
 	vlan_setup();
 	sw_init();
 	cli_init();
@@ -116,6 +119,8 @@ static void wipe_all(void)
 }
 
 static char render_a[CONFIG_LEN], render_b[CONFIG_LEN];
+
+static int port_of_lag_none(int lp) { return port_lag_of(lp) == PORT_LAG_NONE; }
 
 static void render_into(char *dst)
 {
@@ -335,7 +340,9 @@ static void test_interface_config(void)
 	run("speed auto");
 	CHECK(last_speed == PHY_SPEED_AUTO, "speed auto");
 	run("sp 100");
-	CHECK(last_speed == PHY_SPEED_100M, "abbreviated 'sp 100' -> 100M");
+	CHECK(out_has("% Ambiguous command"), "'sp' is ambiguous (speed, spanning-tree)");
+	run("spe 100");
+	CHECK(last_speed == PHY_SPEED_100M, "abbreviated 'spe 100' -> 100M");
 
 	run("description lab uplink port");
 	CHECK(strcmp(port_names[1], "lab uplink port") == 0,
@@ -768,6 +775,212 @@ static void test_physical_shadows(void)
 	CHECK(strcmp(passwd, "1234") == 0, "no password -> default");
 }
 
+extern uint32_t bw_in[10], bw_out[10];
+extern uint8_t bw_in_drop[10];
+extern int n_stp_enable, n_stp_disable, n_stp_prio;
+extern bool stp_enabled;
+
+static void test_port_features(void)
+{
+	printf("[test] eee, protected, rate-limit\n");
+	wipe_all();
+	run("enable");
+	to_if("ethernet 1/2");
+	run("no power efficient-ethernet");
+	CHECK(sw_ports[1].eee_off, "no power efficient-ethernet");
+	run("power efficient-ethernet");
+	CHECK(out_has("% Incomplete command"), "plain form needs auto");
+	run("power efficient-ethernet auto");
+	CHECK(!sw_ports[1].eee_off, "power efficient-ethernet auto");
+
+	run("switchport protected");
+	to_if("ethernet 1/3");
+	run("switchport protected");
+	CHECK(!(port_isolation_get(1) & (1 << 2)) && !(port_isolation_get(2) & (1 << 1)),
+	      "two protected ports cannot reach each other");
+	CHECK((port_isolation_get(1) & (1 << 4)) && (port_isolation_get(1) & 0x200),
+	      "a protected port still reaches others and the CPU");
+	CHECK((port_isolation_get(4) & 0x6) == 0x6, "an unprotected port reaches the protected ones");
+	run("no switchport protected");
+	CHECK(port_isolation_get(1) & (1 << 2), "no switchport protected");
+
+	run("rate-limit input 1000");
+	CHECK(bw_in[2] == 992 && !bw_in_drop[2], "input limit, rounded to 16 kbit/s, pause mode");
+	run("rate-limit input 5000 drop");
+	CHECK(bw_in[2] == 4992 && bw_in_drop[2], "input limit in drop mode");
+	run("rate-limit output 250000");
+	CHECK(bw_out[2] == 250000, "output limit");
+	run("rate-limit input 8");
+	CHECK(out_has("% Value out of range") && bw_in[2] == 4992, "below 16 kbit/s rejected");
+	run("no rate-limit output");
+	CHECK(bw_out[2] == 0 && bw_in[2] == 4992, "no rate-limit output leaves the input limit");
+}
+
+static void test_monitor(void)
+{
+	printf("[test] monitor session\n");
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	run("monitor session 1 source interface ethernet 1/2 rx");
+	run("monitor session 1 source interface e1/3");
+	run("monitor session 1 destination interface ethernet 1/9");
+	CHECK(sw_mon_dst == 8 && sw_mon_rx == 0x6 && sw_mon_tx == 0x4, "sources and destination");
+	run("monitor session 1 source interface ethernet 1/9");
+	CHECK(out_has("destination cannot be a source"), "destination is not a source");
+	run("monitor session 1 destination interface ethernet 1/3");
+	CHECK(sw_mon_dst == 2 && !(sw_mon_rx & 4) && !(sw_mon_tx & 4),
+	      "moving the destination onto a source removes it as a source");
+	run("no monitor session 1 source interface ethernet 1/2");
+	CHECK(!sw_mon_rx && !sw_mon_tx, "no ... source");
+	run("monitor session 1 source interface ethernet 1/2 tx");
+	run("no monitor session 1");
+	CHECK(sw_mon_dst == SW_MON_NONE && !sw_mon_rx && !sw_mon_tx, "no monitor session 1");
+}
+
+static void test_port_channel(void)
+{
+	printf("[test] port-channels\n");
+	wipe_all();
+	run("enable");
+	to_if("ethernet 1/7");
+	run("channel-group 2 mode on");
+	to_if("ethernet 1/8");
+	run("channel-group 2");
+	CHECK(port_lag_members_get(1) == 0xc0, "ports 7 and 8 in lag 2");
+	CHECK((hw_reg_get(RTL837X_TRK_HASH_CTRL_BASE + 4) & 0xff) == LAG_HASH_DEFAULT,
+	      "joining a pristine lag installs the default hash");
+	run("channel-group 3 mode on");
+	CHECK(port_lag_members_get(1) == 0x40 && port_lag_members_get(2) == 0x80,
+	      "channel-group moves the port between lags");
+	run("no channel-group");
+	CHECK(port_lag_members_get(2) == 0 && port_of_lag_none(7), "no channel-group");
+	run("end");
+	run("configure terminal");
+	run("interface port-channel 2");
+	CHECK(cli.mode == CLI_MODE_PO && cli.ctx_po == 2, "port-channel mode");
+	run("load-balance src-mac dst-mac src-ip");
+	CHECK((hw_reg_get(RTL837X_TRK_HASH_CTRL_BASE + 4) & 0xff)
+	      == (LAG_HASH_L2_SMAC | LAG_HASH_L2_DMAC | LAG_HASH_L3_SIP), "hash field list");
+	run("load-balance");
+	CHECK(out_has("% Incomplete command"), "load-balance needs fields");
+	run("no load-balance");
+	CHECK((hw_reg_get(RTL837X_TRK_HASH_CTRL_BASE + 4) & 0xff) == LAG_HASH_DEFAULT,
+	      "no load-balance restores the default");
+}
+
+static void test_stp(void)
+{
+	printf("[test] spanning-tree\n");
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	run("spanning-tree priority 4096");
+	CHECK(stp_prio == 0x10 && n_stp_prio == 1, "priority");
+	run("spanning-tree priority 5000");
+	CHECK(out_has("% Value out of range") && stp_prio == 0x10, "priority must step by 4096");
+	run("spanning-tree mode stp");
+	CHECK(stp_rstp == 0, "mode stp");
+	run("no spanning-tree mode");
+	CHECK(stp_rstp == 1, "no mode -> rstp");
+	run("spanning-tree hello-time 11");
+	CHECK(out_has("% Value out of range") && stp_hello_s == 2, "hello range");
+	run("spanning-tree forward-time 10");
+	run("spanning-tree max-age 30");
+	run("spanning-tree transmit hold-count 3");
+	CHECK(stp_fwddelay_s == 10 && stp_maxage_s == 30 && stp_txhold == 3, "timers");
+	run("feature spanning-tree");
+	CHECK(stp_enabled && n_stp_enable == 1, "feature spanning-tree");
+
+	to_if("ethernet 1/1");
+	run("spanning-tree portfast");
+	CHECK((stp_pflags[0] & STP_PF_ADMEDGE) && !(stp_pflags[0] & STP_PF_AUTOEDGE), "portfast");
+	run("spanning-tree bpduguard enable");
+	run("spanning-tree guard root");
+	run("spanning-tree cost 2000");
+	run("spanning-tree port-priority 64");
+	run("spanning-tree link-type point-to-point");
+	CHECK((stp_pflags[0] & (STP_PF_BPDUGUARD | STP_PF_ROOTGUARD)) == (STP_PF_BPDUGUARD | STP_PF_ROOTGUARD)
+	      && stp_pcost[0] == 2000 && stp_pprio[0] == 64 && stp_pp2p[0] == 1, "port settings");
+	run("spanning-tree port-priority 65");
+	CHECK(out_has("% Value out of range") && stp_pprio[0] == 64, "port-priority steps by 16");
+	run("no spanning-tree portfast");
+	CHECK((stp_pflags[0] & STP_PF_AUTOEDGE) && !(stp_pflags[0] & STP_PF_ADMEDGE), "no portfast -> auto edge");
+	run("spanning-tree portfast disable");
+	CHECK(!(stp_pflags[0] & (STP_PF_AUTOEDGE | STP_PF_ADMEDGE)), "portfast disable");
+
+	to_if("ethernet 1/7");
+	run("channel-group 1 mode on");
+	run("spanning-tree cost 100");
+	CHECK(out_has("configure spanning-tree under interface port-channel 1") && stp_pcost[6] == 0,
+	      "a lag member refuses per-port STP");
+	run("interface port-channel 1");
+	run("spanning-tree cost 100");
+	CHECK(stp_pcost[STP_LAG_BASE] == 100, "port-channel STP goes to the lag entity");
+
+	run("spanning-tree priority 8192");
+	CHECK(cli.mode == CLI_MODE_CONFIG && stp_prio == 0x20,
+	      "a global spanning-tree line from interface mode runs globally");
+	run("no feature spanning-tree");
+	CHECK(!stp_enabled && n_stp_disable == 1, "no feature spanning-tree");
+}
+
+static void test_roundtrip_all(void)
+{
+	printf("[test] round trip with every feature\n");
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	static const char *cfg[] = {
+		"vlan 10",
+		"interface port-channel 2", " load-balance src-mac dst-mac",
+		" spanning-tree cost 400",
+		"interface ethernet 1/1", " spanning-tree portfast", " spanning-tree bpduguard enable",
+		" switchport protected", " no power efficient-ethernet",
+		"interface ethernet 1/2", " rate-limit input 1024 drop", " rate-limit output 20000",
+		" spanning-tree link-type shared", " spanning-tree port-priority 32",
+		"interface ethernet 1/3", " switchport protected", " spanning-tree portfast disable",
+		"interface ethernet 1/7", " channel-group 2 mode on", " switchport mode trunk",
+		"interface ethernet 1/8", " channel-group 2 mode on", " switchport mode trunk",
+		"monitor session 1 source interface ethernet 1/1 tx",
+		"monitor session 1 source interface ethernet 1/2",
+		"monitor session 1 destination interface ethernet 1/9",
+		"spanning-tree mode stp", "spanning-tree priority 4096", "spanning-tree max-age 30",
+		"feature spanning-tree",
+		0
+	};
+	for (int i = 0; cfg[i]; i++) {
+		run(cfg[i]);
+		if (out_has("%"))
+			printf("    line '%s' -> %s", cfg[i], out_buf);
+	}
+	render_into(render_a);
+	CHECK(strstr(render_a, "interface port-channel 2\n load-balance src-mac dst-mac\n"
+			       " spanning-tree cost 400\n!\ninterface ethernet 1/1\n") != NULL,
+	      "port-channel block precedes the ethernet blocks");
+	CHECK(strstr(render_a, " channel-group 2 mode on\n") != NULL, "members listed");
+	CHECK(strstr(render_a, "monitor session 1 source interface ethernet 1/1 tx\n"
+			       "monitor session 1 source interface ethernet 1/2\n"
+			       "monitor session 1 destination interface ethernet 1/9\n"), "monitor lines");
+	CHECK(strstr(render_a, "spanning-tree mode stp\nspanning-tree priority 4096\n"
+			       "spanning-tree max-age 30\nfeature spanning-tree\n"), "stp globals, feature last");
+
+	uint16_t iso0 = port_isolation_get(0), lagm = port_lag_members_get(1);
+	uint32_t hash = hw_reg_get(RTL837X_TRK_HASH_CTRL_BASE + 4);
+	wipe_all();
+	replay_text(render_a);
+	render_into(render_b);
+	CHECK(strcmp(render_a, render_b) == 0, "re-rendered config is byte-identical");
+	if (strcmp(render_a, render_b))
+		printf("--- before ---\n%s--- after ---\n%s", render_a, render_b);
+	CHECK(port_isolation_get(0) == iso0 && port_lag_members_get(1) == lagm
+	      && hw_reg_get(RTL837X_TRK_HASH_CTRL_BASE + 4) == hash, "isolation, lag, hash restored");
+	CHECK(bw_in[1] == 1024 && bw_in_drop[1] && bw_out[1] == 20000, "rate limits restored");
+	CHECK(sw_mon_dst == 8 && sw_mon_tx == 0x3 && sw_mon_rx == 0x2, "monitor restored");
+	CHECK(stp_enabled && !stp_rstp && stp_prio == 0x10 && stp_pcost[STP_LAG_BASE + 1] == 400,
+	      "stp restored");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -794,6 +1007,11 @@ int main(void)
 	test_write_and_startup();
 	test_replay_legacy_and_comments();
 	test_physical_shadows();
+	test_port_features();
+	test_monitor();
+	test_port_channel();
+	test_stp();
+	test_roundtrip_all();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

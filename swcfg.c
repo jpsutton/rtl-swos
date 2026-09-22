@@ -10,6 +10,7 @@
 #include "rtl837x_sfr.h"
 #include "rtl837x_port.h"
 #include "rtl837x_phy.h"
+#include "rtl837x_bandwidth.h"
 #include "machine.h"
 #include "dhcp.h"
 #include "syslog.h"
@@ -20,6 +21,7 @@
 #pragma constseg BANK3
 
 extern __code const struct machine machine;
+extern __xdata struct machine_runtime machine_detected;
 extern __xdata uint16_t management_vlan;
 extern __xdata uint16_t vlan_ptr;
 extern __xdata uint8_t vlan_names[VLAN_NAMES_SIZE];
@@ -29,6 +31,8 @@ extern __xdata struct dhcp_state dhcp_state;
 __xdata uint16_t sw_vlans[SW_MAX_VLANS];
 __xdata struct sw_port sw_ports[SW_NPORTS];
 __xdata uint8_t sw_igmp;
+__xdata uint8_t sw_mon_dst;
+__xdata uint16_t sw_mon_rx, sw_mon_tx;
 static __xdata uint8_t sw_deferred, sw_dirty;
 
 #define SW_NAME_MAX 32
@@ -56,7 +60,15 @@ void sw_init(void) __banked
 		sw_ports[k].allowed[0].hi = SW_VID_MAX;
 		sw_ports[k].speed = PHY_SPEED_AUTO;
 		sw_ports[k].shut = 0;
+		sw_ports[k].eee_off = 0;
+		sw_ports[k].prot = 0;
+		sw_ports[k].rl_in = 0;
+		sw_ports[k].rl_out = 0;
+		sw_ports[k].rl_in_drop = 0;
 	}
+	sw_mon_dst = SW_MON_NONE;
+	sw_mon_rx = 0;
+	sw_mon_tx = 0;
 	sw_igmp = 0;
 	sw_deferred = 0;
 	sw_dirty = 0;
@@ -443,4 +455,87 @@ void sw_logging_off(void) __banked
 {
 	if (syslog_state.enabled)
 		syslog_stop();
+}
+
+
+/* EEE is enabled on every port at init with the chip's top speed */
+void sw_eee_apply(uint8_t lport) __banked
+{
+	static __xdata uint8_t lp;
+
+	lp = lport;
+	if (sw_ports[lp].eee_off)
+		port_eee_disable(lp);
+	else
+		port_eee_enable(lp, machine_detected.isRTL8373 ? EEE_10G : EEE_2G5);
+}
+
+
+/* Protected ports may not forward to each other; every other pair may.
+ * The hardware takes one egress mask per port, CPU port included. */
+void sw_protect_apply(void) __banked
+{
+	static __xdata uint8_t p;
+	static __xdata uint16_t all, prot, m;
+
+	all = 0x200;
+	prot = 0;
+	for (p = machine.min_port; p <= machine.max_port; p++) {
+		all |= (uint16_t)1 << p;
+		if (sw_ports[p].prot)
+			prot |= (uint16_t)1 << p;
+	}
+	for (p = machine.min_port; p <= machine.max_port; p++) {
+		m = all;
+		if (sw_ports[p].prot)
+			m = (all & ~prot) | ((uint16_t)1 << p);
+		port_isolate(p, m);
+	}
+}
+
+
+void sw_rate_apply(uint8_t lport) __banked
+{
+	static __xdata uint8_t lp;
+
+	lp = lport;
+	if (sw_ports[lp].rl_in) {
+		bandwidth_ingress_set(lp, sw_ports[lp].rl_in);	/* pauses by default */
+		if (sw_ports[lp].rl_in_drop)
+			bandwidth_ingress_drop(lp);
+	} else {
+		bandwidth_ingress_disable(lp);
+	}
+	if (sw_ports[lp].rl_out)
+		bandwidth_egress_set(lp, sw_ports[lp].rl_out);
+	else
+		bandwidth_egress_disable(lp);
+}
+
+
+void sw_mon_apply(void) __banked
+{
+	if (sw_mon_dst != SW_MON_NONE && (sw_mon_rx | sw_mon_tx))
+		port_mirror_set(sw_mon_dst, sw_mon_rx, sw_mon_tx);
+	else
+		port_mirror_del();
+}
+
+
+void sw_lag_join(uint8_t lport, __xdata uint8_t lag) __banked
+{
+	static __xdata uint8_t g, lp;
+	static __xdata uint16_t m, bit;
+
+	lp = lport;
+	bit = (uint16_t)1 << lp;
+	for (g = 0; g < 4; g++) {
+		m = port_lag_members_get(g);
+		if (g + 1 == lag) {
+			if (!(m & bit))
+				port_lag_members_set(g, m | bit);
+		} else if (m & bit) {
+			port_lag_members_set(g, m & ~bit);
+		}
+	}
 }

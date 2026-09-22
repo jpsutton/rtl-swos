@@ -27,6 +27,9 @@
 #include "swcfg.h"
 #include "runcfg.h"
 #include "telnetd.h"
+#include "rtl837x_stp.h"
+#include "rtl837x_port.h"
+#include "rtl837x_regs.h"
 #include "cli.h"
 
 #pragma codeseg BANK1
@@ -97,6 +100,37 @@ static __code const struct cli_node * __code const * __xdata w_children;
 #define ACT_LINE_VTY	31
 #define ACT_EXEC_TO	32
 #define ACT_VTY_PW	33
+#define ACT_EEE		34
+#define ACT_PROT	35
+#define ACT_RL		36	/* ->lo: 1 input, 2 output, 3 input+drop */
+#define ACT_CHGRP	37
+#define ACT_PO		38	/* interface port-channel N */
+#define ACT_LB		39	/* load-balance: fields accumulated in cli.acc */
+#define ACT_MON_SRC	40	/* ->lo: 1 rx, 2 tx, 3 both */
+#define ACT_MON_DST	41
+#define ACT_MON_DEL	42
+#define ACT_FEAT_STP	43
+#define ACT_STP_G	44	/* global spanning-tree, parameter in ->lo */
+#define ACT_STP_IF	45	/* per-port spanning-tree, parameter in ->lo */
+
+/* ACT_STP_G parameters */
+#define STPG_RSTP	1
+#define STPG_STP	2
+#define STPG_PRIO	3
+#define STPG_HELLO	4
+#define STPG_FWD	5
+#define STPG_MAXAGE	6
+#define STPG_TXHOLD	7
+/* ACT_STP_IF parameters */
+#define STPI_PORTFAST	1
+#define STPI_PF_DIS	2
+#define STPI_BPDUGUARD	3
+#define STPI_BPDUFILT	4
+#define STPI_ROOTGUARD	5
+#define STPI_COST	6
+#define STPI_PPRIO	7
+#define STPI_P2P	8
+#define STPI_SHARED	9
 
 /* ---------------- command tree ---------------- */
 
@@ -230,8 +264,17 @@ static __code const struct cli_node n_if_vlan = {
 	"vlan", 0, 0, 0, 0, ch_ifvlan, ACT_NONE,
 	"VLAN (management) interface"
 };
+static __code const struct cli_node n_arg_po = {
+	0, CLI_A_NUM, 0, 1, 4, NO_CHILDREN, ACT_PO, "Port-channel number"
+};
+static __code const struct cli_node * __code const ch_ifpo[] = {
+	&n_arg_po, 0
+};
+static __code const struct cli_node n_if_po = {
+	"port-channel", 0, 0, 0, 0, ch_ifpo, ACT_NONE, "Link aggregation group"
+};
 static __code const struct cli_node * __code const ch_interface[] = {
-	&n_if_ethernet, &n_if_vlan, &n_arg_ifnum, 0
+	&n_if_ethernet, &n_if_po, &n_if_vlan, &n_arg_ifnum, 0
 };
 static __code const struct cli_node n_interface = {
 	"interface", 0, 0, 0, 0, ch_interface, ACT_NONE,
@@ -329,13 +372,153 @@ static __code const struct cli_node n_logging = {
 	"Message logging"
 };
 
+/* monitor session 1 source|destination interface ethernet S/N */
+static __code const struct cli_node n_mon_rx = {
+	"rx", 0, 0, 1, 0, NO_CHILDREN, ACT_MON_SRC, "Received traffic"
+};
+static __code const struct cli_node n_mon_tx = {
+	"tx", 0, 0, 2, 0, NO_CHILDREN, ACT_MON_SRC, "Transmitted traffic"
+};
+static __code const struct cli_node n_mon_both = {
+	"both", 0, 0, 3, 0, NO_CHILDREN, ACT_MON_SRC, "Both directions (default)"
+};
+static __code const struct cli_node * __code const ch_mon_dir[] = {
+	&n_mon_both, &n_mon_rx, &n_mon_tx, 0
+};
+/* the IFACE placeholder ignores lo/hi, so ->lo carries the default direction */
+static __code const struct cli_node n_arg_mon_src = {
+	0, CLI_A_IFACE, CLI_F_NO_OK, 3, 0, ch_mon_dir, ACT_MON_SRC, "Source interface"
+};
+static __code const struct cli_node * __code const ch_mon_src_eth[] = {
+	&n_arg_mon_src, 0
+};
+static __code const struct cli_node n_mon_src_eth = {
+	"ethernet", 0, 0, 0, 0, ch_mon_src_eth, ACT_NONE, "Ethernet interface"
+};
+static __code const struct cli_node * __code const ch_mon_src_if[] = {
+	&n_mon_src_eth, &n_arg_mon_src, 0
+};
+static __code const struct cli_node n_mon_src_if = {
+	"interface", 0, 0, 0, 0, ch_mon_src_if, ACT_NONE, "Source interface"
+};
+static __code const struct cli_node * __code const ch_mon_source[] = {
+	&n_mon_src_if, 0
+};
+static __code const struct cli_node n_mon_source = {
+	"source", 0, 0, 0, 0, ch_mon_source, ACT_NONE, "Traffic to copy"
+};
+static __code const struct cli_node n_arg_mon_dst = {
+	0, CLI_A_IFACE, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_MON_DST, "Destination interface"
+};
+static __code const struct cli_node * __code const ch_mon_dst_eth[] = {
+	&n_arg_mon_dst, 0
+};
+static __code const struct cli_node n_mon_dst_eth = {
+	"ethernet", 0, 0, 0, 0, ch_mon_dst_eth, ACT_NONE, "Ethernet interface"
+};
+static __code const struct cli_node * __code const ch_mon_dst_if[] = {
+	&n_mon_dst_eth, &n_arg_mon_dst, 0
+};
+static __code const struct cli_node n_mon_dst_if = {
+	"interface", 0, 0, 0, 0, ch_mon_dst_if, ACT_NONE, "Destination interface"
+};
+static __code const struct cli_node * __code const ch_mon_dest[] = {
+	&n_mon_dst_if, 0
+};
+static __code const struct cli_node n_mon_dest = {
+	"destination", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_mon_dest, ACT_MON_DST,
+	"Where the copies go"
+};
+static __code const struct cli_node * __code const ch_mon_sess[] = {
+	&n_mon_dest, &n_mon_source, 0
+};
+static __code const struct cli_node n_arg_mon_sess = {
+	0, CLI_A_NUM, CLI_F_NO_OK | CLI_F_NO_EXEC, 1, 1, ch_mon_sess, ACT_MON_DEL,
+	"Session number"
+};
+static __code const struct cli_node * __code const ch_mon_session[] = {
+	&n_arg_mon_sess, 0
+};
+static __code const struct cli_node n_mon_session = {
+	"session", 0, 0, 0, 0, ch_mon_session, ACT_NONE, "SPAN session"
+};
+static __code const struct cli_node * __code const ch_monitor[] = {
+	&n_mon_session, 0
+};
+static __code const struct cli_node n_monitor = {
+	"monitor", 0, 0, 0, 0, ch_monitor, ACT_NONE, "Port mirroring"
+};
+
+/* global spanning-tree; the numeric arguments are NUM32 so ->lo can
+ * carry the parameter, the handler range-checks */
+static __code const struct cli_node n_stpg_rstp = {
+	"rstp", 0, 0, STPG_RSTP, 0, NO_CHILDREN, ACT_STP_G, "Rapid spanning tree (802.1w)"
+};
+static __code const struct cli_node n_stpg_stp = {
+	"stp", 0, 0, STPG_STP, 0, NO_CHILDREN, ACT_STP_G, "Classic spanning tree (802.1D)"
+};
+static __code const struct cli_node * __code const ch_stpg_mode[] = {
+	&n_stpg_rstp, &n_stpg_stp, 0
+};
+static __code const struct cli_node n_stpg_mode = {
+	"mode", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPG_RSTP, 0, ch_stpg_mode, ACT_STP_G,
+	"Protocol version"
+};
+#define STPG_NUM(nm, code, help) \
+static __code const struct cli_node nm##_arg = { \
+	0, CLI_A_NUM32, 0, code, 0, NO_CHILDREN, ACT_STP_G, help \
+}; \
+static __code const struct cli_node * __code const nm##_ch[] = { &nm##_arg, 0 };
+STPG_NUM(n_stpg_prio, STPG_PRIO, "0-61440, a multiple of 4096")
+STPG_NUM(n_stpg_hello, STPG_HELLO, "Seconds, 1-10")
+STPG_NUM(n_stpg_fwd, STPG_FWD, "Seconds, 4-30")
+STPG_NUM(n_stpg_maxage, STPG_MAXAGE, "Seconds, 6-40")
+STPG_NUM(n_stpg_hold, STPG_TXHOLD, "BPDUs per second, 1-10")
+static __code const struct cli_node n_stpg_priority = {
+	"priority", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPG_PRIO, 0, n_stpg_prio_ch, ACT_STP_G,
+	"Bridge priority"
+};
+static __code const struct cli_node n_stpg_hellot = {
+	"hello-time", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPG_HELLO, 0, n_stpg_hello_ch, ACT_STP_G,
+	"BPDU interval"
+};
+static __code const struct cli_node n_stpg_fwdt = {
+	"forward-time", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPG_FWD, 0, n_stpg_fwd_ch, ACT_STP_G,
+	"Forward delay"
+};
+static __code const struct cli_node n_stpg_maxaget = {
+	"max-age", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPG_MAXAGE, 0, n_stpg_maxage_ch, ACT_STP_G,
+	"Maximum message age"
+};
+static __code const struct cli_node n_stpg_holdcnt = {
+	"hold-count", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPG_TXHOLD, 0, n_stpg_hold_ch, ACT_STP_G,
+	"Transmit limit"
+};
+static __code const struct cli_node * __code const ch_stpg_tx[] = {
+	&n_stpg_holdcnt, 0
+};
+static __code const struct cli_node n_stpg_transmit = {
+	"transmit", 0, 0, 0, 0, ch_stpg_tx, ACT_NONE, "BPDU transmission"
+};
+static __code const struct cli_node * __code const ch_stp_global[] = {
+	&n_stpg_fwdt, &n_stpg_hellot, &n_stpg_maxaget, &n_stpg_mode,
+	&n_stpg_priority, &n_stpg_transmit, 0
+};
+static __code const struct cli_node n_stp_global = {
+	"spanning-tree", 0, 0, 0, 0, ch_stp_global, ACT_NONE, "Spanning tree bridge settings"
+};
+
 /* feature telnet (NX-OS style service toggle) */
 static __code const struct cli_node n_feat_telnet = {
 	"telnet", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_FEAT_TELNET,
 	"Telnet server"
 };
+static __code const struct cli_node n_feat_stp = {
+	"spanning-tree", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_FEAT_STP,
+	"Spanning tree protocol"
+};
 static __code const struct cli_node * __code const ch_feature[] = {
-	&n_feat_telnet, 0
+	&n_feat_stp, &n_feat_telnet, 0
 };
 static __code const struct cli_node n_feature = {
 	"feature", 0, 0, 0, 0, ch_feature, ACT_NONE,
@@ -377,7 +560,7 @@ static __code const struct cli_node n_end = {
 
 static __code const struct cli_node * __code const cli_root_config[] = {
 	&n_end, &n_exit_cfg, &n_feature, &n_hostname, &n_interface, &n_ip_cfg,
-	&n_line, &n_logging, &n_vlan, 0
+	&n_line, &n_logging, &n_monitor, &n_stp_global, &n_vlan, 0
 };
 
 /* ---- interface configuration mode ---- */
@@ -549,17 +732,203 @@ static __code const struct cli_node n_sw_trunk = {
 	"trunk", 0, 0, 0, 0, ch_swtrunk, ACT_NONE,
 	"Trunk mode characteristics"
 };
+static __code const struct cli_node n_sw_protected = {
+	"protected", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_PROT,
+	"No forwarding to other protected ports"
+};
 static __code const struct cli_node * __code const ch_switchport[] = {
-	&n_sw_access, &n_sw_mode, &n_sw_trunk, 0
+	&n_sw_access, &n_sw_mode, &n_sw_protected, &n_sw_trunk, 0
 };
 static __code const struct cli_node n_if_switchport = {
 	"switchport", 0, 0, 0, 0, ch_switchport, ACT_NONE,
 	"Set switching mode characteristics"
 };
 
+/* power efficient-ethernet auto */
+static __code const struct cli_node n_eee_auto = {
+	"auto", 0, 0, 0, 0, NO_CHILDREN, ACT_EEE, "Negotiate EEE (default)"
+};
+static __code const struct cli_node * __code const ch_pw_eee[] = {
+	&n_eee_auto, 0
+};
+static __code const struct cli_node n_pw_eee = {
+	"efficient-ethernet", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_pw_eee, ACT_EEE,
+	"Energy Efficient Ethernet (802.3az)"
+};
+static __code const struct cli_node * __code const ch_power[] = {
+	&n_pw_eee, 0
+};
+static __code const struct cli_node n_if_power = {
+	"power", 0, 0, 0, 0, ch_power, ACT_NONE, "Power saving"
+};
+
+/* rate-limit input|output KBPS [drop] */
+static __code const struct cli_node n_rl_drop = {
+	"drop", 0, 0, 3, 0, NO_CHILDREN, ACT_RL, "Drop instead of sending pause frames"
+};
+static __code const struct cli_node * __code const ch_rl_in_arg[] = {
+	&n_rl_drop, 0
+};
+static __code const struct cli_node n_arg_rl_in = {
+	0, CLI_A_NUM32, 0, 1, 0, ch_rl_in_arg, ACT_RL, "Kbit/s, 16-10000000 in steps of 16"
+};
+static __code const struct cli_node n_arg_rl_out = {
+	0, CLI_A_NUM32, 0, 2, 0, NO_CHILDREN, ACT_RL, "Kbit/s, 16-10000000 in steps of 16"
+};
+static __code const struct cli_node * __code const ch_rl_in[] = {
+	&n_arg_rl_in, 0
+};
+static __code const struct cli_node * __code const ch_rl_out[] = {
+	&n_arg_rl_out, 0
+};
+static __code const struct cli_node n_rl_input = {
+	"input", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 1, 0, ch_rl_in, ACT_RL, "Ingress limit"
+};
+static __code const struct cli_node n_rl_output = {
+	"output", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 2, 0, ch_rl_out, ACT_RL, "Egress limit"
+};
+static __code const struct cli_node * __code const ch_rl[] = {
+	&n_rl_input, &n_rl_output, 0
+};
+static __code const struct cli_node n_if_rl = {
+	"rate-limit", 0, 0, 0, 0, ch_rl, ACT_NONE, "Bandwidth limit"
+};
+
+/* channel-group N [mode on] (static aggregation; there is no LACP) */
+static __code const struct cli_node n_cg_on = {
+	"on", 0, 0, 0, 0, NO_CHILDREN, ACT_CHGRP, "Static aggregation"
+};
+static __code const struct cli_node * __code const ch_cg_mode[] = {
+	&n_cg_on, 0
+};
+static __code const struct cli_node n_cg_mode = {
+	"mode", 0, 0, 0, 0, ch_cg_mode, ACT_NONE, "Aggregation mode"
+};
+static __code const struct cli_node * __code const ch_cg_arg[] = {
+	&n_cg_mode, 0
+};
+static __code const struct cli_node n_arg_cg = {
+	0, CLI_A_NUM, 0, 1, 4, ch_cg_arg, ACT_CHGRP, "Port-channel number"
+};
+static __code const struct cli_node * __code const ch_cg[] = {
+	&n_arg_cg, 0
+};
+static __code const struct cli_node n_if_cg = {
+	"channel-group", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_cg, ACT_CHGRP,
+	"Add the port to a port-channel"
+};
+
+/* per-port / per-port-channel spanning-tree */
+static __code const struct cli_node n_stpi_pf_dis = {
+	"disable", 0, 0, STPI_PF_DIS, 0, NO_CHILDREN, ACT_STP_IF, "Neither admin nor auto edge"
+};
+static __code const struct cli_node * __code const ch_stpi_pf[] = {
+	&n_stpi_pf_dis, 0
+};
+static __code const struct cli_node n_stpi_portfast = {
+	"portfast", 0, CLI_F_NO_OK, STPI_PORTFAST, 0, ch_stpi_pf, ACT_STP_IF,
+	"Edge port: forward immediately"
+};
+static __code const struct cli_node n_stpi_bg_en = {
+	"enable", 0, 0, STPI_BPDUGUARD, 0, NO_CHILDREN, ACT_STP_IF, "Shut the port on a BPDU"
+};
+static __code const struct cli_node * __code const ch_stpi_bg[] = {
+	&n_stpi_bg_en, 0
+};
+static __code const struct cli_node n_stpi_bguard = {
+	"bpduguard", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPI_BPDUGUARD, 0, ch_stpi_bg, ACT_STP_IF,
+	"BPDU guard"
+};
+static __code const struct cli_node n_stpi_bf_en = {
+	"enable", 0, 0, STPI_BPDUFILT, 0, NO_CHILDREN, ACT_STP_IF, "Neither send nor accept BPDUs"
+};
+static __code const struct cli_node * __code const ch_stpi_bf[] = {
+	&n_stpi_bf_en, 0
+};
+static __code const struct cli_node n_stpi_bfilter = {
+	"bpdufilter", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPI_BPDUFILT, 0, ch_stpi_bf, ACT_STP_IF,
+	"BPDU filter"
+};
+static __code const struct cli_node n_stpi_g_root = {
+	"root", 0, 0, STPI_ROOTGUARD, 0, NO_CHILDREN, ACT_STP_IF, "Never accept a better root here"
+};
+static __code const struct cli_node * __code const ch_stpi_guard[] = {
+	&n_stpi_g_root, 0
+};
+static __code const struct cli_node n_stpi_guard = {
+	"guard", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPI_ROOTGUARD, 0, ch_stpi_guard, ACT_STP_IF,
+	"Root guard"
+};
+static __code const struct cli_node n_arg_stpi_cost = {
+	0, CLI_A_NUM32, 0, STPI_COST, 0, NO_CHILDREN, ACT_STP_IF, "1-200000000"
+};
+static __code const struct cli_node * __code const ch_stpi_cost[] = {
+	&n_arg_stpi_cost, 0
+};
+static __code const struct cli_node n_stpi_cost = {
+	"cost", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPI_COST, 0, ch_stpi_cost, ACT_STP_IF,
+	"Path cost (default: by speed)"
+};
+static __code const struct cli_node n_arg_stpi_pp = {
+	0, CLI_A_NUM32, 0, STPI_PPRIO, 0, NO_CHILDREN, ACT_STP_IF, "0-240, a multiple of 16"
+};
+static __code const struct cli_node * __code const ch_stpi_pp[] = {
+	&n_arg_stpi_pp, 0
+};
+static __code const struct cli_node n_stpi_pprio = {
+	"port-priority", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPI_PPRIO, 0, ch_stpi_pp, ACT_STP_IF,
+	"Port priority"
+};
+static __code const struct cli_node n_stpi_p2p = {
+	"point-to-point", 0, 0, STPI_P2P, 0, NO_CHILDREN, ACT_STP_IF, "Full-duplex link"
+};
+static __code const struct cli_node n_stpi_shared = {
+	"shared", 0, 0, STPI_SHARED, 0, NO_CHILDREN, ACT_STP_IF, "Shared medium"
+};
+static __code const struct cli_node * __code const ch_stpi_lt[] = {
+	&n_stpi_p2p, &n_stpi_shared, 0
+};
+static __code const struct cli_node n_stpi_lt = {
+	"link-type", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPI_P2P, 0, ch_stpi_lt, ACT_STP_IF,
+	"Link type (default: auto)"
+};
+static __code const struct cli_node * __code const ch_stp_if[] = {
+	&n_stpi_bfilter, &n_stpi_bguard, &n_stpi_cost, &n_stpi_guard,
+	&n_stpi_lt, &n_stpi_pprio, &n_stpi_portfast, 0
+};
+static __code const struct cli_node n_if_stp = {
+	"spanning-tree", 0, 0, 0, 0, ch_stp_if, ACT_NONE, "Spanning tree port settings"
+};
+
 static __code const struct cli_node * __code const cli_root_if[] = {
-	&n_end, &n_exit_cfg, &n_if_description, &n_if_mtu, &n_if_shutdown,
-	&n_if_speed, &n_if_switchport, 0
+	&n_end, &n_exit_cfg, &n_if_cg, &n_if_description, &n_if_mtu, &n_if_power,
+	&n_if_rl, &n_if_shutdown, &n_if_speed, &n_if_stp, &n_if_switchport, 0
+};
+
+/* ---- port-channel mode ---- */
+/* load-balance FIELD...: the fields chain back into the same list and
+ * each ORs its hash bit into cli.acc */
+extern __code const struct cli_node * __code const cli_ch_lb[];
+#define LB_FIELD(nm, word, bit, help) \
+static __code const struct cli_node nm = { \
+	word, 0, CLI_F_ACC, bit, 0, cli_ch_lb, ACT_LB, help \
+};
+LB_FIELD(n_lb_sport, "src-port", LAG_HASH_SOURCE_PORT_NUMBER, "Ingress port")
+LB_FIELD(n_lb_smac, "src-mac", LAG_HASH_L2_SMAC, "Source MAC")
+LB_FIELD(n_lb_dmac, "dst-mac", LAG_HASH_L2_DMAC, "Destination MAC")
+LB_FIELD(n_lb_sip, "src-ip", LAG_HASH_L3_SIP, "Source IP")
+LB_FIELD(n_lb_dip, "dst-ip", LAG_HASH_L3_DIP, "Destination IP")
+LB_FIELD(n_lb_l4s, "l4-src-port", LAG_HASH_L4_SPORT, "TCP/UDP source port")
+LB_FIELD(n_lb_l4d, "l4-dst-port", LAG_HASH_L4_DPORT, "TCP/UDP destination port")
+__code const struct cli_node * __code const cli_ch_lb[] = {
+	&n_lb_dip, &n_lb_dmac, &n_lb_l4d, &n_lb_l4s, &n_lb_sip, &n_lb_smac, &n_lb_sport, 0
+};
+static __code const struct cli_node n_po_lb = {
+	"load-balance", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, cli_ch_lb, ACT_LB,
+	"Hash fields for member selection"
+};
+static __code const struct cli_node * __code const cli_root_po[] = {
+	&n_end, &n_exit_cfg, &n_po_lb, &n_if_stp, 0
 };
 
 /* ---- VLAN configuration mode ---- */
@@ -655,6 +1024,8 @@ static __code const struct cli_node * __code const *root_for_mode(uint8_t mode)
 		return cli_root_vlan;
 	case CLI_MODE_SVI:
 		return cli_root_svi;
+	case CLI_MODE_PO:
+		return cli_root_po;
 	case CLI_MODE_LINE:
 		return cli_root_line;
 	default:
@@ -814,6 +1185,15 @@ static uint8_t arg_accept(uint8_t t, __code const struct cli_node *n)
 		v = num;
 		break;
 	}
+	case CLI_A_NUM32:
+		if (!len || len > 9)
+			return 0;
+		for (i = 0; i < len; i++) {
+			if (p[i] < '0' || p[i] > '9')
+				return 0;
+			v = v * 10 + (p[i] - '0');
+		}
+		break;
 	case CLI_A_WORD:
 		if (!len)
 			return 0;
@@ -841,6 +1221,7 @@ static void cli_walk(__code const struct cli_node * __code const *root, uint8_t 
 	w_status = W_OK;
 	w_badtok = 0;
 	cli.nargs = 0;
+	cli.acc = 0;
 
 	for (t = 0; t < upto; t++) {
 		__code const struct cli_node * __xdata exact = 0;
@@ -894,6 +1275,8 @@ static void cli_walk(__code const struct cli_node * __code const *root, uint8_t 
 			return;
 		}
 		w_node = sel;
+		if (sel->flags & CLI_F_ACC)
+			cli.acc |= sel->lo;
 		if (!sel->word && sel->arg == CLI_A_LINE)
 			return;	/* swallows the rest of the line */
 		w_children = sel->children;
@@ -932,6 +1315,9 @@ static void print_placeholder(__code const struct cli_node *n)
 		break;
 	case CLI_A_IFACE:
 		print_string("<1-9> or S/N");
+		break;
+	case CLI_A_NUM32:
+		print_string("<number>");
 		break;
 	case CLI_A_WORD:
 		print_string("WORD");
@@ -1110,6 +1496,47 @@ static uint8_t vlan_ensure(__xdata uint16_t vid)
 }
 
 
+/* User-facing port N -> logical port through the board table, exactly
+ * like the legacy `port N` command; 0xff when the board has no such port */
+static uint8_t up_to_lp(__xdata uint16_t up)
+{
+	static __xdata uint8_t lp;
+
+	if (up < 1 || up > 9)
+		return 0xff;
+	lp = machine.phys_to_log_port[up - 1];
+	if (lp < machine.min_port || lp > machine.max_port)
+		return 0xff;
+	return lp;
+}
+
+
+static void bad_value(void)
+{
+	print_string("% Value out of range\n");
+}
+
+
+/* The STP entity the current interface-mode context configures, or
+ * 0xff (with a message) for a port that belongs to a port-channel */
+static uint8_t stp_ctx_entity(void)
+{
+	static __xdata uint8_t e;
+
+	if (cli.mode == CLI_MODE_PO)
+		return STP_LAG_BASE + cli.ctx_po - 1;
+	e = stp_cfg_entity(cli.ctx_lport);
+	if (e != cli.ctx_lport) {
+		print_string("% Port is in a port-channel: configure spanning-tree"
+			     " under interface port-channel ");
+		itoa_short(e - STP_LAG_BASE + 1);
+		write_char('\n');
+		return 0xff;
+	}
+	return e;
+}
+
+
 static void cli_dispatch(uint8_t action)
 {
 	switch (action) {
@@ -1133,6 +1560,7 @@ static void cli_dispatch(uint8_t action)
 		case CLI_MODE_VLAN:
 		case CLI_MODE_LINE:
 		case CLI_MODE_SVI:
+		case CLI_MODE_PO:
 			cli.mode = CLI_MODE_CONFIG;
 			break;
 		/* EXEC/PRIV: telnet intercepts `exit` itself; nothing to do
@@ -1164,12 +1592,8 @@ static void cli_dispatch(uint8_t action)
 		 * like the legacy `port N` command: on 4+2 boards the
 		 * logical numbering does not start at 0. */
 		d_v = cli.args[0];
-		if (d_v < 1 || d_v > 9) {
-			print_string("% Invalid interface\n");
-			break;
-		}
-		d_lp = machine.phys_to_log_port[d_v - 1];
-		if (d_lp < machine.min_port || d_lp > machine.max_port) {
+		d_lp = up_to_lp(d_v);
+		if (d_lp == 0xff) {
 			print_string("% Invalid interface\n");
 			break;
 		}
@@ -1379,6 +1803,223 @@ static void cli_dispatch(uint8_t action)
 		passwd[pn] = 0;
 		break;
 	}
+	case ACT_EEE:
+		sw_ports[cli.ctx_lport].eee_off = cli.no;
+		sw_eee_apply(cli.ctx_lport);
+		break;
+	case ACT_PROT:
+		sw_ports[cli.ctx_lport].prot = !cli.no;
+		sw_protect_apply();
+		break;
+	case ACT_RL:
+	{
+		static __xdata uint8_t dir;
+		static __xdata uint32_t kb;
+		dir = w_node->lo;
+		if (cli.no) {
+			kb = 0;
+		} else {
+			kb = cli.args[0] & ~15UL;	/* the hardware steps in 16 kbit/s */
+			if (cli.args[0] < SW_RATE_MIN || cli.args[0] > SW_RATE_MAX) {
+				bad_value();
+				break;
+			}
+		}
+		if (dir == 2) {
+			sw_ports[cli.ctx_lport].rl_out = kb;
+		} else {
+			sw_ports[cli.ctx_lport].rl_in = kb;
+			sw_ports[cli.ctx_lport].rl_in_drop = (dir == 3);
+		}
+		sw_rate_apply(cli.ctx_lport);
+		break;
+	}
+	case ACT_CHGRP:
+		sw_lag_join(cli.ctx_lport, cli.no ? 0 : cli.args[0]);
+		sw_apply();	/* members share one PVID */
+		break;
+	case ACT_PO:
+		cli.ctx_po = cli.args[0];
+		cli.mode = CLI_MODE_PO;
+		break;
+	case ACT_LB:
+		if (cli.no) {
+			port_lag_hash_set(cli.ctx_po - 1, LAG_HASH_DEFAULT);
+			break;
+		}
+		port_lag_hash_set(cli.ctx_po - 1, cli.acc);
+		break;
+	case ACT_MON_SRC:
+	{
+		static __xdata uint16_t bit;
+		d_lp = up_to_lp(cli.args[1]);
+		if (d_lp == 0xff) {
+			print_string("% Invalid interface\n");
+			break;
+		}
+		bit = (uint16_t)1 << d_lp;
+		sw_mon_rx &= ~bit;
+		sw_mon_tx &= ~bit;
+		if (!cli.no) {
+			if (d_lp == sw_mon_dst) {
+				print_string("% The destination cannot be a source\n");
+				break;
+			}
+			if (w_node->lo & 1)
+				sw_mon_rx |= bit;
+			if (w_node->lo & 2)
+				sw_mon_tx |= bit;
+		}
+		sw_mon_apply();
+		break;
+	}
+	case ACT_MON_DST:
+		if (cli.no) {
+			sw_mon_dst = SW_MON_NONE;
+		} else {
+			d_lp = up_to_lp(cli.args[1]);
+			if (d_lp == 0xff) {
+				print_string("% Invalid interface\n");
+				break;
+			}
+			sw_mon_dst = d_lp;
+			sw_mon_rx &= ~((uint16_t)1 << d_lp);
+			sw_mon_tx &= ~((uint16_t)1 << d_lp);
+		}
+		sw_mon_apply();
+		break;
+	case ACT_MON_DEL:
+		sw_mon_dst = SW_MON_NONE;
+		sw_mon_rx = 0;
+		sw_mon_tx = 0;
+		sw_mon_apply();
+		break;
+	case ACT_FEAT_STP:
+		stp_cfg_enable(!cli.no);
+		break;
+	case ACT_STP_G:
+	{
+		static __xdata uint32_t sv;
+		sv = cli.args[0];
+		switch (w_node->lo) {
+		case STPG_RSTP:
+			stp_rstp = 1;	/* also `no spanning-tree mode` */
+			break;
+		case STPG_STP:
+			stp_rstp = cli.no;
+			break;
+		case STPG_PRIO:
+			if (cli.no)
+				sv = 32768;
+			if (sv > 61440 || (sv & 4095)) {
+				bad_value();
+				break;
+			}
+			stp_cfg_prio(sv >> 8);
+			break;
+		case STPG_HELLO:
+			if (cli.no)
+				sv = 2;
+			if (sv < 1 || sv > 10) {
+				bad_value();
+				break;
+			}
+			stp_hello_s = sv;
+			break;
+		case STPG_FWD:
+			if (cli.no)
+				sv = 15;
+			if (sv < 4 || sv > 30) {
+				bad_value();
+				break;
+			}
+			stp_fwddelay_s = sv;
+			break;
+		case STPG_MAXAGE:
+			if (cli.no)
+				sv = 20;
+			if (sv < 6 || sv > 40) {
+				bad_value();
+				break;
+			}
+			stp_maxage_s = sv;
+			break;
+		case STPG_TXHOLD:
+			if (cli.no)
+				sv = 6;
+			if (sv < 1 || sv > 10) {
+				bad_value();
+				break;
+			}
+			stp_txhold = sv;
+			break;
+		}
+		break;
+	}
+	case ACT_STP_IF:
+	{
+		static __xdata uint8_t e;
+		static __xdata uint32_t iv;
+		e = stp_ctx_entity();
+		if (e == 0xff)
+			break;
+		iv = cli.args[0];
+		switch (w_node->lo) {
+		case STPI_PORTFAST:
+			stp_pflags[e] &= ~(STP_PF_ADMEDGE | STP_PF_AUTOEDGE | STP_PF_OPEREDGE);
+			if (cli.no)
+				stp_pflags[e] |= STP_PF_AUTOEDGE;	/* the default */
+			else
+				stp_pflags[e] |= STP_PF_ADMEDGE | STP_PF_OPEREDGE;
+			break;
+		case STPI_PF_DIS:
+			stp_pflags[e] &= ~(STP_PF_ADMEDGE | STP_PF_AUTOEDGE | STP_PF_OPEREDGE);
+			break;
+		case STPI_BPDUGUARD:
+			if (cli.no)
+				stp_pflags[e] &= ~STP_PF_BPDUGUARD;
+			else
+				stp_pflags[e] |= STP_PF_BPDUGUARD;
+			break;
+		case STPI_BPDUFILT:
+			if (cli.no)
+				stp_pflags[e] &= ~STP_PF_FILTER;
+			else
+				stp_pflags[e] |= STP_PF_FILTER;
+			break;
+		case STPI_ROOTGUARD:
+			if (cli.no)
+				stp_pflags[e] &= ~STP_PF_ROOTGUARD;
+			else
+				stp_pflags[e] |= STP_PF_ROOTGUARD;
+			break;
+		case STPI_COST:
+			if (cli.no)
+				iv = 0;
+			else if (iv < 1 || iv > 200000000UL) {
+				bad_value();
+				break;
+			}
+			stp_pcost[e] = iv;
+			break;
+		case STPI_PPRIO:
+			if (cli.no)
+				iv = 128;
+			if (iv > 240 || (iv & 15)) {
+				bad_value();
+				break;
+			}
+			stp_pprio[e] = iv;
+			break;
+		case STPI_P2P:
+			stp_pp2p[e] = cli.no ? 0 : 1;
+			break;
+		case STPI_SHARED:
+			stp_pp2p[e] = 2;
+			break;
+		}
+		break;
+	}
 	}
 }
 
@@ -1568,6 +2209,7 @@ void cli_prompt(void) __banked
 		break;
 	case CLI_MODE_IF:
 	case CLI_MODE_SVI:
+	case CLI_MODE_PO:
 		print_string("(config-if)");
 		cli_plen += 11;
 		break;

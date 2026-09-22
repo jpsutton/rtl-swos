@@ -29,12 +29,14 @@
 #define CLI_MODE_VLAN	4	/* (config-vlan)# */
 #define CLI_MODE_LINE	5	/* (config-line)# */
 #define CLI_MODE_SVI	6	/* (config-if)# on interface vlan N */
+#define CLI_MODE_PO	7	/* (config-if)# on interface port-channel N */
 
 /* Node flags */
 #define CLI_F_PRIV	0x01	/* hidden and refused in user EXEC */
 #define CLI_F_NO_OK	0x02	/* usable under `no` */
 #define CLI_F_NO_ONLY	0x04	/* only usable under `no` */
 #define CLI_F_NO_EXEC	0x08	/* executable here only under `no`; plain form is incomplete */
+#define CLI_F_ACC	0x10	/* literal ORs its ->lo into cli.acc when matched (word lists) */
 
 /* Argument placeholder types (a node with word == 0 is an argument) */
 #define CLI_A_NONE	0
@@ -43,6 +45,7 @@
 #define CLI_A_IP	3	/* dotted quad */
 #define CLI_A_IFACE	4	/* ethernet 1/N | eN/M | line rest */
 #define CLI_A_LINE	5	/* rest of the line, verbatim */
+#define CLI_A_NUM32	6	/* decimal up to 9 digits; the handler range-checks */
 
 #define CLI_MAX_ARGS	4
 
@@ -69,6 +72,8 @@ struct cli_state_t {
 	/* raw offset of each arg token in the line, for string args */
 	uint8_t argoff[CLI_MAX_ARGS];
 	uint8_t argerr;		/* offset of the arg that failed validation */
+	uint16_t acc;		/* OR of ->lo of the CLI_F_ACC literals matched */
+	uint8_t ctx_po;		/* port-channel 1-4 for MODE_PO */
 };
 
 #define CLI_AWAIT_NONE		0

@@ -154,3 +154,55 @@ void flash_read_bulk(uint8_t *dst)
 			 ? fake_cfg[a - CONFIG_START] : 0xff;
 	}
 }
+
+/* ---- STP engine config API (rtl837x_stp.c is not linked; its variables
+ * live in env_tables.c) ---- */
+#include "rtl837x_stp.h"
+#include "rtl837x_port.h"
+extern bool stp_enabled;
+int n_stp_enable, n_stp_disable, n_stp_prio;
+
+uint8_t stp_cfg_entity(uint8_t port)
+{
+	uint8_t g = port_lag_of(port);
+	return g == PORT_LAG_NONE ? port : STP_LAG_BASE + g;
+}
+void stp_cfg_enable(uint8_t on)
+{
+	stp_enabled = on;
+	if (on)
+		n_stp_enable++;
+	else
+		n_stp_disable++;
+}
+void stp_cfg_prio(uint8_t prio) { stp_prio = prio; n_stp_prio++; }
+
+/* what stp_defaults() establishes */
+void stp_test_defaults(void)
+{
+	stp_enabled = 0;
+	stp_prio = 0x80;
+	stp_hello_s = 2;
+	stp_maxage_s = 20;
+	stp_fwddelay_s = 15;
+	stp_rstp = 1;
+	stp_txhold = 6;
+	for (int i = 0; i < STP_ENTITIES; i++) {
+		stp_pflags[i] = STP_PF_ENABLED | STP_PF_AUTOEDGE;
+		stp_pcost[i] = 0;
+		stp_pprio[i] = 0x80;
+		stp_pp2p[i] = 0;
+	}
+	n_stp_enable = n_stp_disable = n_stp_prio = 0;
+}
+
+/* ---- bandwidth driver (rtl837x_bandwidth.c is not linked) ---- */
+uint32_t bw_in[10], bw_out[10];
+uint8_t bw_in_drop[10];
+void bandwidth_ingress_set(uint8_t p, uint32_t bw) { bw_in[p] = bw; bw_in_drop[p] = 0; }
+void bandwidth_ingress_disable(uint8_t p) { bw_in[p] = 0; }
+void bandwidth_ingress_drop(uint8_t p) { bw_in_drop[p] = 1; }
+void bandwidth_ingress_fc(uint8_t p) { bw_in_drop[p] = 0; }
+void bandwidth_egress_set(uint8_t p, uint32_t bw) { bw_out[p] = bw; }
+void bandwidth_egress_disable(uint8_t p) { bw_out[p] = 0; }
+void bandwidth_status(uint8_t p) { (void)p; }

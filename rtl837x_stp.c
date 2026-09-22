@@ -975,6 +975,37 @@ void stp_off(void) __banked
 }
 
 
+/* ---- configuration API for the modal CLI ---- */
+
+/* The STP entity a logical port answers to: itself, or its LAG's */
+uint8_t stp_cfg_entity(uint8_t port) __banked
+{
+	stp_lag_map();
+	return stp_ent_of[port];
+}
+
+
+void stp_cfg_enable(uint8_t on) __banked
+{
+	if (on) {
+		stp_enabled = 1;
+		stp_setup();
+	} else {
+		stp_off();
+		stp_enabled = 0;
+	}
+}
+
+
+/* prio: the high byte of the bridge priority (priority / 256) */
+void stp_cfg_prio(uint8_t prio) __banked
+{
+	stp_prio = prio;
+	if (stp_root_port == 0xff)
+		stp_claim_root();	/* re-announce with the new priority */
+}
+
+
 void stp_parse(void) __banked __reentrant
 {
 	uint8_t ent;

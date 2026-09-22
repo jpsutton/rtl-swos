@@ -24,6 +24,7 @@
 #include "tftp.h"
 #include "uip/uip.h"
 #include "swcfg.h"
+#include "rtl837x_stp.h"
 #include "runcfg.h"
 
 #pragma codeseg BANK3
@@ -37,6 +38,7 @@ extern __xdata char passwd[21];
 extern __xdata uint8_t sfr_data[4];
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 extern __xdata struct flash_region_t flash_region;
+extern __xdata bool stp_enabled;
 
 /* Scratch only: filled before every use, so it may live above XRAM_LOW_LIMIT */
 __xdata __at(XRAM_CFG_BUF) uint8_t cfg_buf[CONFIG_LEN];
@@ -77,6 +79,21 @@ static void rc_x(__xdata const char * __xdata s, __xdata uint8_t word)
 static void rc_dec(__xdata uint16_t v)
 {
 	static __xdata char b[6];
+	static __xdata uint8_t n;
+
+	n = 0;
+	do {
+		b[n++] = '0' + v % 10;
+		v /= 10;
+	} while (v);
+	while (n)
+		rc_c(b[--n]);
+}
+
+
+static void rc_dec32(__xdata uint32_t v)
+{
+	static __xdata char b[10];
 	static __xdata uint8_t n;
 
 	n = 0;
@@ -202,9 +219,83 @@ static void rc_allowed(__xdata struct sw_port * __xdata sp)
 }
 
 
+/* Non-default spanning-tree settings of one STP entity (a port or a lag) */
+static void rc_stp_ent(__xdata uint8_t e)
+{
+	static __xdata uint8_t f;
+
+	f = stp_pflags[e];
+	if (f & STP_PF_ADMEDGE)
+		rc_s(" spanning-tree portfast\n");
+	else if (!(f & STP_PF_AUTOEDGE))
+		rc_s(" spanning-tree portfast disable\n");
+	if (f & STP_PF_BPDUGUARD)
+		rc_s(" spanning-tree bpduguard enable\n");
+	if (f & STP_PF_FILTER)
+		rc_s(" spanning-tree bpdufilter enable\n");
+	if (f & STP_PF_ROOTGUARD)
+		rc_s(" spanning-tree guard root\n");
+	if (stp_pcost[e]) {
+		rc_s(" spanning-tree cost ");
+		rc_dec32(stp_pcost[e]);
+		rc_c('\n');
+	}
+	if (stp_pprio[e] != 0x80) {
+		rc_s(" spanning-tree port-priority ");
+		rc_dec(stp_pprio[e]);
+		rc_c('\n');
+	}
+	if (stp_pp2p[e] == 1)
+		rc_s(" spanning-tree link-type point-to-point\n");
+	else if (stp_pp2p[e] == 2)
+		rc_s(" spanning-tree link-type shared\n");
+}
+
+
+static void rc_hash_field(__xdata uint8_t h, __xdata uint8_t bit, __code const char * __xdata w)
+{
+	if (h & bit) {
+		rc_c(' ');
+		rc_s(w);
+	}
+}
+
+
+/* Port-channels with members come first: a custom hash must be in place
+ * before members join, since joining installs the default on a pristine
+ * lag */
+static void rc_port_channels(void)
+{
+	static __xdata uint8_t g, h;
+
+	for (g = 0; g < 4; g++) {
+		if (!port_lag_members_get(g))
+			continue;
+		rc_s("interface port-channel ");
+		rc_dec(g + 1);
+		rc_c('\n');
+		reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (g << 2));
+		h = sfr_data[3];
+		if (h != LAG_HASH_DEFAULT) {
+			rc_s(" load-balance");
+			rc_hash_field(h, LAG_HASH_SOURCE_PORT_NUMBER, "src-port");
+			rc_hash_field(h, LAG_HASH_L2_SMAC, "src-mac");
+			rc_hash_field(h, LAG_HASH_L2_DMAC, "dst-mac");
+			rc_hash_field(h, LAG_HASH_L3_SIP, "src-ip");
+			rc_hash_field(h, LAG_HASH_L3_DIP, "dst-ip");
+			rc_hash_field(h, LAG_HASH_L4_SPORT, "l4-src-port");
+			rc_hash_field(h, LAG_HASH_L4_DPORT, "l4-dst-port");
+			rc_c('\n');
+		}
+		rc_stp_ent(STP_LAG_BASE + g);
+		rc_s("!\n");
+	}
+}
+
+
 static void rc_interfaces(void)
 {
-	static __xdata uint8_t up, lp;
+	static __xdata uint8_t up, lp, g;
 	static __xdata uint16_t mtu;
 	static __xdata struct sw_port * __xdata sp;
 
@@ -253,8 +344,107 @@ static void rc_interfaces(void)
 			rc_dec(sp->access_vid);
 			rc_c('\n');
 		}
+		if (sp->prot)
+			rc_s(" switchport protected\n");
+		if (sp->eee_off)
+			rc_s(" no power efficient-ethernet\n");
+		if (sp->rl_in) {
+			rc_s(" rate-limit input ");
+			rc_dec32(sp->rl_in);
+			if (sp->rl_in_drop)
+				rc_s(" drop");
+			rc_c('\n');
+		}
+		if (sp->rl_out) {
+			rc_s(" rate-limit output ");
+			rc_dec32(sp->rl_out);
+			rc_c('\n');
+		}
+		g = port_lag_of(lp);
+		if (g != PORT_LAG_NONE) {
+			rc_s(" channel-group ");
+			rc_dec(g + 1);
+			rc_s(" mode on\n");
+		} else {
+			rc_stp_ent(lp);		/* a member follows its lag */
+		}
 		rc_s("!\n");
 	}
+}
+
+
+/* user-facing port number of a logical port */
+static void rc_upnum(__xdata uint8_t lp)
+{
+	static __xdata uint8_t up;
+
+	for (up = 1; up <= 9; up++) {
+		if (machine.phys_to_log_port[up - 1] == lp) {
+			rc_dec(up);
+			return;
+		}
+	}
+}
+
+
+static void rc_monitor(void)
+{
+	static __xdata uint8_t lp;
+	static __xdata uint16_t bit;
+
+	for (lp = machine.min_port; lp <= machine.max_port; lp++) {
+		bit = (uint16_t)1 << lp;
+		if (!((sw_mon_rx | sw_mon_tx) & bit))
+			continue;
+		rc_s("monitor session 1 source interface ethernet 1/");
+		rc_upnum(lp);
+		if (!(sw_mon_tx & bit))
+			rc_s(" rx");
+		else if (!(sw_mon_rx & bit))
+			rc_s(" tx");
+		rc_c('\n');
+	}
+	if (sw_mon_dst != SW_MON_NONE) {
+		rc_s("monitor session 1 destination interface ethernet 1/");
+		rc_upnum(sw_mon_dst);
+		rc_c('\n');
+	}
+}
+
+
+/* After the interfaces: the per-port edge flags must be in place when
+ * `feature spanning-tree` starts the engine */
+static void rc_stp_global(void)
+{
+	if (!stp_rstp)
+		rc_s("spanning-tree mode stp\n");
+	if (stp_prio != 0x80) {
+		rc_s("spanning-tree priority ");
+		rc_dec32((uint32_t)stp_prio << 8);
+		rc_c('\n');
+	}
+	if (stp_hello_s != 2) {
+		rc_s("spanning-tree hello-time ");
+		rc_dec(stp_hello_s);
+		rc_c('\n');
+	}
+	if (stp_fwddelay_s != 15) {
+		rc_s("spanning-tree forward-time ");
+		rc_dec(stp_fwddelay_s);
+		rc_c('\n');
+	}
+	if (stp_maxage_s != 20) {
+		rc_s("spanning-tree max-age ");
+		rc_dec(stp_maxage_s);
+		rc_c('\n');
+	}
+	if (stp_txhold != 6) {
+		rc_s("spanning-tree transmit hold-count ");
+		rc_dec(stp_txhold);
+		rc_c('\n');
+	}
+	if (stp_enabled)
+		rc_s("feature spanning-tree\n");
 }
 
 
@@ -265,6 +455,7 @@ static void rc_emit(void)
 	rc_s("\n!\n");
 
 	rc_vlans();
+	rc_port_channels();
 	rc_interfaces();
 
 	if (management_vlan) {
@@ -299,6 +490,8 @@ static void rc_emit(void)
 		}
 		rc_c('\n');
 	}
+	rc_monitor();
+	rc_stp_global();
 	if (telnet_state.enabled)
 		rc_s("feature telnet\n");
 

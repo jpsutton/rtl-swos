@@ -159,6 +159,7 @@ static void tn_prompt(void)
 		break;
 	case CLI_MODE_IF:
 	case CLI_MODE_SVI:
+	case CLI_MODE_PO:
 		tn_puts("(config-if)");
 		break;
 	case CLI_MODE_VLAN:

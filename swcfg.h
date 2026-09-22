@@ -53,7 +53,20 @@ struct sw_port {
 	 * config. The MTU is read back from its register instead. */
 	uint8_t speed;		/* PHY_SPEED_* as configured */
 	uint8_t shut;		/* administratively down */
+	uint8_t eee_off;	/* no power efficient-ethernet (on by default) */
+	uint8_t prot;		/* switchport protected */
+	uint32_t rl_in;		/* rate-limit input, kbit/s; 0 = none */
+	uint32_t rl_out;	/* rate-limit output, kbit/s; 0 = none */
+	uint8_t rl_in_drop;	/* input limit drops instead of pausing */
 };
+
+/* SPAN session 1 (the hardware has one) */
+#define SW_MON_NONE	0xff
+extern __xdata uint8_t sw_mon_dst;	/* logical port, SW_MON_NONE = unset */
+extern __xdata uint16_t sw_mon_rx, sw_mon_tx;	/* source port masks */
+
+#define SW_RATE_MIN	16UL		/* kbit/s, also the step */
+#define SW_RATE_MAX	10000000UL
 
 extern __xdata uint16_t sw_vlans[SW_MAX_VLANS];	/* 0 = free slot */
 extern __xdata struct sw_port sw_ports[SW_NPORTS];
@@ -74,6 +87,12 @@ void sw_apply(void) __banked;
 void sw_defer(uint8_t on) __banked;
 
 void sw_mtu_set(uint8_t lport, __xdata uint16_t mtu) __banked;
+void sw_eee_apply(uint8_t lport) __banked;
+void sw_protect_apply(void) __banked;
+void sw_rate_apply(uint8_t lport) __banked;
+void sw_mon_apply(void) __banked;
+/* Move a port into link aggregation group 1-4, or out of any (0) */
+void sw_lag_join(uint8_t lport, __xdata uint8_t lag) __banked;
 
 /* Management interface (the single SVI). ip/mask as A<<24|B<<16|C<<8|D. */
 void sw_mgmt_vlan_set(uint16_t vid) __banked;
