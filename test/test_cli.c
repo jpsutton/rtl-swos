@@ -221,8 +221,7 @@ static void test_priv_gating(void)
 	printf("[test] privilege gating\n");
 	reset_all();
 	run("reload");
-	CHECK(n_reset == 0 && n_fallback == 1,
-	      "reload hidden in user EXEC falls through to legacy");
+	CHECK(n_reset == 0 && out_has("'^' marker"), "reload is hidden in user EXEC");
 	run("enable");
 	run("reload");
 	CHECK(n_reset == 1, "reload works in privileged EXEC");
@@ -233,12 +232,11 @@ static void test_fallback(void)
 	printf("[test] legacy fallback\n");
 	reset_all();
 	run("stat");
-	CHECK(n_fallback == 1 && strcmp(last_fallback, "stat") == 0,
-	      "unknown first word goes to the legacy parser verbatim");
+	CHECK(out_has("^\n% Invalid input"), "an unknown first word is invalid input");
 	run("enable");
+	run("configure terminal");
 	run("port 5 1g");
-	CHECK(n_fallback == 2 && strcmp(last_fallback, "port 5 1g") == 0,
-	      "legacy config command falls through");
+	CHECK(out_has("'^' marker"), "old flat syntax is invalid input");
 }
 
 static void test_exec_anywhere(void)
@@ -551,7 +549,7 @@ static void test_no_edge_cases(void)
 	run("enable");
 	run("configure terminal");
 	run("n vlan 5");
-	CHECK(n_fallback == 1 && !sw_vlan_exists(5), "a lone 'n' is not taken for 'no'");
+	CHECK(out_has("'^' marker") && !sw_vlan_exists(5), "a lone 'n' is not taken for 'no'");
 	to_if("ethernet 1/2");
 	out_reset();
 	strcpy(linebuf, "switchport access vlan ");
@@ -722,9 +720,10 @@ static void test_write_and_startup(void)
 
 static void test_replay_legacy_and_comments(void)
 {
-	printf("[test] boot replay: legacy syntax shim, comments, deferred push\n");
+	printf("[test] boot replay: bad lines reported and skipped, comments, deferred push\n");
 	wipe_all();
 	unsigned long w0;
+	out_reset();
 	replay_text("! a comment\n"
 		    "ip 192.168.10.247\n"		/* legacy: invalid new syntax */
 		    "netmask 255.255.255.0\n"		/* legacy: unknown word */
@@ -732,8 +731,9 @@ static void test_replay_legacy_and_comments(void)
 		    "   ! indented comment\n"
 		    "vlan 30\n"				/* new syntax still works */
 		    " name lab\n");
-	CHECK(n_fallback == 3, "the three legacy lines went to the legacy parser");
-	CHECK(strstr(last_fallback, "telnet on") != NULL, "verbatim");
+	CHECK(n_fallback == 0, "nothing goes to a legacy parser any more");
+	CHECK(out_has("% In the startup config:\nip 192.168.10.247\n") && out_has("netmask 255.255.255.0"),
+	      "old-syntax lines are reported with the line itself");
 	CHECK(sw_vlan_exists(30) && vl_valid(30), "new-syntax lines in the same replay work");
 	CHECK(vlan_name(30) != 0xffff, "including a submode line");
 
@@ -1089,7 +1089,7 @@ static void test_show(void)
 	CHECK(!out_has("%"), "clear mac address-table dynamic");
 	run("disable");
 	run("clear mac address-table dynamic");
-	CHECK(n_fallback > 0, "clear is privileged");
+	CHECK(out_has("'^' marker"), "clear is privileged");
 }
 
 
@@ -1110,7 +1110,7 @@ static void test_step4(void)
 	CHECK(out_has("Refusing"), "xram test refuses the live region");
 	run("disable");
 	run("debug register read 1250");
-	CHECK(n_fallback > 0, "debug is privileged");
+	CHECK(out_has("'^' marker"), "debug is privileged");
 
 	run("enable");
 	to_if("ethernet 1/4");

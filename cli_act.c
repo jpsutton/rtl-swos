@@ -6,7 +6,7 @@
  * overlay segment is exhausted, see cli.c.
  */
 #include "rtl837x_common.h"
-#include "cmd_parser.h"
+#include "console.h"
 #include "rtl837x_phy.h"
 #include "phy.h"
 #include "machine.h"

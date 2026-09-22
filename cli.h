@@ -13,8 +13,6 @@
  *  - literal tokens win over argument placeholders
  *  - `no` prefix inverts a command that allows it
  *  - EXEC commands are reachable from any config mode without `do`
- *  - a line no tree node claims falls back to the legacy flat parser,
- *    so unported commands keep working during the migration
  *
  * `?` lists the candidates at the cursor, Tab completes a unique
  * prefix; both are fed by the line editors through cli_help() /
@@ -111,10 +109,9 @@ uint8_t cli_complete(__xdata char *line, uint8_t maxlen) __banked;
 /* True while the CLI expects a password on the next line (no echo). */
 uint8_t cli_hidden_input(void) __banked;
 
-/* Boot-time startup-config replay: lines run in global config mode; a
- * line the modal parser cannot run goes to the legacy parser instead,
- * so a config written in the old flat syntax still boots. VLAN pushes
- * are deferred to the end. */
+/* Boot-time startup-config replay: lines run in global config mode and
+ * VLAN pushes are deferred to the end. A line that fails is reported with
+ * the line itself and skipped. */
 void cli_replay_begin(void) __banked;
 void cli_replay_line(__xdata char *line) __banked;
 void cli_replay_end(void) __banked;

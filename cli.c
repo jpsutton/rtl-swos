@@ -4,9 +4,7 @@
  * The command tree lives in code space; matching walks one token at a
  * time with unique-prefix abbreviation. Literal tokens win over
  * argument placeholders. EXEC commands are reachable from config modes
- * without `do` (mode root first, EXEC root second), and a line whose
- * first token no tree claims falls back to the legacy flat parser so
- * unported commands keep working during the migration.
+ * without `do` (mode root first, EXEC root second).
  *
  * The serial console and the telnet vty are separate sessions: each
  * keeps its own mode and submode context, swapped in by cli_use().
@@ -17,7 +15,7 @@
  */
 #include <stddef.h>
 #include "rtl837x_common.h"
-#include "cmd_parser.h"
+#include "console.h"
 #include "rtl837x_phy.h"
 #include "phy.h"
 #include "machine.h"
@@ -1494,6 +1492,15 @@ static void cli_spaces(uint8_t n)
 
 static void cli_marker_error(void)
 {
+	if (cli_replaying) {
+		/* no prompt was printed: show the startup-config line itself */
+		print_string("% In the startup config:\n");
+		print_string_x(cli_line);
+		write_char('\n');
+		cli_spaces(tok_off[w_badtok]);
+		print_string("^\n% Invalid input detected at '^' marker.\n\n");
+		return;
+	}
 	cli_spaces(cli.plen + tok_off[w_badtok]);
 	print_string("^\n% Invalid input detected at '^' marker.\n\n");
 }
@@ -1764,18 +1771,12 @@ void cli_exec_line(__xdata char *line) __banked
 		return;
 	}
 
-	if (!cli_walk_roots(ntok)) {
-		/* Nothing in the tree claims this line: legacy parser */
-		execute_commands((__xdata uint8_t *)line);
-		return;
-	}
-	if (cli_replaying && !walk_ok()) {
-		/* Boot replay of a config written in the old flat syntax */
-		execute_commands((__xdata uint8_t *)line);
-		return;
-	}
+	cli_walk_roots(ntok);
 
 	switch (w_status) {
+	case W_NOMATCH0:
+		cli_marker_error();
+		return;
 	case W_AMBIG:
 		print_string("% Ambiguous command:  \"");
 		print_string_x((__xdata char *)line);

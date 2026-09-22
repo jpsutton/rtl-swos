@@ -1,4 +1,4 @@
-#include "cmd_parser.h"
+#include "console.h"
 #include "machine.h"
 #include "cli.h"
 

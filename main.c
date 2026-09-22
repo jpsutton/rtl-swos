@@ -17,7 +17,7 @@
 #include "rtl837x_bandwidth.h"
 #include "rtl837x_init.h"
 #include "dhcp.h"
-#include "cmd_parser.h"
+#include "console.h"
 #include "cmd_editor.h"
 #include "uip/uipopt.h"
 #include "uip/uip.h"
@@ -27,6 +27,7 @@
 #include "syslog.h"
 #include "telnetd.h"
 #include "cli.h"
+#include "show.h"
 #include "swcfg.h"
 #include "tftp.h"
 #include "boot.h"
@@ -107,7 +108,6 @@ __xdata uint8_t sbuf[SBUF_SIZE];
 // Registry data in sfr is in *big endian* order, so sfr_data[0] is the MSB and sfr_data[3] the LSB
 __xdata uint8_t sfr_data[4];
 
-extern __xdata uint8_t gpio_last_value[8];
 
 extern __xdata struct flash_region_t flash_region;
 
@@ -1649,7 +1649,7 @@ void main(void)
 	}
 
 	// Print SW version
-	print_sw_version();
+	show_version();
 
 	// Set AUTONEG for SFP ports
 	sfp_speed[0] = sfp_speed[1] = SFP_SPEED_AUTO;

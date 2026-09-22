@@ -20,7 +20,7 @@
 #include <8051.h>
 #include "rtl837x_common.h"
 #include "rtl837x_flash.h"
-#include "cmd_parser.h"
+#include "console.h"
 #include "uip/uip.h"
 #include "tftp.h"
 #include "runcfg.h"

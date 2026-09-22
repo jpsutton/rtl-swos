@@ -46,7 +46,17 @@ $(BUILDDIR):
 $(BUILDDIR)/%: %.c $(CORE_ENV) hw_mock.h support.h | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
-run: $(TESTS)
+# The legacy-config converter's output must replay without a single error
+CONVERTED = $(BUILDDIR)/lab-converted.cfg
+$(CONVERTED): $(SRCROOT)/tools/convert-legacy-config.py $(SRCROOT)/doc/examples/legacy-lab.cfg | $(BUILDDIR)
+	python3 $^ > $@
+
+run: $(TESTS) $(BUILDDIR)/test_replay $(CONVERTED)
+	@echo "=== converter output replay ==="; \
+	$(BUILDDIR)/test_replay $(CONVERTED) \
+		"interface vlan 10" "ip address 192.168.0.25 255.255.254.0" \
+		"switchport trunk native vlan 20" "switchport trunk allowed vlan 10,20,40" \
+		"description testlab" "exec-timeout 30 0" "feature telnet" || exit 1; echo
 	@fail=0; for t in $(TESTS); do \
 		echo "=== $$t ==="; \
 		$$t || fail=1; \

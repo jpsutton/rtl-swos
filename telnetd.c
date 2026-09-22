@@ -14,7 +14,7 @@
 #include <8051.h>
 #include "machine.h"
 #include "telnetd.h"
-#include "cmd_parser.h"
+#include "console.h"
 #include "rtl837x_common.h"
 #include "cli.h"
 #include "uip.h"

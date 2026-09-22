@@ -60,7 +60,7 @@ SRCS = \
 	cli_act.c \
 	dbgcmd.c \
 	cmd_editor.c \
-	cmd_parser.c \
+	console.c \
 	dhcp.c \
 	main.c \
 	boot.c \
