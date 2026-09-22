@@ -58,6 +58,10 @@
 #define ACT_STP_IF	45	/* per-port spanning-tree, parameter in ->lo */
 #define ACT_SHOW	46	/* operational show commands, SHOW_* in ->lo */
 #define ACT_CLEAR_MAC	47
+#define ACT_DEBUG	48	/* DBG_* in ->lo */
+#define ACT_COPY	49	/* TFTP_OP_* in ->lo */
+#define ACT_DUPLEX	50	/* PHY_DUPLEX_* in ->lo */
+#define ACT_MACADDR	51
 
 #define SHOW_IF_STATUS	1
 #define SHOW_IF_COUNT	2
@@ -70,6 +74,10 @@
 #define SHOW_MAC	9
 #define SHOW_STP	10
 #define SHOW_TFTP	11
+#define SHOW_VER	12
+#define SHOW_HIST	13
+#define SHOW_LOG	14
+#define SHOW_IGMP	15
 
 /* ACT_STP_G parameters */
 #define STPG_RSTP	1

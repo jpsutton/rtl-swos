@@ -15,6 +15,9 @@
 #include "uip/uip.h"
 #include "swcfg.h"
 #include "show.h"
+#include "syslog.h"
+#include "rtl837x_flash.h"
+#include "version.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -24,6 +27,8 @@ extern __xdata uint16_t management_vlan;
 extern __xdata uint8_t vlan_names[VLAN_NAMES_SIZE];
 extern __xdata struct dhcp_state dhcp_state;
 extern __xdata uint8_t sfr_data[4];
+extern __xdata uint8_t cmd_history[CMD_HISTORY_SIZE];
+extern __xdata uint16_t cmd_history_ptr;
 
 static __xdata uint8_t col;		/* characters printed on the line */
 
@@ -461,4 +466,71 @@ void show_mac_table(void) __banked
 void show_stp(void) __banked
 {
 	stp_status();
+}
+
+
+void show_version(void) __banked
+{
+	static __xdata uint32_t up;
+	static __xdata uint8_t k;
+
+	col = 0;
+	sh_s("rtl-swos " VERSION_SW "\nBuilt:     " BUILD_DATE "\nHardware:  ");
+	print_string(machine.machine_name);
+	sh_s("\nFlash:     ");
+	print_string(get_flash_size_str());
+	sh_s("\nMAC:       ");
+	for (k = 0; k < 6; k++) {
+		if (k)
+			sh_c(':');
+		print_byte(uip_ethaddr.addr[k]);
+	}
+	reg_read_m(RTL837X_REG_SEC_COUNTER);
+	up = ((uint32_t)sfr_data[0] << 24) | ((uint32_t)sfr_data[1] << 16)
+	     | ((uint16_t)sfr_data[2] << 8) | sfr_data[3];
+	sh_s("\nUptime:    ");
+	if (up >= 86400UL) {
+		sh_dec(up / 86400UL);
+		sh_s("d ");
+	}
+	sh_dec((up / 3600) % 24);
+	sh_s("h ");
+	sh_dec((up / 60) % 60);
+	sh_s("m ");
+	sh_dec(up % 60);
+	sh_s("s\n");
+}
+
+
+/* The console's recall history, oldest first */
+void show_history(void) __banked
+{
+	static __xdata uint16_t p;
+	static __xdata uint8_t begun, c;
+
+	p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
+	begun = 0;
+	while (p != cmd_history_ptr) {
+		c = cmd_history[p];
+		if (!c || c == '\n')
+			begun = 1;
+		if (begun && c)
+			write_char(c);
+		p = (p + 1) & CMD_HISTORY_MASK;
+	}
+}
+
+
+void show_logging(void) __banked
+{
+	col = 0;
+	if (!syslog_state.enabled) {
+		sh_s("Remote syslog: off\n");
+		return;
+	}
+	sh_s("Remote syslog: ");
+	sh_ip(syslog_state.server_ip);
+	sh_c(':');
+	sh_dec(syslog_state.server_port);
+	sh_c('\n');
 }

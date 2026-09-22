@@ -16,6 +16,7 @@
 #include "rtl837x_regs.h"
 #include "rtl837x_flash.h"
 #include "rtl837x_phy.h"
+#include "phy.h"
 #include "rtl837x_port.h"
 #include "machine.h"
 #include "dhcp.h"
@@ -319,6 +320,10 @@ static void rc_interfaces(void)
 			rc_speed(sp->speed);
 			rc_c('\n');
 		}
+		if (sp->duplex == PHY_DUPLEX_FULL)
+			rc_s(" duplex full\n");
+		else if (sp->duplex == PHY_DUPLEX_HALF)
+			rc_s(" duplex half\n");
 		reg_read_m(RTL8373_REG_MAC_L2_PORT_MAX_LEN + ((uint16_t)lp << 8));
 		mtu = (((uint16_t)sfr_data[2] << 8) | sfr_data[3]) & 0x3fff;
 		if (mtu != 0x3fff) {
@@ -448,6 +453,33 @@ static void rc_stp_global(void)
 }
 
 
+static uint8_t rc_mac_changed(void)
+{
+	static __xdata uint8_t k;
+
+	for (k = 0; k < 6; k++) {
+		if (uip_ethaddr.addr[k] != sw_mac_boot[k])
+			return 1;
+	}
+	return 0;
+}
+
+
+static void rc_hex2(__xdata uint8_t b)
+{
+	rc_c("0123456789abcdef"[b >> 4]);
+	rc_c("0123456789abcdef"[b & 0xf]);
+}
+
+
+static void rc_mac(void)
+{
+	rc_hex2(uip_ethaddr.addr[0]); rc_hex2(uip_ethaddr.addr[1]); rc_c('.');
+	rc_hex2(uip_ethaddr.addr[2]); rc_hex2(uip_ethaddr.addr[3]); rc_c('.');
+	rc_hex2(uip_ethaddr.addr[4]); rc_hex2(uip_ethaddr.addr[5]);
+}
+
+
 static void rc_emit(void)
 {
 	rc_s("!\nhostname ");
@@ -469,6 +501,11 @@ static void rc_emit(void)
 			rc_ip((__xdata uint8_t *)uip_hostaddr);
 			rc_c(' ');
 			rc_ip((__xdata uint8_t *)uip_netmask);
+			rc_c('\n');
+		}
+		if (rc_mac_changed()) {
+			rc_s(" mac-address ");
+			rc_mac();
 			rc_c('\n');
 		}
 		rc_s("!\n");

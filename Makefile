@@ -58,6 +58,7 @@ SRCS = \
 	machine_init.c \
 	cli.c \
 	cli_act.c \
+	dbgcmd.c \
 	cmd_editor.c \
 	cmd_parser.c \
 	dhcp.c \

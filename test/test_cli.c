@@ -25,11 +25,19 @@
 #include "dhcp.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_stp.h"
+#include "tftp.h"
+#include "phy.h"
 extern char last_fallback[];
 extern int n_fallback, n_reset, n_showver, n_setspeed;
 extern uint8_t last_speed, last_port;
 extern char port_names[9][PORT_NAME_SIZE];
 void env_cli_reset(void);
+
+extern uint8_t last_tftp_op, last_tftp_srv[4];
+extern char last_tftp_file[64];
+extern uint8_t last_sds_id, last_sds_page, last_sds_reg;
+extern uint16_t last_sds_val;
+extern int n_igmp_show;
 
 static char linebuf[CMD_BUF_SIZE];
 
@@ -190,7 +198,7 @@ static void test_abbreviation(void)
 	      "'int e1/3' selects port 3 via the single-token form");
 	run("end");
 	run("sh ver");
-	CHECK(n_showver == 1, "'sh ver' runs show version");
+	CHECK(out_has("rtl-swos") && out_has("Uptime:"), "'sh ver' runs show version");
 }
 
 static void test_errors(void)
@@ -240,7 +248,7 @@ static void test_exec_anywhere(void)
 	run("enable");
 	run("configure terminal");
 	run("show version");
-	CHECK(n_showver == 1, "show version works in config mode");
+	CHECK(out_has("Hardware:"), "show version works in config mode");
 	CHECK(cli.mode == CLI_MODE_CONFIG, "mode unchanged");
 	fake_flash_reset();
 	run("write memory");
@@ -259,9 +267,18 @@ static void test_write_and_copy(void)
 	run("copy running-config startup-config");
 	CHECK(saved_ok(), "copy run start saves");
 	run("copy tftp flash 10.0.0.1 fw.bin");
-	CHECK(n_fallback == 1 &&
-	      strcmp(last_fallback, "copy tftp flash 10.0.0.1 fw.bin") == 0,
-	      "copy tftp passes the whole line to the legacy parser");
+	CHECK(last_tftp_op == TFTP_OP_GET_FW && last_tftp_srv[0] == 10 && last_tftp_srv[3] == 1
+	      && strcmp(last_tftp_file, "fw.bin") == 0, "copy tftp flash, native");
+	run("copy tftp startup-config 10.0.0.2 lab.cfg");
+	CHECK(last_tftp_op == TFTP_OP_GET_CONFIG && strcmp(last_tftp_file, "lab.cfg") == 0,
+	      "copy tftp startup-config");
+	run("copy tftp config 10.0.0.2 x.cfg");
+	CHECK(last_tftp_op == TFTP_OP_GET_CONFIG && strcmp(last_tftp_file, "x.cfg") == 0,
+	      "config is an alias of startup-config");
+	run("copy startup-config tftp 10.0.0.3 out.cfg");
+	CHECK(last_tftp_op == TFTP_OP_PUT_CONFIG && last_tftp_srv[3] == 3, "copy startup-config tftp");
+	run("copy tftp flash 10.0.0.1");
+	CHECK(out_has("% Incomplete command"), "a file name is required");
 }
 
 static void test_help(void)
@@ -1075,6 +1092,61 @@ static void test_show(void)
 	CHECK(n_fallback > 0, "clear is privileged");
 }
 
+
+static void test_step4(void)
+{
+	printf("[test] debug, duplex, mac-address, show extras\n");
+	wipe_all();
+	run("enable");
+	run("debug register write 0x1250 00003fff");
+	run("debug register read 1250");
+	CHECK(out_has("1250: 00003fff"), "debug register write + read through the mock");
+	run("debug serdes write 1 21 3 0xbeef");
+	CHECK(last_sds_id == 1 && last_sds_page == 0x21 && last_sds_reg == 3 && last_sds_val == 0xbeef,
+	      "debug serdes write: decimal id, hex page/reg/value");
+	run("debug register read 12g4");
+	CHECK(out_has("'^' marker"), "a non-hex address is rejected");
+	run("debug xram test 100 10");
+	CHECK(out_has("Refusing"), "xram test refuses the live region");
+	run("disable");
+	run("debug register read 1250");
+	CHECK(n_fallback > 0, "debug is privileged");
+
+	run("enable");
+	to_if("ethernet 1/4");
+	run("speed 100");
+	run("duplex half");
+	CHECK(sw_ports[3].duplex == PHY_DUPLEX_HALF && last_speed == PHY_SPEED_100M, "duplex half at 100");
+	run("speed 10");
+	CHECK(sw_ports[3].duplex == PHY_DUPLEX_HALF, "speed keeps the configured duplex");
+	render_into(render_a);
+	CHECK(strstr(render_a, " speed 10\n duplex half\n") != NULL, "duplex in the running config");
+	run("no duplex");
+	CHECK(sw_ports[3].duplex == PHY_DUPLEX_BOTH, "no duplex -> auto");
+
+	run("interface vlan 1");
+	run("mac-address 0012.3456.789a");
+	CHECK(uip_ethaddr.addr[0] == 0x00 && uip_ethaddr.addr[5] == 0x9a, "mac-address, dotted form");
+	render_into(render_a);
+	CHECK(strstr(render_a, " mac-address 0012.3456.789a\n") != NULL, "rendered while not the boot MAC");
+	run("mac-address 02:11:22:33:44:55");
+	CHECK(out_has("globally administered") && uip_ethaddr.addr[5] == 0x9a, "locally administered refused");
+	run("mac-address 00:11:22:33:44");
+	CHECK(out_has("% Invalid MAC address"), "short MAC refused");
+	run("no mac-address");
+	CHECK(memcmp(uip_ethaddr.addr, sw_mac_boot, 6) == 0, "no mac-address restores the boot MAC");
+	render_into(render_a);
+	CHECK(!strstr(render_a, "mac-address"), "boot MAC is not rendered");
+
+	run("end");
+	run("show logging");
+	CHECK(out_has("Remote syslog: off"), "show logging");
+	run("show ip igmp snooping");
+	CHECK(n_igmp_show == 1, "show ip igmp snooping");
+	run("show history");
+	CHECK(!out_has("%"), "show history");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1108,6 +1180,7 @@ int main(void)
 	test_roundtrip_all();
 	test_sessions();
 	test_show();
+	test_step4();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

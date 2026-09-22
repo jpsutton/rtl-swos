@@ -11,6 +11,7 @@
 #include "rtl837x_port.h"
 #include "rtl837x_phy.h"
 #include "rtl837x_bandwidth.h"
+#include "phy.h"
 #include "machine.h"
 #include "dhcp.h"
 #include "syslog.h"
@@ -31,6 +32,7 @@ extern __xdata struct dhcp_state dhcp_state;
 __xdata uint16_t sw_vlans[SW_MAX_VLANS];
 __xdata struct sw_port sw_ports[SW_NPORTS];
 __xdata uint8_t sw_igmp;
+__xdata uint8_t sw_mac_boot[6];
 __xdata uint8_t sw_mon_dst;
 __xdata uint16_t sw_mon_rx, sw_mon_tx;
 static __xdata uint8_t sw_deferred, sw_dirty;
@@ -65,7 +67,10 @@ void sw_init(void) __banked
 		sw_ports[k].rl_in = 0;
 		sw_ports[k].rl_out = 0;
 		sw_ports[k].rl_in_drop = 0;
+		sw_ports[k].duplex = PHY_DUPLEX_BOTH;
 	}
+	for (k = 0; k < 6; k++)	/* read from flash or derived before this */
+		sw_mac_boot[k] = uip_ethaddr.addr[k];
 	sw_mon_dst = SW_MON_NONE;
 	sw_mon_rx = 0;
 	sw_mon_tx = 0;
@@ -538,4 +543,61 @@ void sw_lag_join(uint8_t lport, __xdata uint8_t lag) __banked
 			port_lag_members_set(g, m & ~bit);
 		}
 	}
+}
+
+
+static uint8_t hexval(__xdata char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	c |= 0x20;
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	return 0xff;
+}
+
+
+uint8_t sw_mac_parse(__xdata const char *str, __xdata uint8_t * __xdata mac) __banked
+{
+	static __xdata const char * __xdata p;
+	static __xdata uint8_t n, h, nib;
+
+	p = str;
+	n = 0;		/* nibbles taken */
+	while (*p && *p != ' ' && n < 12) {
+		if (*p == ':' || *p == '-' || *p == '.') {
+			p++;
+			continue;
+		}
+		h = hexval(*p++);
+		if (h == 0xff)
+			return 0;
+		nib = n & 1;
+		if (!nib)
+			mac[n >> 1] = h << 4;
+		else
+			mac[n >> 1] |= h;
+		n++;
+	}
+	return n == 12 && (!*p || *p == ' ');
+}
+
+
+uint8_t sw_mgmt_mac_set(__xdata const uint8_t *mac) __banked
+{
+	static __xdata const uint8_t * __xdata m;
+	static __xdata uint8_t k;
+
+	m = mac;
+	/* A user-supplied MAC must be unicast and globally administered.
+	 * The boot MAC is exempt: without one in flash the firmware derives a
+	 * locally administered address, and `no mac-address` restores it. */
+	if (m != sw_mac_boot && ((m[0] & 0x03) || !(m[0] | m[1] | m[2])))
+		return 0;
+	/* swap the static management entry over to the new address */
+	port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, true);
+	for (k = 0; k < 6; k++)
+		uip_ethaddr.addr[k] = m[k];
+	port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);
+	return 1;
 }

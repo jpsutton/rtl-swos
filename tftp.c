@@ -29,7 +29,6 @@
 #pragma constseg BANK3
 
 extern volatile __xdata uint32_t ticks;
-extern __xdata uint8_t ip[4];		/* filled by parse_ip() */
 extern __xdata uint32_t flash_size;
 extern __xdata uint16_t crc_value;
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
@@ -187,7 +186,8 @@ static void tftp_abort(__code const char *msg)
 }
 
 
-void tftp_begin(uint8_t op, __xdata const char *fname) __banked
+void tftp_begin(uint8_t op, __xdata const uint8_t * __xdata srv,
+		__xdata const char * __xdata fname) __banked
 {
 	__xdata char *d = tftp.fname;
 	uint8_t n = 0;
@@ -211,7 +211,7 @@ void tftp_begin(uint8_t op, __xdata const char *fname) __banked
 		return;
 	}
 
-	uip_ipaddr(&tftp_server, ip[0], ip[1], ip[2], ip[3]);
+	uip_ipaddr(&tftp_server, srv[0], srv[1], srv[2], srv[3]);
 	tftp.conn = uip_udp_new(&tftp_server, HTONS(TFTP_SERVER_PORT));
 	if (!tftp.conn) {
 		print_string("No free UDP socket\n");

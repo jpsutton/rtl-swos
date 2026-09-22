@@ -67,6 +67,8 @@ static __code const struct cli_node * __xdata w_node;
 static __code const struct cli_node * __code const * __xdata w_children;
 
 #include "cli_act.h"
+#include "dbgcmd.h"
+#include "tftp.h"
 
 /* ---------------- command tree ---------------- */
 
@@ -82,8 +84,8 @@ static __code const struct cli_node * __code const ch_configure[] = {
 };
 
 static __code const struct cli_node n_show_version = {
-	"version", 0, 0, 0, 0, NO_CHILDREN, ACT_SHOW_VER,
-	"System software and hardware status"
+	"version", 0, 0, SHOW_VER, 0, NO_CHILDREN, ACT_SHOW,
+	"Software, hardware and uptime"
 };
 static __code const struct cli_node n_show_run = {
 	"running-config", 0, 0, 0, 0, NO_CHILDREN, ACT_SHOW_RUN,
@@ -123,6 +125,9 @@ static __code const struct cli_node n_sh_mac = {
 };
 SHOW_LEAF(n_sh_stp, "spanning-tree", SHOW_STP, "Spanning tree state")
 SHOW_LEAF(n_sh_tftp, "tftp", SHOW_TFTP, "State of the last TFTP transfer")
+SHOW_LEAF(n_sh_hist, "history", SHOW_HIST, "Console command history")
+SHOW_LEAF(n_sh_log, "logging", SHOW_LOG, "Remote syslog")
+SHOW_LEAF(n_sh_igmp_snoop, "snooping", SHOW_IGMP, "IGMP snooping groups")
 SHOW_LEAF(n_sh_po_sum, "summary", SHOW_PO, "Members and hash")
 static __code const struct cli_node * __code const ch_sh_po[] = {
 	&n_sh_po_sum, 0
@@ -137,8 +142,14 @@ static __code const struct cli_node * __code const ch_sh_ip_if[] = {
 static __code const struct cli_node n_sh_ip_if = {
 	"interface", 0, 0, SHOW_IP_IF, 0, ch_sh_ip_if, ACT_SHOW, "IP interfaces"
 };
+static __code const struct cli_node * __code const ch_sh_igmp[] = {
+	&n_sh_igmp_snoop, 0
+};
+static __code const struct cli_node n_sh_igmp = {
+	"igmp", 0, 0, 0, 0, ch_sh_igmp, ACT_NONE, "IGMP"
+};
 static __code const struct cli_node * __code const ch_sh_ip[] = {
-	&n_sh_ip_if, 0
+	&n_sh_igmp, &n_sh_ip_if, 0
 };
 static __code const struct cli_node n_sh_ip = {
 	"ip", 0, 0, 0, 0, ch_sh_ip, ACT_NONE, "IP information"
@@ -161,8 +172,8 @@ static __code const struct cli_node n_sh_mon = {
 	"monitor", 0, 0, SHOW_MON, 0, ch_sh_mon, ACT_SHOW, "Port mirroring"
 };
 static __code const struct cli_node * __code const ch_show[] = {
-	&n_sh_if, &n_sh_ip, &n_sh_mac, &n_sh_mon, &n_sh_po, &n_show_run,
-	&n_sh_stp, &n_show_start, &n_sh_tftp, &n_show_version, &n_sh_vlan, 0
+	&n_sh_hist, &n_sh_if, &n_sh_ip, &n_sh_log, &n_sh_mac, &n_sh_mon, &n_sh_po,
+	&n_show_run, &n_sh_stp, &n_show_start, &n_sh_tftp, &n_show_version, &n_sh_vlan, 0
 };
 
 /* clear mac address-table dynamic */
@@ -209,23 +220,49 @@ static __code const struct cli_node n_copy_running = {
 	"running-config", 0, CLI_F_PRIV, 0, 0, ch_copy_run, ACT_NONE,
 	"Copy from the running configuration"
 };
-static __code const struct cli_node n_arg_rest_legacy = {
-	0, CLI_A_LINE, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_LEGACY,
-	"flash|config <server-ip> <filename>"
+/* copy tftp flash|startup-config A.B.C.D FILE, copy startup-config tftp
+ * A.B.C.D FILE; `config` is accepted for startup-config */
+#define COPY_FILE(nm, op) \
+static __code const struct cli_node nm##_file = { \
+	0, CLI_A_WORD, CLI_F_PRIV, op, 0, NO_CHILDREN, ACT_COPY, "File name" \
+}; \
+static __code const struct cli_node * __code const nm##_filech[] = { &nm##_file, 0 }; \
+static __code const struct cli_node nm##_ip = { \
+	0, CLI_A_IP, CLI_F_PRIV, 0, 0, nm##_filech, ACT_NONE, "TFTP server address" \
+}; \
+static __code const struct cli_node * __code const nm##_ipch[] = { &nm##_ip, 0 };
+COPY_FILE(n_cp_fw, TFTP_OP_GET_FW)
+COPY_FILE(n_cp_cfgin, TFTP_OP_GET_CONFIG)
+COPY_FILE(n_cp_cfgout, TFTP_OP_PUT_CONFIG)
+static __code const struct cli_node n_cp_t_flash = {
+	"flash", 0, CLI_F_PRIV, 0, 0, n_cp_fw_ipch, ACT_NONE, "Firmware image (applied at reboot)"
 };
-static __code const struct cli_node * __code const ch_copy_tftp[] = {
-	&n_arg_rest_legacy, 0
+static __code const struct cli_node n_cp_t_start = {
+	"startup-config", 0, CLI_F_PRIV, 0, 0, n_cp_cfgin_ipch, ACT_NONE, "Replace the startup config"
+};
+static __code const struct cli_node n_cp_t_cfg = {
+	"config", 0, CLI_F_PRIV, 0, 0, n_cp_cfgin_ipch, ACT_NONE, "Same as startup-config"
+};
+static __code const struct cli_node * __code const ch_cp_tftp[] = {
+	&n_cp_t_cfg, &n_cp_t_flash, &n_cp_t_start, 0
 };
 static __code const struct cli_node n_copy_tftp = {
-	"tftp", 0, CLI_F_PRIV, 0, 0, ch_copy_tftp, ACT_NONE,
-	"Download from a TFTP server"
+	"tftp", 0, CLI_F_PRIV, 0, 0, ch_cp_tftp, ACT_NONE, "Download from a TFTP server"
+};
+static __code const struct cli_node n_cp_s_tftp = {
+	"tftp", 0, CLI_F_PRIV, 0, 0, n_cp_cfgout_ipch, ACT_NONE, "Upload to a TFTP server"
+};
+static __code const struct cli_node * __code const ch_cp_start[] = {
+	&n_cp_s_tftp, 0
+};
+static __code const struct cli_node n_copy_start = {
+	"startup-config", 0, CLI_F_PRIV, 0, 0, ch_cp_start, ACT_NONE, "From the startup config"
 };
 static __code const struct cli_node n_copy_config = {
-	"config", 0, CLI_F_PRIV, 0, 0, ch_copy_tftp, ACT_NONE,
-	"Upload the startup config (copy config tftp <ip> <file>)"
+	"config", 0, CLI_F_PRIV, 0, 0, ch_cp_start, ACT_NONE, "Same as startup-config"
 };
 static __code const struct cli_node * __code const ch_copy[] = {
-	&n_copy_running, &n_copy_tftp, &n_copy_config, 0
+	&n_copy_config, &n_copy_running, &n_copy_start, &n_copy_tftp, 0
 };
 
 static __code const struct cli_node n_enable = {
@@ -261,9 +298,102 @@ static __code const struct cli_node n_exit_exec = {
 	"Exit the current mode"
 };
 
+/* debug: raw chip access (privileged). The executing node is the last
+ * argument, a HEX whose ->lo is free to carry the DBG_* operation. */
+#define DBG_HEX(nm, op, help, kids) \
+static __code const struct cli_node nm = { \
+	0, CLI_A_HEX, CLI_F_PRIV, op, 0, kids, op ? ACT_DEBUG : ACT_NONE, help \
+};
+#define DBG_LEAF(nm, word, op, help) \
+static __code const struct cli_node nm = { \
+	word, 0, CLI_F_PRIV, op, 0, NO_CHILDREN, ACT_DEBUG, help \
+};
+#define DBG_KIDS(nm, ...) \
+static __code const struct cli_node * __code const nm[] = { __VA_ARGS__, 0 };
+#define DBG_WORD(nm, word, kids, help) \
+static __code const struct cli_node nm = { \
+	word, 0, CLI_F_PRIV, 0, 0, kids, ACT_NONE, help \
+};
+#define DBG_NUM(nm, hi, kids, help) \
+static __code const struct cli_node nm = { \
+	0, CLI_A_NUM, CLI_F_PRIV, 0, hi, kids, ACT_NONE, help \
+};
+/* register */
+DBG_HEX(n_dr_rd_a, DBG_REG_RD, "Register address", NO_CHILDREN)
+DBG_HEX(n_dr_wr_v, DBG_REG_WR, "32-bit value", NO_CHILDREN)
+DBG_KIDS(ch_dr_wr_v, &n_dr_wr_v)
+DBG_HEX(n_dr_wr_a, 0, "Register address", ch_dr_wr_v)
+DBG_KIDS(ch_dr_rd, &n_dr_rd_a)
+DBG_KIDS(ch_dr_wr, &n_dr_wr_a)
+DBG_WORD(n_dr_read, "read", ch_dr_rd, "Read a switch register")
+DBG_WORD(n_dr_write, "write", ch_dr_wr, "Write a switch register")
+DBG_KIDS(ch_dreg, &n_dr_read, &n_dr_write)
+DBG_WORD(n_d_reg, "register", ch_dreg, "Switch registers")
+/* serdes <id> <page> <reg> [value] */
+DBG_HEX(n_ds_rd_r, DBG_SDS_RD, "Register", NO_CHILDREN)
+DBG_KIDS(ch_ds_rd_r, &n_ds_rd_r)
+DBG_HEX(n_ds_rd_p, 0, "Page", ch_ds_rd_r)
+DBG_KIDS(ch_ds_rd_p, &n_ds_rd_p)
+DBG_NUM(n_ds_rd_id, 15, ch_ds_rd_p, "SerDes id")
+DBG_HEX(n_ds_wr_v, DBG_SDS_WR, "16-bit value", NO_CHILDREN)
+DBG_KIDS(ch_ds_wr_v, &n_ds_wr_v)
+DBG_HEX(n_ds_wr_r, 0, "Register", ch_ds_wr_v)
+DBG_KIDS(ch_ds_wr_r, &n_ds_wr_r)
+DBG_HEX(n_ds_wr_p, 0, "Page", ch_ds_wr_r)
+DBG_KIDS(ch_ds_wr_p, &n_ds_wr_p)
+DBG_NUM(n_ds_wr_id, 15, ch_ds_wr_p, "SerDes id")
+DBG_KIDS(ch_ds_rd, &n_ds_rd_id)
+DBG_KIDS(ch_ds_wr, &n_ds_wr_id)
+DBG_WORD(n_ds_read, "read", ch_ds_rd, "Read a SerDes register")
+DBG_WORD(n_ds_write, "write", ch_ds_wr, "Write a SerDes register")
+DBG_KIDS(ch_dsds, &n_ds_read, &n_ds_write)
+DBG_WORD(n_d_sds, "serdes", ch_dsds, "SerDes registers")
+/* phy <phy> <mmd> <reg> [value] */
+DBG_HEX(n_dp_rd_r, DBG_PHY_RD, "Register", NO_CHILDREN)
+DBG_KIDS(ch_dp_rd_r, &n_dp_rd_r)
+DBG_NUM(n_dp_rd_d, 31, ch_dp_rd_r, "MMD device")
+DBG_KIDS(ch_dp_rd_d, &n_dp_rd_d)
+DBG_NUM(n_dp_rd_p, 31, ch_dp_rd_d, "PHY address")
+DBG_HEX(n_dp_wr_v, DBG_PHY_WR, "16-bit value", NO_CHILDREN)
+DBG_KIDS(ch_dp_wr_v, &n_dp_wr_v)
+DBG_HEX(n_dp_wr_r, 0, "Register", ch_dp_wr_v)
+DBG_KIDS(ch_dp_wr_r, &n_dp_wr_r)
+DBG_NUM(n_dp_wr_d, 31, ch_dp_wr_r, "MMD device")
+DBG_KIDS(ch_dp_wr_d, &n_dp_wr_d)
+DBG_NUM(n_dp_wr_p, 31, ch_dp_wr_d, "PHY address")
+DBG_KIDS(ch_dp_rd, &n_dp_rd_p)
+DBG_KIDS(ch_dp_wr, &n_dp_wr_p)
+DBG_WORD(n_dp_read, "read", ch_dp_rd, "Read a PHY register (clause 45)")
+DBG_WORD(n_dp_write, "write", ch_dp_wr, "Write a PHY register (clause 45)")
+DBG_KIDS(ch_dphy, &n_dp_read, &n_dp_write)
+DBG_WORD(n_d_phy, "phy", ch_dphy, "PHY registers")
+/* xram */
+DBG_HEX(n_dx_rd_a, DBG_X_RD, "Address", NO_CHILDREN)
+DBG_HEX(n_dx_t_n, DBG_X_TEST, "Length", NO_CHILDREN)
+DBG_KIDS(ch_dx_t_n, &n_dx_t_n)
+DBG_HEX(n_dx_t_a, 0, "Address (0x4000 or above)", ch_dx_t_n)
+DBG_KIDS(ch_dx_rd, &n_dx_rd_a)
+DBG_KIDS(ch_dx_t, &n_dx_t_a)
+DBG_WORD(n_dx_read, "read", ch_dx_rd, "Dump 16 bytes")
+DBG_WORD(n_dx_test, "test", ch_dx_t, "Destructive pattern test")
+DBG_KIDS(ch_dxram, &n_dx_read, &n_dx_test)
+DBG_WORD(n_d_xram, "xram", ch_dxram, "8051 external RAM")
+/* flash */
+DBG_LEAF(n_df_id, "id", DBG_FL_ID, "JEDEC id")
+DBG_LEAF(n_df_uid, "uid", DBG_FL_UID, "Unique id")
+DBG_LEAF(n_df_sec, "security", DBG_FL_SEC, "Security registers")
+DBG_KIDS(ch_dflash, &n_df_id, &n_df_sec, &n_df_uid)
+DBG_WORD(n_d_flash, "flash", ch_dflash, "SPI flash")
+DBG_LEAF(n_d_gpio, "gpio", DBG_GPIO, "GPIO inputs and changes")
+DBG_LEAF(n_d_rnd, "random", DBG_RND, "Hardware random number")
+DBG_KIDS(ch_debug, &n_d_flash, &n_d_gpio, &n_d_phy, &n_d_rnd, &n_d_reg, &n_d_sds, &n_d_xram)
+static __code const struct cli_node n_debug = {
+	"debug", 0, CLI_F_PRIV, 0, 0, ch_debug, ACT_NONE, "Raw hardware access"
+};
+
 static __code const struct cli_node * __code const cli_root_exec[] = {
-	&n_clear, &n_configure, &n_copy, &n_disable, &n_enable, &n_exit_exec,
-	&n_reload, &n_show, &n_write, 0
+	&n_clear, &n_configure, &n_copy, &n_debug, &n_disable, &n_enable,
+	&n_exit_exec, &n_reload, &n_show, &n_write, 0
 };
 
 /* ---- global configuration mode ---- */
@@ -927,9 +1057,25 @@ static __code const struct cli_node n_if_stp = {
 	"spanning-tree", 0, 0, 0, 0, ch_stp_if, ACT_NONE, "Spanning tree port settings"
 };
 
+static __code const struct cli_node n_dx_auto = {
+	"auto", 0, 0, PHY_DUPLEX_BOTH, 0, NO_CHILDREN, ACT_DUPLEX, "Negotiate (default)"
+};
+static __code const struct cli_node n_dx_full = {
+	"full", 0, 0, PHY_DUPLEX_FULL, 0, NO_CHILDREN, ACT_DUPLEX, "Full duplex"
+};
+static __code const struct cli_node n_dx_half = {
+	"half", 0, 0, PHY_DUPLEX_HALF, 0, NO_CHILDREN, ACT_DUPLEX, "Half duplex (10/100 only)"
+};
+static __code const struct cli_node * __code const ch_duplex[] = {
+	&n_dx_auto, &n_dx_full, &n_dx_half, 0
+};
+static __code const struct cli_node n_if_duplex = {
+	"duplex", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, PHY_DUPLEX_BOTH, 0, ch_duplex, ACT_DUPLEX,
+	"Set the duplex mode"
+};
 static __code const struct cli_node * __code const cli_root_if[] = {
-	&n_end, &n_exit_cfg, &n_if_cg, &n_if_description, &n_if_mtu, &n_if_power,
-	&n_if_rl, &n_if_shutdown, &n_if_speed, &n_if_stp, &n_if_switchport, 0
+	&n_end, &n_exit_cfg, &n_if_cg, &n_if_description, &n_if_duplex, &n_if_mtu,
+	&n_if_power, &n_if_rl, &n_if_shutdown, &n_if_speed, &n_if_stp, &n_if_switchport, 0
 };
 
 /* ---- port-channel mode ---- */
@@ -1004,8 +1150,18 @@ static __code const struct cli_node n_svi_ip = {
 	"ip", 0, 0, 0, 0, ch_svi_ip, ACT_NONE,
 	"Interface IP configuration"
 };
+static __code const struct cli_node n_arg_svi_mac = {
+	0, CLI_A_WORD, 0, 0, 0, NO_CHILDREN, ACT_MACADDR, "aabb.ccdd.eeff or aa:bb:cc:dd:ee:ff"
+};
+static __code const struct cli_node * __code const ch_svi_mac[] = {
+	&n_arg_svi_mac, 0
+};
+static __code const struct cli_node n_svi_mac = {
+	"mac-address", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_svi_mac, ACT_MACADDR,
+	"Management MAC address"
+};
 static __code const struct cli_node * __code const cli_root_svi[] = {
-	&n_end, &n_exit_cfg, &n_svi_ip, 0
+	&n_end, &n_exit_cfg, &n_svi_ip, &n_svi_mac, 0
 };
 
 /* ---- line configuration mode ---- */
@@ -1221,6 +1377,22 @@ static uint8_t arg_accept(uint8_t t, __code const struct cli_node *n)
 			v = v * 10 + (p[i] - '0');
 		}
 		break;
+	case CLI_A_HEX:
+		i = 0;
+		if (len > 2 && p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
+			i = 2;
+		if (len - i < 1 || len - i > 8)
+			return 0;
+		for (; i < len; i++) {
+			v <<= 4;
+			if (p[i] >= '0' && p[i] <= '9')
+				v |= p[i] - '0';
+			else if ((p[i] | 0x20) >= 'a' && (p[i] | 0x20) <= 'f')
+				v |= (p[i] | 0x20) - 'a' + 10;
+			else
+				return 0;
+		}
+		break;
 	case CLI_A_WORD:
 		if (!len)
 			return 0;
@@ -1345,6 +1517,9 @@ static void print_placeholder(__code const struct cli_node *n)
 		break;
 	case CLI_A_NUM32:
 		print_string("<number>");
+		break;
+	case CLI_A_HEX:
+		print_string("<hex>");
 		break;
 	case CLI_A_WORD:
 		print_string("WORD");

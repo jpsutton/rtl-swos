@@ -34,7 +34,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
 # the firmware tree. stub/ stands in for the header a firmware build
 # generates.
 CORE_ENV = support.c hw_mock.c env_tables.c env_cli.c \
-           $(SRCROOT)/cmd_editor.c $(SRCROOT)/cli.c $(SRCROOT)/cli_act.c $(SRCROOT)/swcfg.c \
+           $(SRCROOT)/cmd_editor.c $(SRCROOT)/cli.c $(SRCROOT)/cli_act.c $(SRCROOT)/dbgcmd.c $(SRCROOT)/swcfg.c \
            $(SRCROOT)/runcfg.c $(SRCROOT)/show.c \
            $(SRCROOT)/rtl837x_port.c
 

@@ -22,6 +22,8 @@
 #include "cli_act.h"
 #include "show.h"
 #include "tftp.h"
+#include "dbgcmd.h"
+#include "sfp.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -170,9 +172,6 @@ void cli_act(uint8_t action) __banked
 		if (cli.mode >= CLI_MODE_CONFIG)
 			cli.mode = CLI_MODE_PRIV;
 		break;
-	case ACT_SHOW_VER:
-		print_sw_version();
-		break;
 	case ACT_WRITE:
 		runcfg_save();
 		break;
@@ -218,11 +217,51 @@ void cli_act(uint8_t action) __banked
 		case SHOW_TFTP:
 			tftp_show();
 			break;
+		case SHOW_VER:
+			show_version();
+			break;
+		case SHOW_HIST:
+			show_history();
+			break;
+		case SHOW_LOG:
+			show_logging();
+			break;
+		case SHOW_IGMP:
+			igmp_show();
+			break;
 		}
 		break;
 	case ACT_CLEAR_MAC:
 		port_l2_forget();
 		break;
+	case ACT_DEBUG:
+		debug_run(cli.lo);
+		break;
+	case ACT_COPY:
+	{
+		static __xdata uint8_t srv[4];
+		srv[0] = cli.args[0] >> 24;
+		srv[1] = cli.args[0] >> 16;
+		srv[2] = cli.args[0] >> 8;
+		srv[3] = cli.args[0];
+		tftp_begin(cli.lo, srv, cli.line + cli.argoff[1]);
+		break;
+	}
+	case ACT_MACADDR:
+	{
+		static __xdata uint8_t mac[6];
+		if (cli.no) {
+			sw_mgmt_mac_set(sw_mac_boot);
+			break;
+		}
+		if (!sw_mac_parse(cli.line + cli.argoff[0], mac)) {
+			print_string("% Invalid MAC address\n");
+			break;
+		}
+		if (!sw_mgmt_mac_set(mac))
+			print_string("% The MAC must be unicast and globally administered\n");
+		break;
+	}
 	case ACT_SHOW_START:
 		startup_show();
 		break;
@@ -282,24 +321,61 @@ void cli_act(uint8_t action) __banked
 		if (d_rc)
 			print_string("% VLAN name table full\n");
 		break;
-	case ACT_LEGACY:
-		execute_commands((__xdata uint8_t *)cli.line);
-		break;
 	case ACT_SHUT:
+		if (machine.is_sfp[cli.ctx_lport]) {
+			print_string("% shutdown is not supported on SFP ports\n");
+			break;
+		}
 		/* no shutdown brings the port back at its configured speed */
 		sw_ports[cli.ctx_lport].shut = !cli.no;
 		phy_settings.port = cli.ctx_lport;
-		phy_settings.duplex = PHY_DUPLEX_BOTH;
+		phy_settings.duplex = sw_ports[cli.ctx_lport].duplex;
 		phy_settings.speed = cli.no ? sw_ports[cli.ctx_lport].speed : PHY_OFF;
 		phy_set_speed();
 		break;
 	case ACT_SPEED:
+		d_v = cli.no ? PHY_SPEED_AUTO : cli.lo;
+		if (machine.is_sfp[cli.ctx_lport]) {
+			/* an SFP port's speed selects the SerDes mode */
+			static __xdata uint8_t slot, sfs;
+			switch (d_v) {
+			case PHY_SPEED_AUTO: sfs = SFP_SPEED_AUTO; break;
+			case PHY_SPEED_100M: sfs = SFP_SPEED_100M; break;
+			case PHY_SPEED_1G: sfs = SFP_SPEED_1G; break;
+			case PHY_SPEED_2G5: sfs = SFP_SPEED_2G5; break;
+			case PHY_SPEED_10G: sfs = SFP_SPEED_10G; break;
+			default:
+				print_string("% SFP ports support 100, 1000, 2500, 10000 and auto\n");
+				sfs = 0xff;
+			}
+			if (sfs == 0xff)
+				break;
+			sw_ports[cli.ctx_lport].speed = d_v;
+			slot = machine.is_sfp[cli.ctx_lport] - 1;
+			sfp_speed[slot] = sfs;
+			sfp_pins_last |= 0x1 << (slot << 2);	/* re-run module setup */
+			handle_sfp();
+			break;
+		}
 		/* a shut port keeps the speed for its no shutdown */
-		sw_ports[cli.ctx_lport].speed = cli.no ? PHY_SPEED_AUTO : cli.lo;
+		sw_ports[cli.ctx_lport].speed = d_v;
 		if (sw_ports[cli.ctx_lport].shut)
 			break;
 		phy_settings.port = cli.ctx_lport;
-		phy_settings.duplex = PHY_DUPLEX_BOTH;
+		phy_settings.duplex = sw_ports[cli.ctx_lport].duplex;
+		phy_settings.speed = d_v;
+		phy_set_speed();
+		break;
+	case ACT_DUPLEX:
+		if (machine.is_sfp[cli.ctx_lport]) {
+			print_string("% SFP ports are full duplex\n");
+			break;
+		}
+		sw_ports[cli.ctx_lport].duplex = cli.no ? PHY_DUPLEX_BOTH : cli.lo;
+		if (sw_ports[cli.ctx_lport].shut)
+			break;
+		phy_settings.port = cli.ctx_lport;
+		phy_settings.duplex = sw_ports[cli.ctx_lport].duplex;
 		phy_settings.speed = sw_ports[cli.ctx_lport].speed;
 		phy_set_speed();
 		break;

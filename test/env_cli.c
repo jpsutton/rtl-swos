@@ -213,3 +213,33 @@ bool sfp_print_info(uint8_t sfp) { (void)sfp; n_sfp_info++; return false; }
 bool sfp_print_measurements(uint8_t sfp) { (void)sfp; return true; }
 void stp_status(void) { n_stp_status++; print_string((char *)"STP-STATUS\n"); }
 void tftp_show(void) { print_string((char *)"TFTP-SHOW\n"); }
+
+/* ---- debug / copy / SFP / IGMP edges (not linked here) ---- */
+extern uint8_t sfr_data[4];
+void flash_read_jedecid(void) { }
+void flash_read_security(void) { }
+void flash_read_uid(void) { }
+int n_handle_sfp;
+uint8_t sfp_speed[2];
+void handle_sfp(void) { n_handle_sfp++; }
+int n_igmp_show;
+void igmp_show(void) { n_igmp_show++; }
+void print_sfr_data(void) { for (int i = 0; i < 4; i++) print_byte(sfr_data[i]); }
+void print_phy_data(void) { print_string((char *)"PHYDATA"); }
+uint8_t last_sds_id, last_sds_page, last_sds_reg; uint16_t last_sds_val;
+void sds_read(uint8_t id, uint8_t page, uint8_t reg) { last_sds_id = id; last_sds_page = page; last_sds_reg = reg; }
+void sds_write_v(uint8_t id, uint8_t page, uint8_t reg, uint16_t v)
+{ last_sds_id = id; last_sds_page = page; last_sds_reg = reg; last_sds_val = v; }
+uint8_t last_tftp_op, last_tftp_srv[4]; char last_tftp_file[64];
+void tftp_begin(uint8_t op, const uint8_t *srv, const char *fname)
+{
+	last_tftp_op = op;
+	for (int i = 0; i < 4; i++)
+		last_tftp_srv[i] = srv[i];
+	int n = 0;
+	while (fname[n] && fname[n] != ' ' && n < 63) {
+		last_tftp_file[n] = fname[n];
+		n++;
+	}
+	last_tftp_file[n] = 0;
+}

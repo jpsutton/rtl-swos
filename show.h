@@ -11,5 +11,8 @@ void show_ip_if_brief(void) __banked;	/* show ip interface brief */
 void show_monitor(void) __banked;	/* show monitor session */
 void show_mac_table(void) __banked;	/* show mac address-table */
 void show_stp(void) __banked;		/* show spanning-tree */
+void show_version(void) __banked;	/* show version */
+void show_history(void) __banked;	/* show history */
+void show_logging(void) __banked;	/* show logging */
 
 #endif

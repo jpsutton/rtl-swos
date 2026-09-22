@@ -1768,7 +1768,7 @@ static void parse_copy(void)
 		cmd_error("Invalid server IP\n");
 		return;
 	}
-	tftp_begin(op, (__xdata const char *)&cmd_buffer[cmd_words_b[4]]);
+	tftp_begin(op, ip, (__xdata const char *)&cmd_buffer[cmd_words_b[4]]);
 }
 
 

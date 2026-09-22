@@ -58,6 +58,7 @@ struct sw_port {
 	uint32_t rl_in;		/* rate-limit input, kbit/s; 0 = none */
 	uint32_t rl_out;	/* rate-limit output, kbit/s; 0 = none */
 	uint8_t rl_in_drop;	/* input limit drops instead of pausing */
+	uint8_t duplex;		/* PHY_DUPLEX_*; BOTH = auto */
 };
 
 /* SPAN session 1 (the hardware has one) */
@@ -71,6 +72,7 @@ extern __xdata uint16_t sw_mon_rx, sw_mon_tx;	/* source port masks */
 extern __xdata uint16_t sw_vlans[SW_MAX_VLANS];	/* 0 = free slot */
 extern __xdata struct sw_port sw_ports[SW_NPORTS];
 extern __xdata uint8_t sw_igmp;		/* ip igmp snooping */
+extern __xdata uint8_t sw_mac_boot[6];	/* management MAC as read at boot */
 
 void sw_init(void) __banked;
 uint8_t sw_vlan_exists(uint16_t vid) __banked;
@@ -99,6 +101,10 @@ void sw_mgmt_vlan_set(uint16_t vid) __banked;
 void sw_mgmt_ip_set(uint32_t ip, __xdata uint32_t mask) __banked;
 void sw_mgmt_dhcp(void) __banked;
 void sw_gateway_set(uint32_t gw) __banked;
+/* aabb.ccdd.eeff, aa:bb:cc:dd:ee:ff or aa-bb-...; 0 on a syntax error */
+uint8_t sw_mac_parse(__xdata const char *str, __xdata uint8_t * __xdata mac) __banked;
+/* 0 unless unicast and globally administered (sw_mac_boot is exempt) */
+uint8_t sw_mgmt_mac_set(__xdata const uint8_t *mac) __banked;
 
 /* Remote syslog; port 0 selects the default 514 */
 void sw_logging_host(uint32_t ip, __xdata uint16_t port) __banked;

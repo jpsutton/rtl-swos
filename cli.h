@@ -49,6 +49,7 @@
 #define CLI_A_IFACE	4	/* ethernet 1/N | eN/M | line rest */
 #define CLI_A_LINE	5	/* rest of the line, verbatim */
 #define CLI_A_NUM32	6	/* decimal up to 9 digits; the handler range-checks */
+#define CLI_A_HEX	7	/* hexadecimal up to 8 digits, optional 0x; lo/hi free */
 
 #define CLI_MAX_ARGS	4
 
