@@ -81,6 +81,13 @@ static __xdata struct {
 static __xdata uint32_t tick_snap;
 static __xdata uip_ipaddr_t tftp_server;
 
+/* Outcome of the last transfer, for show tftp: the transfer runs from
+ * the UDP callback and reports to the serial console only */
+static __code const char * __xdata tftp_last;
+static __xdata uint8_t tftp_last_op;
+static __xdata uint16_t tftp_last_blk;
+
+
 static uint32_t ticks_now(void)
 {
 	EA = 0;
@@ -94,6 +101,41 @@ void tftp_init(void) __banked
 {
 	tftp.state = T_OFF;
 	tftp.conn = 0;
+	tftp_last = 0;
+	tftp_last_op = 0;
+	tftp_last_blk = 0;
+}
+
+
+void tftp_show(void) __banked
+{
+	static __code const char * __code const opname[] = {
+		"-", "firmware download", "config download", "config upload"
+	};
+
+	if (tftp_busy()) {
+		print_string("Transfer in progress: ");
+		print_string(opname[tftp.op & 3]);
+		print_string(", file ");
+		print_string_x(tftp.fname);
+		print_string(", block ");
+		itoa_short(tftp.blk);
+		print_string(tftp.state == T_REQ ? " (waiting for the server)\n" : "\n");
+		return;
+	}
+	if (!tftp_last_op) {
+		print_string("No transfer since boot\n");
+		return;
+	}
+	print_string("Last transfer: ");
+	print_string(opname[tftp_last_op & 3]);
+	print_string(tftp_last ? ", failed: " : ", completed\n");
+	if (tftp_last) {
+		print_string(tftp_last);
+		print_string(" (at block ");
+		itoa_short(tftp_last_blk);
+		print_string(")\n");
+	}
 }
 
 
@@ -130,6 +172,8 @@ static void tftp_teardown(void)
 
 static void tftp_abort(__code const char *msg)
 {
+	tftp_last = msg;
+	tftp_last_blk = tftp.blk;
 	print_string("\nTFTP failed: ");
 	print_string(msg);
 	write_char('\n');
@@ -176,6 +220,8 @@ void tftp_begin(uint8_t op, __xdata const char *fname) __banked
 	uip_udp_bind(tftp.conn, HTONS(TFTP_CLIENT_PORT));
 
 	tftp.op = op;
+	tftp_last_op = op;
+	tftp_last = 0;
 	tftp.state = T_REQ;
 	tftp.retries = 0;
 	tftp.req_sent = 0;

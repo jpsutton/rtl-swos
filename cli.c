@@ -122,6 +122,7 @@ static __code const struct cli_node n_sh_mac = {
 	"mac", 0, 0, 0, 0, ch_sh_mac, ACT_NONE, "MAC address table"
 };
 SHOW_LEAF(n_sh_stp, "spanning-tree", SHOW_STP, "Spanning tree state")
+SHOW_LEAF(n_sh_tftp, "tftp", SHOW_TFTP, "State of the last TFTP transfer")
 SHOW_LEAF(n_sh_po_sum, "summary", SHOW_PO, "Members and hash")
 static __code const struct cli_node * __code const ch_sh_po[] = {
 	&n_sh_po_sum, 0
@@ -161,7 +162,7 @@ static __code const struct cli_node n_sh_mon = {
 };
 static __code const struct cli_node * __code const ch_show[] = {
 	&n_sh_if, &n_sh_ip, &n_sh_mac, &n_sh_mon, &n_sh_po, &n_show_run,
-	&n_sh_stp, &n_show_start, &n_show_version, &n_sh_vlan, 0
+	&n_sh_stp, &n_show_start, &n_sh_tftp, &n_show_version, &n_sh_vlan, 0
 };
 
 /* clear mac address-table dynamic */

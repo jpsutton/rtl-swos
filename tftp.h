@@ -19,5 +19,6 @@ void tftp_init(void) __banked;
 void tftp_begin(uint8_t op, __xdata const char *fname) __banked;
 void tftp_callback(uint16_t lport) __banked;
 uint8_t tftp_busy(void) __banked;
+void tftp_show(void) __banked;	/* show tftp */
 
 #endif

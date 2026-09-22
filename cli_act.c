@@ -21,6 +21,7 @@
 #include "cli.h"
 #include "cli_act.h"
 #include "show.h"
+#include "tftp.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -213,6 +214,9 @@ void cli_act(uint8_t action) __banked
 			break;
 		case SHOW_STP:
 			show_stp();
+			break;
+		case SHOW_TFTP:
+			tftp_show();
 			break;
 		}
 		break;

@@ -69,6 +69,7 @@
 #define SHOW_MON	8
 #define SHOW_MAC	9
 #define SHOW_STP	10
+#define SHOW_TFTP	11
 
 /* ACT_STP_G parameters */
 #define STPG_RSTP	1

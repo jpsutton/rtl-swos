@@ -212,3 +212,4 @@ int n_sfp_info, n_stp_status;
 bool sfp_print_info(uint8_t sfp) { (void)sfp; n_sfp_info++; return false; }
 bool sfp_print_measurements(uint8_t sfp) { (void)sfp; return true; }
 void stp_status(void) { n_stp_status++; print_string((char *)"STP-STATUS\n"); }
+void tftp_show(void) { print_string((char *)"TFTP-SHOW\n"); }

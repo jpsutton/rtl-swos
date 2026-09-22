@@ -337,11 +337,13 @@ void show_vlan_brief(void) __banked
 		FOR_EACH_PORT(lp) {
 			if (sw_ports[lp].mode != SW_MODE_ACCESS || sw_ports[lp].access_vid != next)
 				continue;
-			if (!first)
-				sh_s(", ");
-			if (col > 70) {
-				sh_c('\n');
-				sh_to(48);
+			if (!first) {
+				sh_c(',');
+				if (col > 70) {
+					sh_c('\n');
+					sh_to(47);
+				}
+				sh_c(' ');
 			}
 			sh_ifname(lp);
 			first = 0;
