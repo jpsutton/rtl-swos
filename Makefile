@@ -101,7 +101,9 @@ $(VERSION_HEADER):
 	@printf '%s\n' "#ifndef VERSION_H" "#define VERSION_H" \
 		"#define VERSION_SW \"$(VERSION_EXTENSION)\"" \
 		"#define BUILD_DATE \"$(BUILD_DATE)\"" \
-		"#endif" > $(VERSION_HEADER)
+		"#endif" > $(VERSION_HEADER).tmp
+	@cmp -s $(VERSION_HEADER).tmp $(VERSION_HEADER) && rm $(VERSION_HEADER).tmp \
+		|| mv $(VERSION_HEADER).tmp $(VERSION_HEADER)
 
 $(SUBDIRS):
 	$(MAKE) -C $@
