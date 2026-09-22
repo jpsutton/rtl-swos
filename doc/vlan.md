@@ -75,10 +75,16 @@ the PVIDs and the ingress acceptance from that per-port state:
 
 * an access port gets its access VLAN as PVID and admits untagged frames only;
 * a trunk port gets its native VLAN as PVID and admits tagged and untagged
-  frames.
+  frames;
+* a trunk whose native VLAN is not in its allowed list admits tagged frames
+  only (the ingress register's third mode). It is then no member of the
+  native VLAN; untagged frames are dropped.
 
-A port that admits tagged frames only, which the ingress register supports,
-cannot be configured from the CLI.
+```
+switch(config)# interface ethernet 1/9
+switch(config-if)# switchport mode trunk
+switch(config-if)# switchport trunk allowed vlan 10,20   # native VLAN 1 not allowed: tagged only
+```
 
 ```
 switch# configure terminal

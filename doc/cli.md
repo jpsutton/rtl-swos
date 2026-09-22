@@ -148,9 +148,15 @@ one line at a time.
 | `rate-limit input KBPS [drop]`, `rate-limit output KBPS` | none; input sends pause frames unless `drop` |
 | `channel-group N mode on` | none |
 | `spanning-tree portfast [disable]`, `bpduguard enable`, `bpdufilter enable`, `guard root`, `cost N`, `port-priority N`, `link-type point-to-point\|shared` | |
+| `spanning-tree disable` | takes part in STP; the port leaves STP and always forwards |
+| `ip igmp snooping mrouter` | off; static multicast router port (one mask for all VLANs) |
 
 A VLAN list is `10,20-30` style. Referring to a VLAN that does not exist
-creates it, with a note.
+creates it, with a note. A trunk whose native VLAN is not in its allowed
+list accepts tagged frames only.
+
+`spanning-tree disable` and `ip igmp snooping mrouter` are extensions: the
+established CLIs set these per VLAN, the chip per port.
 
 A port with a `channel-group` takes its spanning-tree settings from its
 port-channel.
@@ -163,7 +169,7 @@ group:
 | Command | Default |
 |---|---|
 | `load-balance FIELD...` | `src-mac dst-mac src-ip dst-ip l4-src-port l4-dst-port` |
-| `spanning-tree ...` | as on an ethernet interface |
+| `spanning-tree ...` | as on an ethernet interface, including `spanning-tree disable` |
 
 Fields: `src-port`, `src-mac`, `dst-mac`, `src-ip`, `dst-ip`, `l4-src-port`,
 `l4-dst-port`.

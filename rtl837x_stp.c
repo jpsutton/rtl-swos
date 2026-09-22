@@ -885,7 +885,6 @@ static void stp_fdb_update(__xdata uint16_t pmask)
 
 void stp_setup(void) __banked
 {
-	print_string("Enabling STP: ");
 	stp_lag_map();
 	sfr_data[0] = sfr_data[1] = sfr_data[2] = sfr_data[3] = 0;
 	for (stp_i = 0; stp_i < STP_ENTITIES; stp_i++) {
@@ -918,7 +917,10 @@ void stp_setup(void) __banked
 	sfr_data[1] |= 0x0c; // Do not block the CPU port (bits 3:2 of byte 1 = port 9)
 	reg_write_m(RTL837X_MSTP_STATES);
 
+#ifdef DEBUG
+	print_string("Enabling STP: ");
 	print_reg(RTL837X_MSTP_STATES); write_char('\n');
+#endif
 
 	for (stp_i = machine.min_port; stp_i <= machine.max_port; stp_i++) {
 		if (!(stp_pflags[stp_i] & STP_PF_ENABLED))

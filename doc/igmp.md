@@ -91,9 +91,17 @@ IGMP snooping is a global setting:
 ```
 switch(config)# ip igmp snooping        # enable
 switch(config)# no ip igmp snooping     # disable, flood IP-MC again
-switch# show ip igmp snooping           # per-port IGMP configuration
+switch# show ip igmp snooping           # state, router ports, per-port registers
 ```
-The router ports (`igmp_router_port_set()`) cannot be configured from the CLI.
+Static multicast router ports are set per interface:
+```
+switch(config)# interface ethernet 1/1
+switch(config-if)# ip igmp snooping mrouter
+```
+A router port is written to `RTL837X_IGMP_ROUTER_PORT` (`igmp_router_port_set()`)
+and added to every group the snooping code learns, without keeping a group
+alive by itself. The chip has one router port mask for the whole switch, so,
+unlike the established CLIs, the setting is not per VLAN.
 
 ## A Test with IP-MC streaming using vlc
 The following is a simple test verifying the IGMP and IP-MC switching capabilities.
