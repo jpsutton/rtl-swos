@@ -40,10 +40,12 @@ static void wait_table_ready(void)
 
 void port_mirror_set(uint8_t port, __xdata uint16_t rx_pmask, __xdata uint16_t tx_pmask) __banked
 {
+#ifdef DEBUG
 	print_string("\nport_mirror_set called \n");
 	print_string("Mirroring port: "); print_byte(port); print_string(" with rx-mask: ");
 	print_short(rx_pmask); print_string(", tx mask: "); print_short(tx_pmask);
 	write_char('\n');
+#endif
 
 	REG_WRITE(RTL837x_MIRROR_CONF, rx_pmask >> 8, rx_pmask, tx_pmask >> 8, tx_pmask);
 	REG_WRITE(RTL837x_MIRROR_CTRL, 0, 0, 0, (port << 1) | 0x1);
@@ -52,7 +54,9 @@ void port_mirror_set(uint8_t port, __xdata uint16_t rx_pmask, __xdata uint16_t t
 
 void port_mirror_del(void) __banked
 {
+#ifdef DEBUG
 	print_string("\nport_mirror_del called \n");
+#endif
 	REG_SET(RTL837x_MIRROR_CTRL, 0);
 }
 

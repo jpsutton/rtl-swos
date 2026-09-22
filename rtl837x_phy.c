@@ -262,11 +262,12 @@ void phy_set_speed(void) __banked
 {
 	uint16_t v;
 
-	print_string("Setting port "); print_phys_port(phy_settings.port);
 	if (machine.n_10g && phy_settings.port == 3)
 		phy_settings.is10g_port = 1;
 	if (machine.n_10g == 2 && phy_settings.port == 8)
 		phy_settings.is10g_port = 1;
+#ifdef DEBUG
+	print_string("Setting port "); print_phys_port(phy_settings.port);
 	if (phy_settings.speed == PHY_OFF) {
 		print_string(" to disabled");
 	} else {
@@ -303,6 +304,7 @@ void phy_set_speed(void) __banked
 		}
 	}
 	write_char('\n');
+#endif
 
 	phy_read(phy_settings.port, PHY_MMD31, 0xa610);
 	v = SFR_DATA_U16;
@@ -385,12 +387,14 @@ void phy_set_duplex(void) __banked
 {
 	uint16_t v;
 
+#ifdef DEBUG
 	print_string("Setting port "); print_phys_port(phy_settings.port);
 	if (phy_settings.duplex)
 		print_string(" to full duplex");
 	else
 		print_string(" to half duplex");
 	write_char('\n');
+#endif
 
 	phy_read(phy_settings.port, PHY_MMD_AN, PHY_ANEG_CTRL);
 	v = SFR_DATA_U16;	

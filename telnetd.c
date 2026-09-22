@@ -174,6 +174,11 @@ static void tn_prompt(void)
 		tn_puts_n("(config)");
 		break;
 	case CLI_MODE_IF:
+		if (cli.ctx_range) {
+			tn_puts_n("(config-if-range)");
+			break;
+		}
+		/* fall through */
 	case CLI_MODE_SVI:
 	case CLI_MODE_PO:
 		tn_puts_n("(config-if)");

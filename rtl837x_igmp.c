@@ -19,6 +19,7 @@ extern __code const struct machine machine;
 extern __xdata uint8_t igmpEnabled;
 
 #include "uip.h"
+#include "debug.h"
 
 #pragma codeseg BANK1
 #pragma constseg BANK1
@@ -85,7 +86,9 @@ struct igmp_pkt {
 void igmp_setup(void) __banked
 {
 	uint8_t i;
+#ifdef DEBUG
 	print_string("igmp_setup called\n");
+#endif
 	igmpEnabled = 0;
 	// For now, forward all unkown IP-MC pkts (2 bits per port. 00: flood via floodmask, 01: drop, 10: trap, 11: to rport)
 	REG_SET(RTL837X_IPV4_PORT_MC_LM_ACT, LOOKUP_MISS_FLOOD);
@@ -134,7 +137,9 @@ void igmp_setup(void) __banked
 
 void igmp_enable(void) __banked
 {
+#ifdef DEBUG
 	print_string("igmp_enable called\n");
+#endif
 	igmpEnabled = 1;
 	// Configure trapping of unhandled IGMP protocol packets to CPU
 	REG_SET(RTL837X_IGMP_TRAP_CFG, IGMP_CPU_PORT | IGMP_TRAP_PRIORITY);
@@ -157,9 +162,11 @@ void igmp_enable(void) __banked
  */
 void igmp_router_port_set(uint16_t pmask) __banked
 {
-	print_string("igmp_router_port_set: "); print_short(pmask); print_string(", currently set to:\n");
 	reg_read_m(RTL837X_IGMP_ROUTER_PORT);
+#ifdef DEBUG
+	print_string("igmp_router_port_set: "); print_short(pmask); print_string(", currently set to:\n");
 	print_sfr_data(); write_char('\n');
+#endif
 	REG_WRITE(RTL837X_IGMP_ROUTER_PORT, sfr_data[0], sfr_data[1], pmask >> 8, pmask & 0xff);
 }
 
@@ -169,7 +176,9 @@ void igmp_router_port_set(uint16_t pmask) __banked
  */
 void igmp_show(void) __banked
 {
+#ifdef DEBUG
 	print_string("igmp_show called\n");
+#endif
 	for (uint8_t i = machine.min_port; i <= machine.max_port; i++) {
 		write_char('0' + i); write_char(':');
 		reg_read_m(RTL837X_IGMP_PORT_CFG + (i << 2));
@@ -288,7 +297,7 @@ void igmp_packet_handler(void) __banked
 	idx = ((sfr_data[2] & 0xf) << 8) | sfr_data[3];
 	if (IGMP_I->igmp_rtype == 0x4) {// Join group
 		if (sfr_data[2] & 0x10) {
-			print_string("\nIGMP-Entry FOUND\n");
+			dbg_string("\nIGMP-Entry FOUND\n");
 			reg_read_m(RTL837x_L2_DATA_OUT_B);
 			entry.pmask = sfr_data[0] >> 6;
 			reg_read_m(RTL837x_L2_DATA_OUT_C);
@@ -299,7 +308,7 @@ void igmp_packet_handler(void) __banked
 //		print_string("\nPort-Mask: "); print_short(entry.pmask); write_char('\n');
 	} else if (IGMP_I->igmp_rtype == 0x3){  // Leave group
 		if (sfr_data[2] & 0x10) {
-			print_string("\nIGMP_Entry FOUND\n");
+			dbg_string("\nIGMP_Entry FOUND\n");
 			reg_read_m(RTL837x_L2_DATA_OUT_B);
 			entry.pmask = sfr_data[0] >> 6;
 			reg_read_m(RTL837x_L2_DATA_OUT_C);
@@ -315,7 +324,7 @@ void igmp_packet_handler(void) __banked
 			entry.pmask &= ~(((uint16_t)1) << ((IGMP_I->rtl_tag.pmask >> 8) & 0x0f));  // Swap bytes from network order, only 4 LSB count
 //			print_string("\nPort-Mask: "); print_short(entry.pmask); write_char('\n');
 		} else {
-			print_string("IGMP Entry already deleted\n");
+			dbg_string("IGMP Entry already deleted\n");
 			return;
 		}
 		if (!entry.pmask && idx) { // No more ports in that group and an actual entry?
@@ -327,7 +336,7 @@ void igmp_packet_handler(void) __banked
 			do {
 				reg_read_m(RTL837X_TBL_CTRL);
 			} while (sfr_data[3] & 0x1);
-			print_string("IGMP Entry deleted\n");
+			dbg_string("IGMP Entry deleted\n");
 			return;
 		}
 	} else {  // Unknown message: ignore.
@@ -336,7 +345,9 @@ void igmp_packet_handler(void) __banked
 
 	if (!entry.pmask)
 		return;
+#ifdef DEBUG
 	print_string("Updating IGMP entry\n");
+#endif
 	// Write the updated entry
 #ifdef IPMC_USES_L3MC
 	entry_to_l3mc();
