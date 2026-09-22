@@ -398,8 +398,8 @@ static __code const struct cli_node * __code const cli_root_exec[] = {
 
 /* interface ethernet S/N | interface vlan N | interface S/N */
 static __code const struct cli_node n_arg_ifnum = {
-	0, CLI_A_IFACE, 0, 0, 0, NO_CHILDREN, ACT_IF,
-	"Interface number (e.g. 1/5)"
+	0, CLI_A_IFLIST, 0, 0, 0, NO_CHILDREN, ACT_IF,
+	"Interface number or list (e.g. 1/5, 1/1-4,1/7)"
 };
 static __code const struct cli_node * __code const ch_iface[] = {
 	&n_arg_ifnum, 0
@@ -428,8 +428,17 @@ static __code const struct cli_node * __code const ch_ifpo[] = {
 static __code const struct cli_node n_if_po = {
 	"port-channel", 0, 0, 0, 0, ch_ifpo, ACT_NONE, "Link aggregation group"
 };
+/* interface range ethernet 1/1-4,1/7: the same list `interface ethernet`
+ * takes, spelled the IOS way */
+static __code const struct cli_node * __code const ch_ifrange[] = {
+	&n_if_ethernet, &n_arg_ifnum, 0
+};
+static __code const struct cli_node n_if_range = {
+	"range", 0, 0, 0, 0, ch_ifrange, ACT_NONE,
+	"Configure several ethernet interfaces at once"
+};
 static __code const struct cli_node * __code const ch_interface[] = {
-	&n_if_ethernet, &n_if_po, &n_if_vlan, &n_arg_ifnum, 0
+	&n_if_ethernet, &n_if_po, &n_if_range, &n_if_vlan, &n_arg_ifnum, 0
 };
 static __code const struct cli_node n_interface = {
 	"interface", 0, 0, 0, 0, ch_interface, ACT_NONE,
@@ -1281,79 +1290,122 @@ static uint8_t node_visible(__code const struct cli_node *n)
 }
 
 
-/* Validate token t against an argument node; store the value. Returns 0
- * on mismatch. */
-static uint8_t arg_accept(uint8_t t, __code const struct cli_node *n)
+/* Argument parsers for arg_accept(): leaves with their state in xdata,
+ * because every 32-bit temporary held across a call in arg_accept() costs
+ * internal RAM the overlay segment does not have. They read the token at
+ * ap_p/ap_len and leave the value in ap_v. */
+static __xdata char * __xdata ap_p;
+static __xdata uint8_t ap_len, ap_i;
+static __xdata uint32_t ap_v;
+
+/* decimal, up to maxlen digits */
+static uint8_t ap_dec(uint8_t maxlen)
 {
-	__xdata char *p = cli_line + tok_off[t];
-	__xdata uint8_t len = tok_len[t];
-	__xdata uint32_t v = 0;
-	__xdata uint8_t i = 0;
-
-	if (cli.nargs >= CLI_MAX_ARGS)
+	if (!ap_len || ap_len > maxlen)
 		return 0;
-
-	switch (n->arg) {
-	case CLI_A_NUM:
-		if (!len || len > 5)
+	ap_v = 0;
+	for (ap_i = 0; ap_i < ap_len; ap_i++) {
+		if (ap_p[ap_i] < '0' || ap_p[ap_i] > '9')
 			return 0;
-		for (i = 0; i < len; i++) {
-			if (p[i] < '0' || p[i] > '9')
-				return 0;
-			v = v * 10 + (p[i] - '0');
-		}
-		if (v < n->lo || v > n->hi)
-			return 0;
-		break;
-	case CLI_A_IP:
-	{
-		static __xdata uint8_t dots, digits;
-		static __xdata uint16_t oct;
-		dots = 0; digits = 0; oct = 0;
-		v = 0;
-		for (i = 0; i < len; i++) {
-			if (p[i] == '.') {
-				if (!digits || dots == 3)
-					return 0;
-				v = (v << 8) | oct;
-				oct = 0;
-				digits = 0;
-				dots++;
-			} else if (p[i] >= '0' && p[i] <= '9') {
-				oct = oct * 10 + (p[i] - '0');
-				if (oct > 255 || ++digits > 3)
-					return 0;
-			} else {
-				return 0;
-			}
-		}
-		if (dots != 3 || !digits)
-			return 0;
-		v = (v << 8) | oct;
-		break;
+		ap_v = ap_v * 10 + (ap_p[ap_i] - '0');
 	}
-	case CLI_A_IFACE:
-	{
-		/* [ethernet-prefix]N or [ethernet-prefix]S/N; the port is N */
-		static __code const char * __xdata w;
-		static __xdata uint16_t num;
-		static __xdata uint8_t have;
-		w = "ethernet"; num = 0; have = 0;
-		i = 0;
-		while (i < len && ((p[i] >= 'a' && p[i] <= 'z') || (p[i] >= 'A' && p[i] <= 'Z'))) {
-			if (!*w || lc(p[i]) != *w)
+	return 1;
+}
+
+static uint8_t ap_ip(void)
+{
+	static __xdata uint8_t dots, digits;
+	static __xdata uint16_t oct;
+
+	dots = 0; digits = 0; oct = 0;
+	ap_v = 0;
+	for (ap_i = 0; ap_i < ap_len; ap_i++) {
+		if (ap_p[ap_i] == '.') {
+			if (!digits || dots == 3)
+				return 0;
+			ap_v = (ap_v << 8) | oct;
+			oct = 0;
+			digits = 0;
+			dots++;
+		} else if (ap_p[ap_i] >= '0' && ap_p[ap_i] <= '9') {
+			oct = oct * 10 + (ap_p[ap_i] - '0');
+			if (oct > 255 || ++digits > 3)
+				return 0;
+		} else {
+			return 0;
+		}
+	}
+	if (dots != 3 || !digits)
+		return 0;
+	ap_v = (ap_v << 8) | oct;
+	return 1;
+}
+
+/* hexadecimal up to 8 digits, optional 0x */
+static uint8_t ap_hex(void)
+{
+	static __xdata char c;
+
+	ap_i = 0;
+	if (ap_len > 2 && ap_p[0] == '0' && (ap_p[1] == 'x' || ap_p[1] == 'X'))
+		ap_i = 2;
+	if (ap_len - ap_i < 1 || ap_len - ap_i > 8)
+		return 0;
+	ap_v = 0;
+	for (; ap_i < ap_len; ap_i++) {
+		c = ap_p[ap_i] | 0x20;
+		ap_v <<= 4;
+		if (c >= '0' && c <= '9')
+			ap_v |= c - '0';
+		else if (c >= 'a' && c <= 'f')
+			ap_v |= c - 'a' + 10;
+		else
+			return 0;
+	}
+	return 1;
+}
+
+/* Interface token: item[,item...], item = [ethernet-prefix][S/]A[-[S/]B];
+ * the port is the number after the last '/'. With one set only a single
+ * port is accepted and ap_v is N, else ap_v is the ports as a mask
+ * (bit N). */
+static uint8_t ap_iface(uint8_t one)
+{
+	static __code const char * __xdata w;
+	static __xdata uint16_t num, first, mask;
+	static __xdata uint8_t have, dash, single;
+	static __xdata char c;
+
+	single = one;
+	ap_i = 0;
+	dash = 0;
+	first = 0;
+	mask = 0;
+	for (;;) {
+		w = "ethernet";
+		num = 0;
+		have = 0;
+		while (ap_i < ap_len) {
+			c = ap_p[ap_i] | 0x20;
+			if (c < 'a' || c > 'z')
+				break;
+			if (!*w || c != *w)
 				return 0;
 			w++;
-			i++;
+			ap_i++;
 		}
-		for (; i < len; i++) {
-			if (p[i] == '/') {
+		c = 0;
+		for (; ap_i < ap_len; ap_i++) {
+			c = ap_p[ap_i];
+			if (c == ',' || c == '-')
+				break;
+			if (c == '/') {
 				if (!have)
 					return 0;
 				num = 0;
 				have = 0;
-			} else if (p[i] >= '0' && p[i] <= '9') {
-				num = num * 10 + (p[i] - '0');
+			} else if (c >= '0' && c <= '9') {
+				num = num * 10 + (c - '0');
 				have = 1;
 				if (num > 99)
 					return 0;
@@ -1363,36 +1415,67 @@ static uint8_t arg_accept(uint8_t t, __code const struct cli_node *n)
 		}
 		if (!have || num < 1 || num > 9)
 			return 0;
-		v = num;
-		break;
-	}
-	case CLI_A_NUM32:
-		if (!len || len > 9)
-			return 0;
-		for (i = 0; i < len; i++) {
-			if (p[i] < '0' || p[i] > '9')
-				return 0;
-			v = v * 10 + (p[i] - '0');
+		if (single) {
+			ap_v = num;
+			return ap_i == ap_len;
 		}
+		if (!dash)
+			first = num;
+		else if (num < first)
+			return 0;
+		if (ap_i < ap_len && c == '-') {
+			if (dash)
+				return 0;
+			dash = 1;
+			ap_i++;
+			continue;
+		}
+		for (; first <= num; first++)
+			mask |= 1 << first;
+		if (ap_i == ap_len) {
+			ap_v = mask;
+			return 1;
+		}
+		dash = 0;
+		ap_i++;	/* ',' */
+	}
+}
+
+
+/* Validate token t against an argument node; store the value. Returns 0
+ * on mismatch. */
+static uint8_t arg_accept(uint8_t t, __code const struct cli_node *n)
+{
+	if (cli.nargs >= CLI_MAX_ARGS)
+		return 0;
+
+	ap_p = cli_line + tok_off[t];
+	ap_len = tok_len[t];
+	ap_v = 0;
+	switch (n->arg) {
+	case CLI_A_NUM:
+		if (!ap_dec(5) || ap_v < n->lo || ap_v > n->hi)
+			return 0;
+		break;
+	case CLI_A_NUM32:
+		if (!ap_dec(9))
+			return 0;
+		break;
+	case CLI_A_IP:
+		if (!ap_ip())
+			return 0;
+		break;
+	case CLI_A_IFACE:
+	case CLI_A_IFLIST:
+		if (!ap_iface(n->arg == CLI_A_IFACE))
+			return 0;
 		break;
 	case CLI_A_HEX:
-		i = 0;
-		if (len > 2 && p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
-			i = 2;
-		if (len - i < 1 || len - i > 8)
+		if (!ap_hex())
 			return 0;
-		for (; i < len; i++) {
-			v <<= 4;
-			if (p[i] >= '0' && p[i] <= '9')
-				v |= p[i] - '0';
-			else if ((p[i] | 0x20) >= 'a' && (p[i] | 0x20) <= 'f')
-				v |= (p[i] | 0x20) - 'a' + 10;
-			else
-				return 0;
-		}
 		break;
 	case CLI_A_WORD:
-		if (!len)
+		if (!ap_len)
 			return 0;
 		break;
 	case CLI_A_LINE:
@@ -1401,7 +1484,7 @@ static uint8_t arg_accept(uint8_t t, __code const struct cli_node *n)
 		return 0;
 	}
 
-	cli.args[cli.nargs] = v;
+	cli.args[cli.nargs] = ap_v;
 	cli.argoff[cli.nargs] = tok_off[t];
 	cli.nargs++;
 	return 1;
@@ -1521,6 +1604,9 @@ static void print_placeholder(__code const struct cli_node *n)
 		break;
 	case CLI_A_IFACE:
 		print_string("<1-9> or S/N");
+		break;
+	case CLI_A_IFLIST:
+		print_string("S/N[-N][,S/N...]");
 		break;
 	case CLI_A_NUM32:
 		print_string("<number>");
@@ -1672,6 +1758,7 @@ void cli_init(void) __banked
 	cli.no = 0;
 	cli.ctx_if = cli.ctx_lport = cli.ctx_line = cli.ctx_po = 0;
 	cli.ctx_vlan = 0;
+	cli.ctx_range = 0;
 	for (i = 0; i < CLI_SESSION_BYTES; i++) {
 		cli_saved[CLI_CONSOLE][i] = ((__xdata uint8_t *)&cli)[i];
 		cli_saved[CLI_VTY][i] = ((__xdata uint8_t *)&cli)[i];
@@ -1803,7 +1890,10 @@ void cli_exec_line(__xdata char *line) __banked
 		cli.mode = CLI_MODE_CONFIG;
 	cli.lo = w_node->lo;
 	cli.line = cli_line;
-	cli_act(w_node->action);
+	if (cli.mode == CLI_MODE_IF && cli.ctx_range && w_level == WL_MODE)
+		cli_act_range(w_node->action);
+	else
+		cli_act(w_node->action);
 }
 
 
@@ -1851,6 +1941,12 @@ void cli_prompt(void) __banked
 		cli.plen += 8;
 		break;
 	case CLI_MODE_IF:
+		if (cli.ctx_range) {
+			print_string("(config-if-range)");
+			cli.plen += 17;
+			break;
+		}
+		/* fall through */
 	case CLI_MODE_SVI:
 	case CLI_MODE_PO:
 		print_string("(config-if)");

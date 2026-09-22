@@ -39,7 +39,7 @@ void reset_chip(void);
 /* ---------------- config handler helpers ---------------- */
 
 static __xdata uint8_t d_rc, d_lp;
-static __xdata uint16_t d_v;
+static __xdata uint16_t d_v, d_mask;
 
 /* A name token: letters, digits, '-', '_', '.'; at least one char */
 static uint8_t name_ok(__xdata const char * __xdata s)
@@ -272,15 +272,23 @@ void cli_act(uint8_t action) __banked
 	case ACT_IF:
 		/* User-facing port N maps through the board table, exactly
 		 * like the legacy `port N` command: on 4+2 boards the
-		 * logical numbering does not start at 0. */
-		d_v = cli.args[0];
-		d_lp = up_to_lp(d_v);
-		if (d_lp == 0xff) {
+		 * logical numbering does not start at 0. args[0] is the port
+		 * list as a mask; more than one port enters the range submode,
+		 * whose commands run per port. */
+		d_mask = cli.args[0];
+		for (d_v = 9; d_v; d_v--) {
+			if ((d_mask & (1 << d_v)) && up_to_lp(d_v) == 0xff)
+				break;
+		}
+		if (d_v) {
 			print_string("% Invalid interface\n");
 			break;
 		}
+		for (d_v = 1; !(d_mask & (1 << d_v)); d_v++)
+			;
 		cli.ctx_if = d_v;
-		cli.ctx_lport = d_lp;
+		cli.ctx_lport = up_to_lp(d_v);
+		cli.ctx_range = d_mask & (d_mask - 1) ? d_mask : 0;
 		cli.mode = CLI_MODE_IF;
 		break;
 	case ACT_SVI:
@@ -740,4 +748,28 @@ void cli_act(uint8_t action) __banked
 		break;
 	}
 	}
+}
+
+
+/* A command entered on an interface range runs once per port of the range,
+ * in port order, and stops early if it leaves the submode (exit, end). */
+void cli_act_range(uint8_t action) __banked
+{
+	static __xdata uint8_t up;
+	static __xdata uint16_t range;
+
+	range = cli.ctx_range;
+	for (up = 1; up <= 9; up++) {
+		if (!(range & (1 << up)))
+			continue;
+		cli.ctx_if = up;
+		cli.ctx_lport = up_to_lp(up);
+		cli_act(action);
+		if (cli.mode != CLI_MODE_IF || cli.ctx_range != range)
+			return;
+	}
+	for (up = 1; !(range & (1 << up)); up++)
+		;
+	cli.ctx_if = up;
+	cli.ctx_lport = up_to_lp(up);
 }

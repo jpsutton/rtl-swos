@@ -48,6 +48,7 @@
 #define CLI_A_LINE	5	/* rest of the line, verbatim */
 #define CLI_A_NUM32	6	/* decimal up to 9 digits; the handler range-checks */
 #define CLI_A_HEX	7	/* hexadecimal up to 8 digits, optional 0x; lo/hi free */
+#define CLI_A_IFLIST	8	/* 1/1-4,1/7: ports as a mask (bit N) */
 
 #define CLI_MAX_ARGS	4
 
@@ -70,6 +71,7 @@ struct cli_state_t {
 	uint16_t ctx_vlan;	/* vlan id for MODE_VLAN and MODE_SVI */
 	uint8_t ctx_line;	/* 0 = console, 1 = vty */
 	uint8_t ctx_po;		/* port-channel 1-4 for MODE_PO */
+	uint16_t ctx_range;	/* MODE_IF on a range: user ports as a mask (bit N), else 0 */
 	uint8_t plen;		/* printed prompt width, aligns the '^' marker */
 	/* ---- per line: a line always runs to completion ---- */
 	uint8_t no;		/* current line carries a `no` prefix */

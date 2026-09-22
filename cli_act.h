@@ -99,5 +99,7 @@
 #define STPI_SHARED	9
 
 void cli_act(uint8_t action) __banked;
+/* Run the action on every port of cli.ctx_range. */
+void cli_act_range(uint8_t action) __banked;
 
 #endif

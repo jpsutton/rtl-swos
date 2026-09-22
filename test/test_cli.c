@@ -1147,6 +1147,58 @@ static void test_step4(void)
 	CHECK(!out_has("%"), "show history");
 }
 
+static void test_interface_range(void)
+{
+	printf("[test] interface range\n");
+	reset_all();
+	run("enable");
+	to_if("range ethernet 1/2-4,1/7");
+	CHECK(cli.mode == CLI_MODE_IF && cli.ctx_range == ((1 << 2) | (1 << 3) | (1 << 4) | (1 << 7)),
+	      "interface range takes a list with a span");
+	CHECK(cli.ctx_if == 2, "the context starts at the first port of the range");
+	out_reset();
+	cli_prompt();
+	CHECK(out_has("(config-if-range)# "), "range prompt");
+	run("switchport access vlan 30");
+	CHECK(vl_member(30, 1) && vl_member(30, 2) && vl_member(30, 3) && vl_member(30, 6),
+	      "a command applies to every port of the range");
+	CHECK(!vl_member(30, 0) && !vl_member(30, 4) && !vl_member(30, 5),
+	      "and to no other port");
+	run("description lab");
+	CHECK(strcmp(port_names[1], "lab") == 0 && strcmp(port_names[6], "lab") == 0
+	      && port_names[4][0] == 0, "description on each port");
+	run("vlan 40");
+	CHECK(cli.mode == CLI_MODE_VLAN && sw_vlan_exists(40),
+	      "a global command runs once and leaves the range");
+
+	to_if("ethernet 1/5-6");
+	CHECK(cli.ctx_range == ((1 << 5) | (1 << 6)), "NX-OS form: interface ethernet 1/5-6");
+	run("exit");
+	CHECK(cli.mode == CLI_MODE_CONFIG, "exit leaves the range");
+	to_if("e1/1,e1/9");
+	CHECK(cli.ctx_range == ((1 << 1) | (1 << 9)), "per-item ethernet prefix");
+	to_if("ethernet 1/8");
+	CHECK(cli.ctx_range == 0 && cli.ctx_if == 8, "a single port is not a range");
+	to_if("ethernet 1/1-1");
+	CHECK(cli.ctx_range == 0 && cli.ctx_if == 1, "a one-port span is a single port");
+
+	to_if("ethernet 1/4-2");
+	CHECK(out_has("% Invalid input"), "a reversed span is rejected");
+	to_if("ethernet 1/1-10");
+	CHECK(out_has("% Invalid input"), "a port past 9 is rejected");
+	to_if("ethernet 1/1,");
+	CHECK(out_has("% Invalid input"), "a trailing comma is rejected");
+	to_if("ethernet 1/1-2-3");
+	CHECK(out_has("% Invalid input"), "a double span is rejected");
+	run("monitor session 1 source interface ethernet 1/1-2");
+	CHECK(out_has("% Invalid input"), "single-port arguments still refuse a list");
+
+	replay_text("interface range ethernet 1/2-3\n switchport mode trunk\n"
+		    " switchport trunk allowed vlan 10,20\n");
+	CHECK(sw_ports[1].mode == sw_ports[2].mode && sw_ports[1].mode != sw_ports[3].mode,
+	      "a range replays from a startup config");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1181,6 +1233,7 @@ int main(void)
 	test_sessions();
 	test_show();
 	test_step4();
+	test_interface_range();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }
