@@ -14,8 +14,11 @@
 #include "cli.h"
 #include "support.h"
 
+#include "rtl837x_phy.h"
 extern char last_fallback[];
-extern int n_fallback, n_save, n_reset, n_showver;
+extern int n_fallback, n_save, n_reset, n_showver, n_setspeed;
+extern uint8_t last_speed, last_port;
+extern char port_names[9][PORT_NAME_SIZE];
 void env_cli_reset(void);
 
 static char linebuf[CMD_BUF_SIZE];
@@ -200,6 +203,37 @@ static void test_no_prefix(void)
 	CHECK(out_has("% Incomplete command"), "bare 'no' is incomplete");
 }
 
+static void test_interface_config(void)
+{
+	printf("[test] interface-mode config commands\n");
+	reset_all();
+	run("enable");
+	run("configure terminal");
+	run("interface ethernet 1/2");
+	CHECK(cli.mode == CLI_MODE_IF && cli.ctx_if == 2, "in config-if for port 2");
+
+	run("shutdown");
+	CHECK(n_setspeed == 1 && last_port == 1 && last_speed == PHY_OFF,
+	      "shutdown -> phy off on logical port 1 (0-based)");
+	run("no shutdown");
+	CHECK(last_speed == PHY_SPEED_AUTO, "no shutdown -> auto");
+
+	run("speed 1000");
+	CHECK(last_speed == PHY_SPEED_1G && last_port == 1, "speed 1000 -> 1G");
+	run("speed 2500");
+	CHECK(last_speed == PHY_SPEED_2G5, "speed 2500 -> 2.5G");
+	run("speed auto");
+	CHECK(last_speed == PHY_SPEED_AUTO, "speed auto");
+	run("sp 100");
+	CHECK(last_speed == PHY_SPEED_100M, "abbreviated 'sp 100' -> 100M");
+
+	run("description lab uplink port");
+	CHECK(strcmp(port_names[1], "lab uplink port") == 0,
+	      "description stores the rest of the line with spaces");
+	run("no description");
+	CHECK(port_names[1][0] == 0, "no description clears the name");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -213,6 +247,7 @@ int main(void)
 	test_help();
 	test_complete();
 	test_no_prefix();
+	test_interface_config();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

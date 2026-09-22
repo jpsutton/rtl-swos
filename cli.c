@@ -19,12 +19,15 @@
  */
 #include "rtl837x_common.h"
 #include "cmd_parser.h"
+#include "rtl837x_phy.h"
+#include "phy.h"
 #include "cli.h"
 
 #pragma codeseg BANK1
 #pragma constseg BANK1
 
 extern __xdata char hostname[24];
+extern __xdata struct phy_settings phy_settings;
 void reset_chip(void);
 
 __xdata struct cli_state_t cli;
@@ -63,6 +66,9 @@ static __code const struct cli_node * __code const * __xdata w_children;
 #define ACT_IF		9
 #define ACT_VLAN	10
 #define ACT_LEGACY	11	/* re-run the whole line in the legacy parser */
+#define ACT_SHUT	12	/* interface: shutdown / no shutdown */
+#define ACT_SPEED	13	/* interface: speed <val> (value in node->lo) */
+#define ACT_DESC	14	/* interface: description LINE / no description */
 
 /* ---------------- command tree ---------------- */
 
@@ -208,6 +214,56 @@ static __code const struct cli_node * __code const cli_root_config[] = {
 	&n_end, &n_exit_cfg, &n_interface, &n_vlan, 0
 };
 
+/* ---- interface configuration mode ---- */
+static __code const struct cli_node n_if_shutdown = {
+	"shutdown", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_SHUT,
+	"Disable the interface"
+};
+/* speed <value>: each literal carries its PHY_SPEED_* code in ->lo */
+static __code const struct cli_node n_sp_auto = {
+	"auto", 0, 0, PHY_SPEED_AUTO, 0, NO_CHILDREN, ACT_SPEED, "Autonegotiate"
+};
+static __code const struct cli_node n_sp_10 = {
+	"10", 0, 0, PHY_SPEED_10M, 0, NO_CHILDREN, ACT_SPEED, "10 Mb/s"
+};
+static __code const struct cli_node n_sp_100 = {
+	"100", 0, 0, PHY_SPEED_100M, 0, NO_CHILDREN, ACT_SPEED, "100 Mb/s"
+};
+static __code const struct cli_node n_sp_1000 = {
+	"1000", 0, 0, PHY_SPEED_1G, 0, NO_CHILDREN, ACT_SPEED, "1 Gb/s"
+};
+static __code const struct cli_node n_sp_2500 = {
+	"2500", 0, 0, PHY_SPEED_2G5, 0, NO_CHILDREN, ACT_SPEED, "2.5 Gb/s"
+};
+static __code const struct cli_node n_sp_5000 = {
+	"5000", 0, 0, PHY_SPEED_5G, 0, NO_CHILDREN, ACT_SPEED, "5 Gb/s"
+};
+static __code const struct cli_node n_sp_10000 = {
+	"10000", 0, 0, PHY_SPEED_10G, 0, NO_CHILDREN, ACT_SPEED, "10 Gb/s"
+};
+static __code const struct cli_node * __code const ch_speed[] = {
+	&n_sp_auto, &n_sp_10, &n_sp_100, &n_sp_1000, &n_sp_2500,
+	&n_sp_5000, &n_sp_10000, 0
+};
+static __code const struct cli_node n_if_speed = {
+	"speed", 0, 0, 0, 0, ch_speed, ACT_NONE,
+	"Set the interface speed"
+};
+static __code const struct cli_node n_arg_desc = {
+	0, CLI_A_LINE, 0, 0, 0, NO_CHILDREN, ACT_DESC, "Up to 31 characters"
+};
+static __code const struct cli_node * __code const ch_desc[] = {
+	&n_arg_desc, 0
+};
+static __code const struct cli_node n_if_description = {
+	"description", 0, CLI_F_NO_OK, 0, 0, ch_desc, ACT_DESC,
+	"Interface description / name"
+};
+
+static __code const struct cli_node * __code const cli_root_if[] = {
+	&n_end, &n_exit_cfg, &n_if_description, &n_if_shutdown, &n_if_speed, 0
+};
+
 static __code const struct cli_node * __code const cli_root_sub[] = {
 	&n_end, &n_exit_cfg, 0
 };
@@ -219,6 +275,7 @@ static __code const struct cli_node * __code const *root_for_mode(uint8_t mode)
 	case CLI_MODE_CONFIG:
 		return cli_root_config;
 	case CLI_MODE_IF:
+		return cli_root_if;
 	case CLI_MODE_VLAN:
 	case CLI_MODE_LINE:
 		return cli_root_sub;
@@ -657,6 +714,34 @@ static void cli_dispatch(uint8_t action)
 	case ACT_LEGACY:
 		execute_commands((__xdata uint8_t *)cli_line);
 		break;
+	case ACT_SHUT:
+		phy_settings.port = cli.ctx_if - 1;
+		phy_settings.duplex = PHY_DUPLEX_BOTH;
+		phy_settings.speed = cli.no ? PHY_SPEED_AUTO : PHY_OFF;
+		phy_set_speed();
+		break;
+	case ACT_SPEED:
+		phy_settings.port = cli.ctx_if - 1;
+		phy_settings.duplex = PHY_DUPLEX_BOTH;
+		phy_settings.speed = w_node->lo;
+		phy_set_speed();
+		break;
+	case ACT_DESC:
+	{
+		__xdata char *d = port_names[cli.ctx_if - 1];
+		if (cli.no || !cli.nargs) {
+			*d = 0;
+		} else {
+			__xdata char *sp = cli_line + cli.argoff[0];
+			uint8_t n = 0;
+			while (*sp && n < PORT_NAME_SIZE - 1) {
+				*d++ = *sp++;
+				n++;
+			}
+			*d = 0;
+		}
+		break;
+	}
 	}
 }
 

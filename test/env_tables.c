@@ -88,6 +88,8 @@ void execute_commands(uint8_t *p) { (void)p; }
 void print_sw_version(void) { }
 void cmd_save_config(void) { }
 void reset_chip(void) { }
+struct phy_settings phy_settings;
+void phy_set_speed(void) { }
 
 /* ---- leaf calls into subsystems not under test ---- */
 void     flash_read_bulk(uint8_t *dst) { (void)dst; }

@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 #include "rtl837x_common.h"
+#include "rtl837x_phy.h"
 #include "support.h"
 
 char hostname[24] = "sw";
@@ -14,10 +15,26 @@ char hostname[24] = "sw";
 char last_fallback[CMD_BUF_SIZE];
 int n_fallback, n_save, n_reset, n_showver;
 
+/* phy driver edges the interface handlers touch */
+struct phy_settings phy_settings;
+char port_names[9][PORT_NAME_SIZE];
+int n_setspeed;
+uint8_t last_speed, last_port;
+
+void phy_set_speed(void)
+{
+	n_setspeed++;
+	last_speed = phy_settings.speed;
+	last_port = phy_settings.port;
+}
+
 void env_cli_reset(void)
 {
 	last_fallback[0] = 0;
-	n_fallback = n_save = n_reset = n_showver = 0;
+	n_fallback = n_save = n_reset = n_showver = n_setspeed = 0;
+	last_speed = last_port = 0;
+	for (int i = 0; i < 9; i++)
+		port_names[i][0] = 0;
 }
 
 void itoa_short(uint16_t v)
