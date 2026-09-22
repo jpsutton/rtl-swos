@@ -981,6 +981,33 @@ static void test_roundtrip_all(void)
 	      "stp restored");
 }
 
+static void test_sessions(void)
+{
+	printf("[test] console and vty are separate sessions\n");
+	wipe_all();
+	cli_use(CLI_CONSOLE);
+	run("enable");
+	run("configure terminal");
+	run("interface ethernet 1/5");
+	CHECK(cli.mode == CLI_MODE_IF && cli.ctx_if == 5, "console in config-if 1/5");
+	cli_use(CLI_VTY);
+	CHECK(cli.mode == CLI_MODE_EXEC, "vty starts in user EXEC");
+	run("reload");
+	CHECK(n_reset == 0, "and is not privileged by the console's enable");
+	run("enable");
+	run("configure terminal");
+	run("vlan 77");
+	CHECK(cli.mode == CLI_MODE_VLAN && cli.ctx_vlan == 77, "vty in config-vlan 77");
+	cli_use(CLI_CONSOLE);
+	CHECK(cli.mode == CLI_MODE_IF && cli.ctx_if == 5 && cli.ctx_lport == 4,
+	      "console context survived the vty's commands");
+	run("description still-here");
+	CHECK(strcmp(port_names[4], "still-here") == 0, "and applies to its own interface");
+	cli_use(CLI_VTY);
+	CHECK(cli.mode == CLI_MODE_VLAN && cli.ctx_vlan == 77, "vty context survived too");
+	cli_use(CLI_CONSOLE);
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1012,6 +1039,7 @@ int main(void)
 	test_port_channel();
 	test_stp();
 	test_roundtrip_all();
+	test_sessions();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

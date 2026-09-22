@@ -5,7 +5,6 @@
 #pragma codeseg BANK2
 #pragma constseg BANK2
 
-extern __xdata uint8_t cli_plen;
 
 // Position in the serial buffer
 __xdata uint8_t l;
@@ -41,6 +40,8 @@ void cmd_editor_init(void) __banked
  */
 void cmd_edit(void) __banked
 {
+	if (l != sbuf_ptr)
+		cli_use(CLI_CONSOLE);	/* help, completion and redraws below */
 	while (l != sbuf_ptr) {
 		if (sbuf[l] == '?') { // Context help: list candidates, reprint the line
 			write_char('?');
@@ -126,7 +127,7 @@ void cmd_edit(void) __banked
 				else
 					p = history_editptr;
 				// Move cursor to beginning of line
-				write_char('\033'); write_char('['); itoa(cursor + cli_plen); write_char('D');
+				write_char('\033'); write_char('['); itoa(cursor + cli.plen); write_char('D');
 				cursor = 0;
 				while (cmd_history[p] && cmd_history[p] != '\n') {
 					cursor++;
@@ -146,7 +147,7 @@ void cmd_edit(void) __banked
 					cmd_line_len = cursor;
 				} else {
 					// Move right to the start of the editing space
-					write_char('\033'); write_char('['); itoa(cli_plen); write_char('C');
+					write_char('\033'); write_char('['); itoa(cli.plen); write_char('C');
 				}
 				l += 3;
 				l &= SBUF_MASK;
@@ -155,7 +156,7 @@ void cmd_edit(void) __banked
 				if (history_editptr != 0xffff) {
 					__xdata uint16_t p = (history_editptr + 2) & CMD_HISTORY_MASK;
 					// Move cursor to beginning of line
-					write_char('\033'); write_char('['); itoa(cursor + cli_plen); write_char('D');
+					write_char('\033'); write_char('['); itoa(cursor + cli.plen); write_char('D');
 					print_string("\033[2K"); // Clear entire line and print new prompt
 					cli_prompt();
 					uint8_t i = 0;

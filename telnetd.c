@@ -147,29 +147,45 @@ void telnet_stop(void) __banked
 }
 
 
+static void tn_puts_n(__code const char *p)	/* counts into the prompt width */
+{
+	while (*p) {
+		tn_putc(*p++);
+		cli.plen++;
+	}
+}
+
+
 static void tn_prompt(void)
 {
-	tn_puts_x(hostname);
+	__xdata char *h = hostname;
+
+	cli_use(CLI_VTY);
+	cli.plen = 0;
+	while (*h) {
+		tn_putc(*h++);
+		cli.plen++;
+	}
 	switch (cli.mode) {
 	case CLI_MODE_EXEC:
-		tn_puts("> ");
+		tn_puts_n("> ");
 		return;
 	case CLI_MODE_CONFIG:
-		tn_puts("(config)");
+		tn_puts_n("(config)");
 		break;
 	case CLI_MODE_IF:
 	case CLI_MODE_SVI:
 	case CLI_MODE_PO:
-		tn_puts("(config-if)");
+		tn_puts_n("(config-if)");
 		break;
 	case CLI_MODE_VLAN:
-		tn_puts("(config-vlan)");
+		tn_puts_n("(config-vlan)");
 		break;
 	case CLI_MODE_LINE:
-		tn_puts("(config-line)");
+		tn_puts_n("(config-line)");
 		break;
 	}
-	tn_puts("# ");
+	tn_puts_n("# ");
 }
 
 
@@ -234,8 +250,9 @@ static void tn_denied(void)
 static void tn_welcome(void)
 {
 	tn.authed = 2;
-	/* The CLI state is shared with the console: a new session must not
-	 * inherit a privileged or config mode left by an earlier one. */
+	/* A new session must not inherit a privileged or config mode left
+	 * by an earlier one */
+	cli_use(CLI_VTY);
 	cli.mode = CLI_MODE_EXEC;
 	tn_puts("\r\nrtl-swos telnet console. Type 'exit' to leave.\r\n");
 	tn_prompt();
@@ -271,6 +288,7 @@ static void tn_line_done(void)
 
 	/* `exit` inside a config mode belongs to the CLI engine; at the
 	 * EXEC prompts it (and quit/logout) closes the session. */
+	cli_use(CLI_VTY);
 	if (cli.mode <= CLI_MODE_PRIV
 	    && (tn_is("exit") || tn_is("quit") || tn_is("logout"))) {
 		tn_puts("Bye.\r\n");
@@ -279,6 +297,7 @@ static void tn_line_done(void)
 	}
 
 	telnet_capture = 1;
+	cli_use(CLI_VTY);
 	cli_exec_line((__xdata char *)tline);
 	if (telnet_capture == 2)
 		tn_puts("\r\n[output truncated]\r\n");
@@ -343,6 +362,7 @@ static void tn_input(uint8_t c)
 		tn_puts("?\r\n");
 		tline[tn.ll] = 0;
 		telnet_capture = 1;
+		cli_use(CLI_VTY);
 		cli_help((__xdata char *)tline);
 		telnet_capture = 0;
 		tn_prompt();
@@ -352,6 +372,7 @@ static void tn_input(uint8_t c)
 
 	if (c == '\t' && tn.authed) {	/* complete a unique prefix */
 		tline[tn.ll] = 0;
+		cli_use(CLI_VTY);
 		uint8_t n = cli_complete((__xdata char *)tline, CMD_BUF_SIZE);
 		while (n--) {
 			tn_putc(tline[tn.ll]);
@@ -412,6 +433,7 @@ void telnetd_appcall(void) __banked
 
 	if (uip_closed() || uip_aborted() || uip_timedout()) {
 		tn.conn = 0;
+		cli_use(CLI_VTY);
 		cli.mode = CLI_MODE_EXEC;	/* drop privilege with the session */
 		return;
 	}

@@ -60,13 +60,17 @@ struct cli_node {
 };
 
 struct cli_state_t {
+	/* ---- per session: swapped by cli_use(), keep these first ---- */
 	uint8_t mode;
-	uint8_t no;		/* current line carries a `no` prefix */
 	uint8_t await;		/* interactive sub-prompt, AWAIT_* */
 	uint8_t ctx_if;		/* user-facing port number for MODE_IF */
 	uint8_t ctx_lport;	/* logical (driver) port for MODE_IF */
 	uint16_t ctx_vlan;	/* vlan id for MODE_VLAN and MODE_SVI */
 	uint8_t ctx_line;	/* 0 = console, 1 = vty */
+	uint8_t ctx_po;		/* port-channel 1-4 for MODE_PO */
+	uint8_t plen;		/* printed prompt width, aligns the '^' marker */
+	/* ---- per line: a line always runs to completion ---- */
+	uint8_t no;		/* current line carries a `no` prefix */
 	uint8_t nargs;
 	uint32_t args[CLI_MAX_ARGS];
 	/* raw offset of each arg token in the line, for string args */
@@ -75,8 +79,15 @@ struct cli_state_t {
 	uint16_t acc;		/* OR of ->lo of the CLI_F_ACC literals matched */
 	uint16_t lo;		/* ->lo of the matched node, for cli_act() */
 	__xdata char *line;	/* the line being executed, for cli_act() */
-	uint8_t ctx_po;		/* port-channel 1-4 for MODE_PO */
 };
+
+/* Sessions: the serial console and the telnet vty each keep their own
+ * mode and submode context. Every entry point (line editor, telnet
+ * server, main loop) selects its session first; switching saves the
+ * per-session part of `cli` and loads the other one. */
+#define CLI_CONSOLE	0
+#define CLI_VTY		1
+void cli_use(uint8_t who) __banked;
 
 #define CLI_AWAIT_NONE		0
 #define CLI_AWAIT_ENABLE_PW	1

@@ -480,9 +480,11 @@ void print_byte(uint8_t a)
 	write_char(low);
 }
 
+/* The serial console's prompt */
 void print_cmd_prompt(void)
 {
 	write_char_no_syslog('\n');
+	cli_use(CLI_CONSOLE);
 	cli_prompt();
 }
 
@@ -1269,6 +1271,7 @@ void idle(void)
 	if (cmd_available) {
 		cmd_available = 0;
 		cmd_history_add((__xdata char *)cmd_buffer);
+		cli_use(CLI_CONSOLE);
 		cli_exec_line((__xdata char *)cmd_buffer);
 		print_cmd_prompt();
 	}

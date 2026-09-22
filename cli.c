@@ -8,15 +8,14 @@
  * first token no tree claims falls back to the legacy flat parser so
  * unported commands keep working during the migration.
  *
- * There is ONE cli state shared by the serial console and telnet: on
- * this hardware the sessions share the underlying command machinery,
- * so a mode change on one is visible on the other. Documented
- * limitation until the legacy parser is gone.
+ * The serial console and the telnet vty are separate sessions: each
+ * keeps its own mode and submode context, swapped in by cli_use().
  *
  * Handlers are action ids dispatched from a switch, not function
  * pointers: banked function pointers are fragile with SDCC, ids are
  * free.
  */
+#include <stddef.h>
 #include "rtl837x_common.h"
 #include "cmd_parser.h"
 #include "rtl837x_phy.h"
@@ -43,9 +42,11 @@ extern __xdata char passwd[21];
 void reset_chip(void);
 
 __xdata struct cli_state_t cli;
-/* Printable prompt width (without the leading newline), for aligning
- * the '^' error marker under the echoed line. */
-__xdata uint8_t cli_plen;
+
+static __xdata uint8_t cli_replaying;
+/* When help lists the EXEC root behind a config-mode root, skip words
+ * the mode root already listed (exit/end live in both). */
+static __code const struct cli_node * __code const * __xdata dedupe_root;
 
 /* ---- tokenizer state ---- */
 #define CLI_MAX_TOKS 10
@@ -1230,7 +1231,7 @@ static void cli_spaces(uint8_t n)
 
 static void cli_marker_error(void)
 {
-	cli_spaces(cli_plen + tok_off[w_badtok]);
+	cli_spaces(cli.plen + tok_off[w_badtok]);
 	print_string("^\n% Invalid input detected at '^' marker.\n\n");
 }
 
@@ -1274,10 +1275,6 @@ static uint8_t code_strlen(__code const char *s)
 	return csl_n;
 }
 
-
-/* When help lists the EXEC root behind a config-mode root, skip words
- * the mode root already listed (exit/end live in both). */
-static __code const struct cli_node * __code const * __xdata dedupe_root;
 
 static uint8_t code_streq(__code const char *a, __code const char *b)
 {
@@ -1372,11 +1369,43 @@ static void cli_list_candidates(uint8_t partial_tok)
 
 /* ---------------- public entry points ---------------- */
 
+#define CLI_SESSION_BYTES offsetof(struct cli_state_t, no)
+static __xdata uint8_t cli_saved[2][CLI_SESSION_BYTES];
+static __xdata uint8_t cli_who;
+
+void cli_use(uint8_t who) __banked
+{
+	static __xdata uint8_t i, w;
+	static __xdata uint8_t * __xdata c;
+
+	w = who;
+	if (w == cli_who)
+		return;
+	c = (__xdata uint8_t *)&cli;
+	for (i = 0; i < CLI_SESSION_BYTES; i++) {
+		cli_saved[cli_who][i] = c[i];
+		c[i] = cli_saved[w][i];
+	}
+	cli_who = w;
+}
+
+
 void cli_init(void) __banked
 {
+	static __xdata uint8_t i;
+
 	cli.mode = CLI_MODE_EXEC;
 	cli.await = CLI_AWAIT_NONE;
 	cli.no = 0;
+	cli.ctx_if = cli.ctx_lport = cli.ctx_line = cli.ctx_po = 0;
+	cli.ctx_vlan = 0;
+	for (i = 0; i < CLI_SESSION_BYTES; i++) {
+		cli_saved[CLI_CONSOLE][i] = ((__xdata uint8_t *)&cli)[i];
+		cli_saved[CLI_VTY][i] = ((__xdata uint8_t *)&cli)[i];
+	}
+	cli_who = CLI_CONSOLE;
+	cli_replaying = 0;
+	dedupe_root = 0;
 }
 
 
@@ -1453,8 +1482,6 @@ static uint8_t cli_walk_roots(uint8_t upto)
 }
 
 
-static __xdata uint8_t cli_replaying;
-
 void cli_exec_line(__xdata char *line) __banked
 {
 	cli_tokenize(line);
@@ -1515,6 +1542,7 @@ void cli_exec_line(__xdata char *line) __banked
 
 void cli_replay_begin(void) __banked
 {
+	cli_use(CLI_CONSOLE);
 	cli.mode = CLI_MODE_CONFIG;
 	cli_replaying = 1;
 	sw_defer(1);
@@ -1541,37 +1569,37 @@ void cli_prompt(void) __banked
 {
 	__xdata char *h = hostname;
 
-	cli_plen = 0;
+	cli.plen = 0;
 	while (*h) {
 		write_char(*h++);
-		cli_plen++;
+		cli.plen++;
 	}
 	switch (cli.mode) {
 	case CLI_MODE_EXEC:
 		print_string("> ");
-		cli_plen += 2;
+		cli.plen += 2;
 		return;
 	case CLI_MODE_CONFIG:
 		print_string("(config)");
-		cli_plen += 8;
+		cli.plen += 8;
 		break;
 	case CLI_MODE_IF:
 	case CLI_MODE_SVI:
 	case CLI_MODE_PO:
 		print_string("(config-if)");
-		cli_plen += 11;
+		cli.plen += 11;
 		break;
 	case CLI_MODE_VLAN:
 		print_string("(config-vlan)");
-		cli_plen += 13;
+		cli.plen += 13;
 		break;
 	case CLI_MODE_LINE:
 		print_string("(config-line)");
-		cli_plen += 13;
+		cli.plen += 13;
 		break;
 	}
 	print_string("# ");
-	cli_plen += 2;
+	cli.plen += 2;
 }
 
 
