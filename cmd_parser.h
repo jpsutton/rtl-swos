@@ -8,6 +8,9 @@
 extern __xdata uint8_t cmd_buffer[CMD_BUF_SIZE];
 extern __xdata uint8_t cmd_available;
 extern __xdata uint8_t err_status;
+/* Scratch buffer holding one full startup-config sector; shared between
+ * the `save` command and the TFTP config transfer. */
+extern __xdata uint8_t cfg_buf[CONFIG_LEN];
 
 void cmd_tokenize(void) __banked;
 void cmd_parser(void) __banked;

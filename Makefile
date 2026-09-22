@@ -63,6 +63,7 @@ SRCS = \
 	boot.c \
 	sfp.c \
 	telnetd.c \
+	tftp.c \
 	syslog.c \
 	udp_apps.c
 

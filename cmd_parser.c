@@ -19,6 +19,7 @@
 #include "dhcp.h"
 #include "syslog.h"
 #include "telnetd.h"
+#include "tftp.h"
 #include "uip/uip.h"
 #include "version.h"
 
@@ -1697,13 +1698,34 @@ void print_sw_version(void) __banked {
 }
 
 
+/* Only configuration commands belong in the command journal: `save`
+ * appends the journal to the startup config, so a journaled `stat` or
+ * `copy` would be replayed at every boot. */
+static __code const char * __code const config_cmds[] = {
+	"ip", "gw", "netmask", "hostname", "port", "mtu", "vlan", "pvid",
+	"ingress", "isolate", "mirror", "lag", "laghash", "stp", "eee",
+	"bw", "igmp", "telnet", "syslog", "passwd", "mac", "sfp", 0
+};
+
+static uint8_t is_config_cmd(void)
+{
+	uint8_t i;
+
+	for (i = 0; config_cmds[i]; i++) {
+		if (cmd_compare(0, (__code const uint8_t *)config_cmds[i]))
+			return 1;
+	}
+	return 0;
+}
+
+
 /* Interim `save` until the modal CLI brings `write memory`: the startup
  * config is replayed at boot, so the stored text plus every command
  * journaled in cmd_history since boot equals the running state. Append
  * the journal to the stored text and burn the result back to the config
  * sector. Superseded lines accumulate across saves until the sector
  * limit; boot replay applies them in order, so the result stays correct. */
-static __xdata uint8_t cfg_save_buf[CONFIG_LEN];
+__xdata uint8_t cfg_buf[CONFIG_LEN];
 
 static void parse_save(void)
 {
@@ -1714,6 +1736,12 @@ static void parse_save(void)
 	uint8_t found_begin = 0;
 	uint8_t c;
 
+	/* A running TFTP transfer owns cfg_buf and may touch the config sector */
+	if (tftp_busy()) {
+		cmd_error("TFTP transfer in progress, try again later\n");
+		return;
+	}
+
 	/* Stored startup config, up to its terminator (0xff = erased sector) */
 	while (pos < CONFIG_START + CONFIG_LEN) {
 		flash_region.addr = pos;
@@ -1723,13 +1751,13 @@ static void parse_save(void)
 			c = flash_buf[i];
 			if (c == 0 || c == 0xff)
 				goto stored_done;
-			cfg_save_buf[n++] = c;
+			cfg_buf[n++] = c;
 		}
 		pos += FLASH_BUF_SIZE;
 	}
 stored_done:
-	if (n && cfg_save_buf[n - 1] != '\n')
-		cfg_save_buf[n++] = '\n';
+	if (n && cfg_buf[n - 1] != '\n')
+		cfg_buf[n++] = '\n';
 
 	/* Commands journaled since boot, oldest first (the walk `history` uses) */
 	p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
@@ -1742,21 +1770,48 @@ stored_done:
 				cmd_error("Config exceeds the flash sector, not saved\n");
 				return;
 			}
-			cfg_save_buf[n++] = c;
+			cfg_buf[n++] = c;
 		}
 		p = (p + 1) & CMD_HISTORY_MASK;
 	}
 
-	cfg_save_buf[n] = 0;
+	cfg_buf[n] = 0;
 	flash_region.addr = CONFIG_START;
 	flash_sector_erase();
 	flash_region.addr = CONFIG_START;
 	flash_region.len = n + 1;
-	flash_write_bytes(cfg_save_buf);
+	flash_write_bytes(cfg_buf);
 	clear_command_history();
 	print_string("Startup config saved (");
 	itoa_short(n);
 	print_string(" bytes)\n");
+}
+
+
+/* copy tftp flash|config <server-ip> <filename>
+ * copy config tftp <server-ip> <filename> */
+static void parse_copy(void)
+{
+	uint8_t op = 0;
+
+	if (cmd_words_len == 5) {
+		if (cmd_compare(1, "tftp") && cmd_compare(2, "flash"))
+			op = TFTP_OP_GET_FW;
+		else if (cmd_compare(1, "tftp") && cmd_compare(2, "config"))
+			op = TFTP_OP_GET_CONFIG;
+		else if (cmd_compare(1, "config") && cmd_compare(2, "tftp"))
+			op = TFTP_OP_PUT_CONFIG;
+	}
+	if (!op) {
+		cmd_error("Usage: copy tftp flash|config <server-ip> <filename>\n"
+			  "       copy config tftp <server-ip> <filename>\n");
+		return;
+	}
+	if (!parse_ip(cmd_words_b[3])) {
+		cmd_error("Invalid server IP\n");
+		return;
+	}
+	tftp_begin(op, (__xdata const char *)&cmd_buffer[cmd_words_b[4]]);
 }
 
 
@@ -2010,6 +2065,8 @@ void cmd_parser(void) __banked
 			write_char('\n');
 		} else if (cmd_compare(0, "save")) {
 			parse_save();
+		} else if (cmd_compare(0, "copy")) {
+			parse_copy();
 		} else if (cmd_compare(0, "history")) {
 			__xdata uint16_t p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
 			__xdata uint8_t found_begin = 0;
@@ -2031,11 +2088,8 @@ void cmd_parser(void) __banked
 		}
 
 
-		/* `save` itself must not land in the journal: it clears the journal
-		 * after persisting, and a journaled "save" would be replayed into
-		 * the next saved config. */
 		if (save_cmd && cmd_words_len && err_status == ERR_OK
-		    && !cmd_compare(0, "save")) {
+		    && is_config_cmd()) {
 			// Find end of the cmd-buffer, looking for the NUL-byte.
 			uint8_t i = cmd_words_b[cmd_words_len - 1];
 			do {
