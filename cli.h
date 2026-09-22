@@ -73,6 +73,8 @@ struct cli_state_t {
 	uint8_t argoff[CLI_MAX_ARGS];
 	uint8_t argerr;		/* offset of the arg that failed validation */
 	uint16_t acc;		/* OR of ->lo of the CLI_F_ACC literals matched */
+	uint16_t lo;		/* ->lo of the matched node, for cli_act() */
+	__xdata char *line;	/* the line being executed, for cli_act() */
 	uint8_t ctx_po;		/* port-channel 1-4 for MODE_PO */
 };
 
