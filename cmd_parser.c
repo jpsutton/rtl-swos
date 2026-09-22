@@ -17,6 +17,7 @@
 #include "sfp.h"
 #include "dhcp.h"
 #include "syslog.h"
+#include "help.h"
 #include "uip/uip.h"
 #include "version.h"
 
@@ -1714,7 +1715,9 @@ void cmd_parser(void) __banked
 	print_byte(cmd_words_b[6]); write_char('\n');
 #endif
 	if (cmd_words_len >= 1) {
-		if (cmd_compare(0, "reset")) {
+		if (cmd_compare(0, "help")) {
+			help_print();
+		} else if (cmd_compare(0, "reset")) {
 			print_string("\nRESET\n\n");
 			reset_chip();
 		} else if (cmd_compare(0, "sfp")) {
