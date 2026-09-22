@@ -56,6 +56,7 @@ create_build_dir:
 SRCS = \
 	machine.c \
 	machine_init.c \
+	cli.c \
 	cmd_editor.c \
 	cmd_parser.c \
 	dhcp.c \

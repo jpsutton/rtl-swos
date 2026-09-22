@@ -16,6 +16,7 @@
 #include "telnetd.h"
 #include "cmd_parser.h"
 #include "rtl837x_common.h"
+#include "cli.h"
 #include "uip.h"
 
 #pragma codeseg BANK3
@@ -147,7 +148,24 @@ void telnet_stop(void) __banked
 static void tn_prompt(void)
 {
 	tn_puts_x(hostname);
-	tn_puts("> ");
+	switch (cli.mode) {
+	case CLI_MODE_EXEC:
+		tn_puts("> ");
+		return;
+	case CLI_MODE_CONFIG:
+		tn_puts("(config)");
+		break;
+	case CLI_MODE_IF:
+		tn_puts("(config-if)");
+		break;
+	case CLI_MODE_VLAN:
+		tn_puts("(config-vlan)");
+		break;
+	case CLI_MODE_LINE:
+		tn_puts("(config-line)");
+		break;
+	}
+	tn_puts("# ");
 }
 
 
@@ -244,14 +262,17 @@ static void tn_line_done(void)
 		return;
 	}
 
-	if (tn_is("exit") || tn_is("quit") || tn_is("logout")) {
+	/* `exit` inside a config mode belongs to the CLI engine; at the
+	 * EXEC prompts it (and quit/logout) closes the session. */
+	if (cli.mode <= CLI_MODE_PRIV
+	    && (tn_is("exit") || tn_is("quit") || tn_is("logout"))) {
 		tn_puts("Bye.\r\n");
 		tn.close_pending = 1;
 		return;
 	}
 
 	telnet_capture = 1;
-	execute_commands(tline);
+	cli_exec_line((__xdata char *)tline);
 	if (telnet_capture == 2)
 		tn_puts("\r\n[output truncated]\r\n");
 	telnet_capture = 0;
@@ -307,6 +328,27 @@ static void tn_input(uint8_t c)
 			tn.ll--;
 			if (tn.authed)
 				tn_puts("\b \b");
+		}
+		return;
+	}
+
+	if (c == '?' && tn.authed) {	/* context help, reprint the line */
+		tn_puts("?\r\n");
+		tline[tn.ll] = 0;
+		telnet_capture = 1;
+		cli_help((__xdata char *)tline);
+		telnet_capture = 0;
+		tn_prompt();
+		tn_puts_x((__xdata char *)tline);
+		return;
+	}
+
+	if (c == '\t' && tn.authed) {	/* complete a unique prefix */
+		tline[tn.ll] = 0;
+		uint8_t n = cli_complete((__xdata char *)tline, CMD_BUF_SIZE);
+		while (n--) {
+			tn_putc(tline[tn.ll]);
+			tn.ll++;
 		}
 		return;
 	}

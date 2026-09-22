@@ -26,6 +26,7 @@
 #include "phy.h"
 #include "syslog.h"
 #include "telnetd.h"
+#include "cli.h"
 #include "boot.h"
 #include "sfp.h"
 
@@ -480,7 +481,8 @@ void print_byte(uint8_t a)
 
 void print_cmd_prompt(void)
 {
-	print_string_no_syslog("\n> ");
+	write_char_no_syslog('\n');
+	cli_prompt();
 }
 
 /*
@@ -1265,9 +1267,7 @@ void idle(void)
 	// Check whether a command is waiting in the cmd_buffer and execute
 	if (cmd_available) {
 		cmd_available = 0;
-		cmd_tokenize();
-		if (err_status == ERR_OK)
-			cmd_parser();
+		cli_exec_line((__xdata char *)cmd_buffer);
 		print_cmd_prompt();
 	}
 }
@@ -1734,6 +1734,7 @@ void main(void)
 	uip_init();
 	uip_arp_init();
 	telnetd_init();
+	cli_init();
 
 	management_vlan = 1; // Default management VLAN is 1
 

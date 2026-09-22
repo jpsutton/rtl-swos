@@ -1727,7 +1727,7 @@ static uint8_t is_config_cmd(void)
  * limit; boot replay applies them in order, so the result stays correct. */
 __xdata uint8_t cfg_buf[CONFIG_LEN];
 
-static void parse_save(void)
+void cmd_save_config(void) __banked
 {
 	__xdata uint16_t n = 0;
 	__xdata uint32_t pos = CONFIG_START;
@@ -2064,7 +2064,7 @@ void cmd_parser(void) __banked
 			print_sfr_data();
 			write_char('\n');
 		} else if (cmd_compare(0, "save")) {
-			parse_save();
+			cmd_save_config();
 		} else if (cmd_compare(0, "copy")) {
 			parse_copy();
 		} else if (cmd_compare(0, "history")) {
