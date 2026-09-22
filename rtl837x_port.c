@@ -368,12 +368,28 @@ uint8_t port_l2_forget(void) __banked
 }
 
 
+/* decimal, right-aligned in 5 columns */
+static void l2_pad_dec(__xdata uint16_t v)
+{
+	static __xdata uint8_t n;
+	static __xdata uint16_t t;
+
+	n = 1;
+	for (t = v; t >= 10; t /= 10)
+		n++;
+	while (n++ < 5)
+		write_char(' ');
+	itoa_short(v);
+}
+
+
 void port_l2_learned(void) __banked
 {
 	// Whait for any table action to be finished
 	wait_table_ready();
 
-	print_string("\n\tMAC\t\tVLAN\ttype\tport\n");
+	print_string(" VLAN  MAC Address     Type     Port\n"
+		     " ----  --------------  -------  ------\n");
 	__xdata uint16_t entry = 0x0000;
 	__xdata uint16_t first_entry = 0xffff; // Table does not have that many entries
 
@@ -399,38 +415,41 @@ void port_l2_learned(void) __banked
 		// MAC
 		reg_read_m(RTL837x_L2_DATA_OUT_B);
 		if ((sfr_data[0] & 0x20)) {	// Check entry is valid
-			print_byte(sfr_data[2]); write_char(':');
-			print_byte(sfr_data[3]); write_char(':');
+			static __xdata uint8_t mac01[2];
+			static __xdata uint16_t vid;
+			mac01[0] = sfr_data[2];
+			mac01[1] = sfr_data[3];
 			port = (sfr_data[0] >> 6) & 0x3;
+			vid = (((uint16_t)(sfr_data[0] & 0x0f)) << 8) | sfr_data[1];
+			l2_pad_dec(vid);
+			print_string("  ");
+			print_byte(mac01[0]); print_byte(mac01[1]); write_char('.');
 			reg_read_m(RTL837x_L2_DATA_OUT_A);
-			print_byte(sfr_data[0]); write_char(':');
-			print_byte(sfr_data[1]); write_char(':');
-			print_byte(sfr_data[2]); write_char(':');
-			print_byte(sfr_data[3]); write_char('\t');
-
-			// VLAN
-			reg_read_m(RTL837x_L2_DATA_OUT_B);
-			print_short( (((uint16_t) (sfr_data[0] & 0x0f)) << 8) | sfr_data[1]); // VLAN
+			print_byte(sfr_data[0]); print_byte(sfr_data[1]); write_char('.');
+			print_byte(sfr_data[2]); print_byte(sfr_data[3]);
 
 			// type
 			reg_read_m(RTL837x_L2_DATA_OUT_C);
 			if (sfr_data[1] & 0x1)
-				print_string("\tstatic\t");
+				print_string("  static   ");
 			else
-				print_string("\tlearned\t");
+				print_string("  dynamic  ");
 
 			port |= (sfr_data[3] & 0x3) << 2;
 			lag = port_lag_of(port);
-			if (lag == PORT_LAG_NONE) {
+			if (port == CPU_PORT) {
+				print_string("CPU");
+			} else if (lag == PORT_LAG_NONE) {
+				print_string("Eth1/");
 				print_phys_port(port);
 			} else {
-				print_string("LAG");
+				print_string("Po");
 				itoa(lag + 1);
 			}
+			write_char('\n');
 		}
 
 		entry++;
-		print_string("\n");
 	}
 }
 
@@ -480,6 +499,49 @@ void port_l2_setup(void) __banked
 }
 
 
+uint8_t port_link_code(uint8_t port) __banked
+{
+	static __xdata uint8_t i, b;
+
+	i = port;
+	reg_read_m(RTL837X_REG_LINKS_STS);
+	if (!((sfr_data[(i / 8) + 1] >> (i % 8)) & 1))
+		return PORT_LINK_DOWN;
+	if (i < 8)
+		reg_read_m(RTL837X_REG_LINKS);
+	else
+		reg_read_m(RTL837X_REG_LINKS_89);
+	b = sfr_data[3 - ((i & 7) >> 1)];
+	return (i & 1) ? b >> 4 : b & 0xf;
+}
+
+
+static uint32_t sfr_u32(void)
+{
+	return ((uint32_t)sfr_data[0] << 24) | ((uint32_t)sfr_data[1] << 16)
+	       | ((uint16_t)sfr_data[2] << 8) | sfr_data[3];
+}
+
+
+void port_counters_get(uint8_t port, __xdata uint32_t * __xdata c) __banked
+{
+	static __xdata uint8_t p;
+
+	p = port;
+	STAT_GET(STAT_COUNTER_TX_PKTS, p);
+	reg_read_m(RTL837X_STAT_V_LOW);
+	c[0] = sfr_u32();
+	STAT_GET(STAT_COUNTER_ERR_PKTS, p);
+	reg_read_m(RTL837X_STAT_V_LOW);
+	c[1] = sfr_u32();
+	reg_read_m(RTL837X_STAT_V_HIGH);
+	c[3] = sfr_u32();
+	STAT_GET(STAT_COUNTER_RX_PKTS, p);
+	reg_read_m(RTL837X_STAT_V_LOW);
+	c[2] = sfr_u32();
+}
+
+
 void port_stats_print(void) __banked
 {
 	print_string("\nPort\tState\tLink\tTxGood\t\tTxBad\t\tRxGood\t\tRxBad\n");
@@ -500,24 +562,7 @@ void port_stats_print(void) __banked
 			}
 		}
 
-		uint8_t b = 0;
-
-		// Determine link state
-		reg_read_m(RTL837X_REG_LINKS_STS);
-		if(!((sfr_data[(i / 8) + 1] >> ( i % 8  ) & 1)))
-		{
-			b = 99;
-		}
-		else
-		{
-			if (i < 8)
-				reg_read_m(RTL837X_REG_LINKS);
-			else
-				reg_read_m(RTL837X_REG_LINKS_89);
-
-			b = sfr_data[3 - ((i & 7) >> 1)];	
-			b = (i & 1) ? b >> 4 : b & 0xf;
-		}
+		uint8_t b = port_link_code(i);
 
 		switch (b) {
 		case 0:

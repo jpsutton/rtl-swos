@@ -9,6 +9,7 @@ void stp_timers(void) __banked;
 void stp_off(void) __banked;
 void stp_parse(void) __banked __reentrant;
 void stp_defaults(void) __banked;
+void stp_status(void) __banked;
 uint8_t stp_cfg_entity(uint8_t port) __banked;
 void stp_cfg_enable(uint8_t on) __banked;
 void stp_cfg_prio(uint8_t prio) __banked;

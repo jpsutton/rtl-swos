@@ -12,6 +12,7 @@ extern __xdata uint8_t sfp_speed[2];
 extern __xdata uint8_t sfp_quirks[2];
 
 bool sfp_print_info(uint8_t sfp) __banked;
+bool sfp_print_measurements(uint8_t sfp) __banked;
 bool sfp_read_field(__xdata char *dst, uint8_t sfp, uint8_t start, uint8_t length) __banked __reentrant;
 bool sfp_get_info(uint8_t sfp) __banked;
 void sfp_apply_quirks(uint8_t sfp) __banked __reentrant;

@@ -213,7 +213,7 @@ static void print_field(__code const char *txt, uint8_t idx, uint8_t width) __re
 }
 
 
-static void stp_status(void)
+void stp_status(void) __banked
 {
 	if (!stp_enabled) {
 		print_string("STP off\n");

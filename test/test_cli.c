@@ -1008,6 +1008,73 @@ static void test_sessions(void)
 	cli_use(CLI_CONSOLE);
 }
 
+extern int n_stp_status;
+
+static void test_show(void)
+{
+	printf("[test] show commands\n");
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	run("vlan 10"); run("name home");
+	run("vlan 20");
+	run("interface ethernet 1/1"); run("description uplink"); run("switchport access vlan 10");
+	run("interface ethernet 1/2"); run("switchport access vlan 10");
+	run("interface ethernet 1/3"); run("shutdown"); run("speed 1000");
+	run("interface ethernet 1/6"); run("switchport mode trunk"); run("switchport trunk allowed vlan 10,20-30");
+	run("interface ethernet 1/7"); run("channel-group 1 mode on");
+	run("interface ethernet 1/8"); run("channel-group 1 mode on");
+	run("monitor session 1 source interface ethernet 1/1 rx");
+	run("monitor session 1 destination interface ethernet 1/9");
+	run("end");
+
+	run("show vlan brief");
+	CHECK(strstr(out_buf, "1     default") && strstr(out_buf, "10    home") && strstr(out_buf, "20    VLAN0020"),
+	      "show vlan brief: default, named and generated names");
+	CHECK(strstr(out_buf, "Eth1/1, Eth1/2") != NULL, "access ports listed under their vlan");
+	CHECK(!strstr(out_buf, "Eth1/6"), "trunk ports are not listed there");
+	run("show vlan");
+	CHECK(strstr(out_buf, "10    home") != NULL, "show vlan = show vlan brief");
+
+	run("show interfaces status");
+	CHECK(strstr(out_buf, "Eth1/1    uplink") && strstr(out_buf, "notconnect"), "status: name + link");
+	CHECK(strstr(out_buf, "Eth1/3") && strstr(out_buf, "disabled") && strstr(out_buf, "1000"),
+	      "status: shut port and its configured speed");
+	CHECK(strstr(out_buf, "trunk") && strstr(out_buf, "Po1"), "status: trunk and lag member");
+	run("show interfaces");
+	CHECK(strstr(out_buf, "notconnect") != NULL, "show interfaces = status");
+
+	run("show interfaces trunk");
+	CHECK(strstr(out_buf, "Eth1/6    1       10,20-30") != NULL, "show interfaces trunk");
+
+	hw_counter_set(1, STAT_COUNTER_RX_PKTS, 12345);
+	hw_counter_set(1, STAT_COUNTER_TX_PKTS, 678);
+	run("show interfaces counters");
+	CHECK(strstr(out_buf, "Eth1/2    12345") && strstr(out_buf, "678"), "counters from the MIB");
+
+	run("show port-channel summary");
+	CHECK(strstr(out_buf, "Po1") && strstr(out_buf, "Eth1/7(D) Eth1/8(D)")
+	      && strstr(out_buf, "src-mac dst-mac src-ip dst-ip l4-src-port l4-dst-port"),
+	      "port-channel summary with members and default hash");
+
+	run("show ip interface brief");
+	CHECK(strstr(out_buf, "Vlan1") && strstr(out_buf, "static"), "ip interface brief");
+
+	run("show monitor session 1");
+	CHECK(strstr(out_buf, "Session 1 (active)") && strstr(out_buf, "Source rx:    Eth1/1")
+	      && strstr(out_buf, "Destination:  Eth1/9"), "monitor session");
+
+	run("show spanning-tree");
+	CHECK(n_stp_status == 1, "show spanning-tree");
+	run("show mac address-table");
+	CHECK(strstr(out_buf, "MAC Address") != NULL, "mac table header");
+	run("clear mac address-table dynamic");
+	CHECK(!out_has("%"), "clear mac address-table dynamic");
+	run("disable");
+	run("clear mac address-table dynamic");
+	CHECK(n_fallback > 0, "clear is privileged");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1040,6 +1107,7 @@ int main(void)
 	test_stp();
 	test_roundtrip_all();
 	test_sessions();
+	test_show();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

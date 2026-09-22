@@ -233,3 +233,72 @@ void handle_sfp(void) __banked
 		}
 	}
 }
+
+
+/* Fixed-point helpers for the DDM readout: no float library on the 8051 */
+static void sfp_frac(__xdata uint16_t v, __xdata uint16_t div, __xdata uint8_t digits)
+{
+	static __xdata uint16_t f, d;
+	static __xdata uint8_t k;
+
+	itoa_short(v / div);
+	write_char('.');
+	f = v % div;
+	d = div;
+	for (k = 0; k < digits; k++) {
+		d /= 10;
+		write_char('0' + (f / d) % 10);
+	}
+}
+
+
+/* SFF-8472 diagnostics (A2h 96-105), internally calibrated modules:
+ * temperature 1/256 C, supply 100 uV, bias 2 uA, powers 0.1 uW */
+bool sfp_print_measurements(uint8_t sfp) __banked
+{
+	static __xdata uint8_t slot;
+	static __xdata uint16_t v;
+	static __xdata int16_t t;
+
+	slot = sfp;
+	/* sfp_options holds byte 92 after sfp_apply_quirks(), which clears
+	 * the DDM bit for modules known to claim it falsely */
+	if (!(sfp_options[slot] & 0x40)) {
+		print_string("  Diagnostics: not supported by the module\n");
+		return true;
+	}
+	if (!sfp_read_block(slot, 224, 16))
+		return false;
+
+	t = (int16_t)(((uint16_t)sfp_buf[0] << 8) | sfp_buf[1]);
+	print_string("  Temperature: ");
+	if (t < 0) {
+		write_char('-');
+		t = -t;
+	}
+	itoa_short((uint16_t)t >> 8);
+	write_char('.');
+	write_char('0' + (((uint16_t)t & 0xff) * 10) / 256);
+	print_string(" C\n");
+
+	v = ((uint16_t)sfp_buf[2] << 8) | sfp_buf[3];
+	print_string("  Voltage:     ");
+	sfp_frac(v, 10000, 2);
+	print_string(" V\n");
+
+	v = ((uint16_t)sfp_buf[4] << 8) | sfp_buf[5];	/* 2 uA units */
+	print_string("  Bias:        ");
+	sfp_frac(v, 500, 2);				/* mA = v / 500 */
+	print_string(" mA\n");
+
+	v = ((uint16_t)sfp_buf[6] << 8) | sfp_buf[7];
+	print_string("  TX power:    ");
+	sfp_frac(v, 10000, 4);
+	print_string(" mW\n");
+
+	v = ((uint16_t)sfp_buf[8] << 8) | sfp_buf[9];
+	print_string("  RX power:    ");
+	sfp_frac(v, 10000, 4);
+	print_string(" mW\n");
+	return true;
+}

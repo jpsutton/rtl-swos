@@ -40,6 +40,9 @@
 
 /* Argument placeholder types (a node with word == 0 is an argument) */
 #define CLI_A_NONE	0
+/* NOTE: a CLI_A_NUM node's lo/hi are its range, so a handler that reads
+ * cli.lo must not be reachable through one - use CLI_A_NUM32 (whose
+ * lo/hi are free) and range-check in the handler instead. */
 #define CLI_A_NUM	1	/* decimal number, range in lo/hi */
 #define CLI_A_WORD	2	/* any single word */
 #define CLI_A_IP	3	/* dotted quad */

@@ -56,6 +56,19 @@
 #define ACT_FEAT_STP	43
 #define ACT_STP_G	44	/* global spanning-tree, parameter in ->lo */
 #define ACT_STP_IF	45	/* per-port spanning-tree, parameter in ->lo */
+#define ACT_SHOW	46	/* operational show commands, SHOW_* in ->lo */
+#define ACT_CLEAR_MAC	47
+
+#define SHOW_IF_STATUS	1
+#define SHOW_IF_COUNT	2
+#define SHOW_IF_TRUNK	3
+#define SHOW_IF_XCVR	4
+#define SHOW_VLAN	5
+#define SHOW_PO		6
+#define SHOW_IP_IF	7
+#define SHOW_MON	8
+#define SHOW_MAC	9
+#define SHOW_STP	10
 
 /* ACT_STP_G parameters */
 #define STPG_RSTP	1

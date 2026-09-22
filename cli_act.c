@@ -20,6 +20,7 @@
 #include "rtl837x_regs.h"
 #include "cli.h"
 #include "cli_act.h"
+#include "show.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -176,6 +177,47 @@ void cli_act(uint8_t action) __banked
 		break;
 	case ACT_SHOW_RUN:
 		runcfg_show();
+		break;
+	case ACT_SHOW:
+		switch (cli.lo) {
+		case SHOW_IF_STATUS:
+			show_if_status();
+			break;
+		case SHOW_IF_COUNT:
+			show_if_counters();
+			break;
+		case SHOW_IF_TRUNK:
+			show_if_trunk();
+			break;
+		case SHOW_IF_XCVR:
+			show_if_transceiver();
+			break;
+		case SHOW_VLAN:
+			show_vlan_brief();
+			break;
+		case SHOW_PO:
+			show_po_summary();
+			break;
+		case SHOW_IP_IF:
+			show_ip_if_brief();
+			break;
+		case SHOW_MON:
+			if (cli.nargs && cli.args[0] != 1) {
+				print_string("% There is only session 1\n");
+				break;
+			}
+			show_monitor();
+			break;
+		case SHOW_MAC:
+			show_mac_table();
+			break;
+		case SHOW_STP:
+			show_stp();
+			break;
+		}
+		break;
+	case ACT_CLEAR_MAC:
+		port_l2_forget();
 		break;
 	case ACT_SHOW_START:
 		startup_show();

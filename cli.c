@@ -93,8 +93,98 @@ static __code const struct cli_node n_show_start = {
 	"startup-config", 0, 0, 0, 0, NO_CHILDREN, ACT_SHOW_START,
 	"Configuration used at boot"
 };
+#define SHOW_LEAF(nm, word, code, help) \
+static __code const struct cli_node nm = { \
+	word, 0, 0, code, 0, NO_CHILDREN, ACT_SHOW, help \
+};
+SHOW_LEAF(n_sh_if_status, "status", SHOW_IF_STATUS, "Link, VLAN and speed per port")
+SHOW_LEAF(n_sh_if_count, "counters", SHOW_IF_COUNT, "Packet and error counters")
+SHOW_LEAF(n_sh_if_trunk, "trunk", SHOW_IF_TRUNK, "Trunk ports")
+SHOW_LEAF(n_sh_if_xcvr, "transceiver", SHOW_IF_XCVR, "SFP modules and diagnostics")
+static __code const struct cli_node * __code const ch_sh_if[] = {
+	&n_sh_if_count, &n_sh_if_status, &n_sh_if_xcvr, &n_sh_if_trunk, 0
+};
+static __code const struct cli_node n_sh_if = {
+	"interfaces", 0, 0, SHOW_IF_STATUS, 0, ch_sh_if, ACT_SHOW, "Interface status"
+};
+SHOW_LEAF(n_sh_vlan_brief, "brief", SHOW_VLAN, "One line per VLAN")
+static __code const struct cli_node * __code const ch_sh_vlan[] = {
+	&n_sh_vlan_brief, 0
+};
+static __code const struct cli_node n_sh_vlan = {
+	"vlan", 0, 0, SHOW_VLAN, 0, ch_sh_vlan, ACT_SHOW, "VLAN database"
+};
+SHOW_LEAF(n_sh_mac_at, "address-table", SHOW_MAC, "Learned and static addresses")
+static __code const struct cli_node * __code const ch_sh_mac[] = {
+	&n_sh_mac_at, 0
+};
+static __code const struct cli_node n_sh_mac = {
+	"mac", 0, 0, 0, 0, ch_sh_mac, ACT_NONE, "MAC address table"
+};
+SHOW_LEAF(n_sh_stp, "spanning-tree", SHOW_STP, "Spanning tree state")
+SHOW_LEAF(n_sh_po_sum, "summary", SHOW_PO, "Members and hash")
+static __code const struct cli_node * __code const ch_sh_po[] = {
+	&n_sh_po_sum, 0
+};
+static __code const struct cli_node n_sh_po = {
+	"port-channel", 0, 0, SHOW_PO, 0, ch_sh_po, ACT_SHOW, "Port-channels"
+};
+SHOW_LEAF(n_sh_ip_if_brief, "brief", SHOW_IP_IF, "Management interface")
+static __code const struct cli_node * __code const ch_sh_ip_if[] = {
+	&n_sh_ip_if_brief, 0
+};
+static __code const struct cli_node n_sh_ip_if = {
+	"interface", 0, 0, SHOW_IP_IF, 0, ch_sh_ip_if, ACT_SHOW, "IP interfaces"
+};
+static __code const struct cli_node * __code const ch_sh_ip[] = {
+	&n_sh_ip_if, 0
+};
+static __code const struct cli_node n_sh_ip = {
+	"ip", 0, 0, 0, 0, ch_sh_ip, ACT_NONE, "IP information"
+};
+/* NUM32 so that ->lo carries the show code: an ordinary NUM's lo is
+ * its range, which would alias SHOW_IF_STATUS */
+static __code const struct cli_node n_arg_sh_mon = {
+	0, CLI_A_NUM32, 0, SHOW_MON, 0, NO_CHILDREN, ACT_SHOW, "Session number (1)"
+};
+static __code const struct cli_node * __code const ch_sh_mon_sess[] = {
+	&n_arg_sh_mon, 0
+};
+static __code const struct cli_node n_sh_mon_sess = {
+	"session", 0, 0, SHOW_MON, 0, ch_sh_mon_sess, ACT_SHOW, "SPAN session"
+};
+static __code const struct cli_node * __code const ch_sh_mon[] = {
+	&n_sh_mon_sess, 0
+};
+static __code const struct cli_node n_sh_mon = {
+	"monitor", 0, 0, SHOW_MON, 0, ch_sh_mon, ACT_SHOW, "Port mirroring"
+};
 static __code const struct cli_node * __code const ch_show[] = {
-	&n_show_run, &n_show_start, &n_show_version, 0
+	&n_sh_if, &n_sh_ip, &n_sh_mac, &n_sh_mon, &n_sh_po, &n_show_run,
+	&n_sh_stp, &n_show_start, &n_show_version, &n_sh_vlan, 0
+};
+
+/* clear mac address-table dynamic */
+static __code const struct cli_node n_clr_mac_dyn = {
+	"dynamic", 0, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_CLEAR_MAC, "Learned entries"
+};
+static __code const struct cli_node * __code const ch_clr_mac_at[] = {
+	&n_clr_mac_dyn, 0
+};
+static __code const struct cli_node n_clr_mac_at = {
+	"address-table", 0, CLI_F_PRIV, 0, 0, ch_clr_mac_at, ACT_NONE, "MAC address table"
+};
+static __code const struct cli_node * __code const ch_clr_mac[] = {
+	&n_clr_mac_at, 0
+};
+static __code const struct cli_node n_clr_mac = {
+	"mac", 0, CLI_F_PRIV, 0, 0, ch_clr_mac, ACT_NONE, "MAC address table"
+};
+static __code const struct cli_node * __code const ch_clear[] = {
+	&n_clr_mac, 0
+};
+static __code const struct cli_node n_clear = {
+	"clear", 0, CLI_F_PRIV, 0, 0, ch_clear, ACT_NONE, "Reset functions"
 };
 
 static __code const struct cli_node n_write_memory = {
@@ -171,7 +261,7 @@ static __code const struct cli_node n_exit_exec = {
 };
 
 static __code const struct cli_node * __code const cli_root_exec[] = {
-	&n_configure, &n_copy, &n_disable, &n_enable, &n_exit_exec,
+	&n_clear, &n_configure, &n_copy, &n_disable, &n_enable, &n_exit_exec,
 	&n_reload, &n_show, &n_write, 0
 };
 

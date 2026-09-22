@@ -206,3 +206,9 @@ void bandwidth_ingress_fc(uint8_t p) { bw_in_drop[p] = 0; }
 void bandwidth_egress_set(uint8_t p, uint32_t bw) { bw_out[p] = bw; }
 void bandwidth_egress_disable(uint8_t p) { bw_out[p] = 0; }
 void bandwidth_status(uint8_t p) { (void)p; }
+
+/* ---- show hooks into modules not linked here ---- */
+int n_sfp_info, n_stp_status;
+bool sfp_print_info(uint8_t sfp) { (void)sfp; n_sfp_info++; return false; }
+bool sfp_print_measurements(uint8_t sfp) { (void)sfp; return true; }
+void stp_status(void) { n_stp_status++; print_string((char *)"STP-STATUS\n"); }
