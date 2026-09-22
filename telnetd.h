@@ -5,8 +5,7 @@
 #include "uip.h"
 
 /* Room for one command's captured output plus echo; a response larger
- * than this is truncated with a marker, like the httpd cmd endpoint.
- * Sized to hold the full `help` output. */
+ * than this is truncated with a marker. */
 #define TELNET_OUTBUF 2048
 #define TELNET_PORT 23
 

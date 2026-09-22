@@ -34,13 +34,6 @@ extern __xdata uint8_t sbuf[SBUF_SIZE];
 // Define the command buffer size, Must be 2^x and <= 128
 #define CMD_BUF_SIZE 128
 
-// Size of the TCP Output buffer
-#define TCP_OUTBUF_SIZE 2500
-
-// Appended when a captured command wrote more than the output buffer holds,
-// so a clipped listing is visibly clipped instead of silently short.
-#define CMD_TRUNCATED "\n[output truncated]\n"
-
 // Size of the port name, including the terminating null byte
 #define PORT_NAME_SIZE 32
 

@@ -1,9 +1,8 @@
 /*
- * env_tables.c - what rtl837x_port.c and httpd/page_impl.c link against
- * besides the register mock: the console, the buffers page_impl writes into,
- * the machine description and leaf calls into subsystems not under test.
- * Buffers keep their firmware sizes so AddressSanitizer sees the same bounds
- * the 8051 has.
+ * env_tables.c - what rtl837x_port.c links against besides the register
+ * mock: the console, the machine description and leaf calls into
+ * subsystems not under test. Buffers keep their firmware sizes so
+ * AddressSanitizer sees the same bounds the 8051 has.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -67,11 +66,7 @@ const struct machine machine = {
 struct machine_runtime machine_detected = { .isRTL8373 = 1 };
 
 /* ---- firmware state the modules read or write ---- */
-uint8_t  outbuf[TCP_OUTBUF_SIZE];
-uint16_t slen;
 uint16_t management_vlan = 1;
-uint16_t cont_len;
-uint32_t cont_addr;
 uint8_t  vlan_names[VLAN_NAMES_SIZE];
 uint16_t vlan_ptr;
 uint8_t  sfp_pins_last = 0xff;

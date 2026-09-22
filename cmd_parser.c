@@ -6,6 +6,7 @@
 // #define REGDBG 1
 
 #include "rtl837x_common.h"
+#include "cmd_parser.h"
 #include "rtl837x_port.h"
 #include "rtl837x_flash.h"
 #include "rtl837x_phy.h"
@@ -1696,6 +1697,69 @@ void print_sw_version(void) __banked {
 }
 
 
+/* Interim `save` until the modal CLI brings `write memory`: the startup
+ * config is replayed at boot, so the stored text plus every command
+ * journaled in cmd_history since boot equals the running state. Append
+ * the journal to the stored text and burn the result back to the config
+ * sector. Superseded lines accumulate across saves until the sector
+ * limit; boot replay applies them in order, so the result stays correct. */
+static __xdata uint8_t cfg_save_buf[CONFIG_LEN];
+
+static void parse_save(void)
+{
+	__xdata uint16_t n = 0;
+	__xdata uint32_t pos = CONFIG_START;
+	__xdata uint16_t p;
+	__xdata uint16_t i;
+	uint8_t found_begin = 0;
+	uint8_t c;
+
+	/* Stored startup config, up to its terminator (0xff = erased sector) */
+	while (pos < CONFIG_START + CONFIG_LEN) {
+		flash_region.addr = pos;
+		flash_region.len = FLASH_BUF_SIZE;
+		flash_read_bulk(flash_buf);
+		for (i = 0; i < FLASH_BUF_SIZE; i++) {
+			c = flash_buf[i];
+			if (c == 0 || c == 0xff)
+				goto stored_done;
+			cfg_save_buf[n++] = c;
+		}
+		pos += FLASH_BUF_SIZE;
+	}
+stored_done:
+	if (n && cfg_save_buf[n - 1] != '\n')
+		cfg_save_buf[n++] = '\n';
+
+	/* Commands journaled since boot, oldest first (the walk `history` uses) */
+	p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
+	while (p != cmd_history_ptr) {
+		c = cmd_history[p];
+		if (!c || c == '\n')
+			found_begin = 1;
+		if (found_begin && c) {
+			if (n >= CONFIG_LEN - 1) {
+				cmd_error("Config exceeds the flash sector, not saved\n");
+				return;
+			}
+			cfg_save_buf[n++] = c;
+		}
+		p = (p + 1) & CMD_HISTORY_MASK;
+	}
+
+	cfg_save_buf[n] = 0;
+	flash_region.addr = CONFIG_START;
+	flash_sector_erase();
+	flash_region.addr = CONFIG_START;
+	flash_region.len = n + 1;
+	flash_write_bytes(cfg_save_buf);
+	clear_command_history();
+	print_string("Startup config saved (");
+	itoa_short(n);
+	print_string(" bytes)\n");
+}
+
+
 // Identify command
 void cmd_parser(void) __banked
 {
@@ -1944,6 +2008,8 @@ void cmd_parser(void) __banked
 			reg_read_m(RTL837X_REG_SEC_COUNTER);
 			print_sfr_data();
 			write_char('\n');
+		} else if (cmd_compare(0, "save")) {
+			parse_save();
 		} else if (cmd_compare(0, "history")) {
 			__xdata uint16_t p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
 			__xdata uint8_t found_begin = 0;
@@ -1965,7 +2031,11 @@ void cmd_parser(void) __banked
 		}
 
 
-		if (save_cmd && cmd_words_len && err_status == ERR_OK) {
+		/* `save` itself must not land in the journal: it clears the journal
+		 * after persisting, and a journaled "save" would be replayed into
+		 * the next saved config. */
+		if (save_cmd && cmd_words_len && err_status == ERR_OK
+		    && !cmd_compare(0, "save")) {
 			// Find end of the cmd-buffer, looking for the NUL-byte.
 			uint8_t i = cmd_words_b[cmd_words_len - 1];
 			do {

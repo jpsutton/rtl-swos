@@ -2,12 +2,11 @@ VERSION=0.1.0
 IMAGESIZE = 524288
 DEFAULT_CONFIG_LOCATION = 454656
 CONFIG_LOCATION = 458752
-HTML_LOCATION = 262144
 
 ifeq ($(origin CC),default)
 CC = sdcc
 endif
-CC_FLAGS = -mmcs51 -I. -Ihttpd -Iuip
+CC_FLAGS = -mmcs51 -I. -Iuip
 ASM ?= sdas8051
 AFLAGS= -plosgff
 
@@ -52,7 +51,6 @@ all: create_build_dir $(VERSION_HEADER) $(SUBDIRS) $(BUILDDIR)/rtlplayground-$(F
 create_build_dir:
 	mkdir -p "$(BUILDDIR)"
 	mkdir -p "$(BUILDDIR)/uip"
-	mkdir -p "$(BUILDDIR)/httpd"
 
 # Keep machine.c in first position to fail immediately on invalid $MACHINE value
 SRCS = \
@@ -61,7 +59,6 @@ SRCS = \
 	cmd_editor.c \
 	cmd_parser.c \
 	dhcp.c \
-	html_data.c \
 	rtlplayground.c \
 	boot.c \
 	sfp.c \
@@ -81,9 +78,6 @@ SRCS += \
 	rtl837x_port.c \
 	rtl837x_stp.c
 SRCS += \
-	httpd/httpd.c \
-	httpd/page_impl.c
-SRCS += \
 	uip/timer.c \
 	uip/uip.c \
 	uip/uiplib.c \
@@ -94,20 +88,6 @@ SRCS += \
 
 OBJS = ${SRCS:%.c=$(BUILDDIR)/%.rel}
 DEPS := ${SRCS:%.c=$(BUILDDIR)/%.d}
-HTML := $(shell find html -name '*.js' -or -name '*.html' -or -name '*.svg' -or -name '*.css' -or -name '*.ico')
-
-# Minified copy of the web UI sources, used as the fileadder input.
-# The raw html/ sources stay untouched for development; the minified
-# copy is a build artifact under output/.
-HTML_MIN := output/html_min
-.PHONY: html_min
-html_min: $(HTML)
-	rm -rf $(HTML_MIN)
-	mkdir -p $(HTML_MIN)
-	@for f in $(HTML); do python3 tools/minify.py $$f $(HTML_MIN)/$$(basename $$f) || exit 1; done
-
-html_data.c html_data.h &: $(HTML) | tools html_min
-	tools/output/fileadder -a $(HTML_LOCATION) -s $(IMAGESIZE) -b BANK1 -z -d $(HTML_MIN) -p html_data
 
 $(VERSION_HEADER):
 	@printf '%s\n' "#ifndef VERSION_H" "#define VERSION_H" \
@@ -115,23 +95,21 @@ $(VERSION_HEADER):
 		"#define BUILD_DATE \"$(BUILD_DATE)\"" \
 		"#endif" > $(VERSION_HEADER)
 
-httpd: html_data.h
-
 $(SUBDIRS):
 	$(MAKE) -C $@
 
 clean: $(SUBDIRSCLEAN)
-	-rm -f html_data.c html_data.h $(VERSION_HEADER)
+	-rm -f $(VERSION_HEADER)
 	-if [ -d $(BUILDDIR) ]; then find $(BUILDDIR) -type f ! -name "*.bin" -delete; fi
 
 distclean: $(SUBDIRSCLEAN)
-	-rm -f html_data.c html_data.h $(VERSION_HEADER)
+	-rm -f $(VERSION_HEADER)
 	-rm -rf $(BUILDDIR)
 
 $(SUBDIRSCLEAN):
 	$(MAKE) -C $(@:clean=) clean
 
-$(BUILDDIR)/%.rel: %.c | create_build_dir html_data.h
+$(BUILDDIR)/%.rel: %.c | create_build_dir
 	$(CC) -MMD $(CC_FLAGS) -o $@ -c $<
 
 $(BUILDDIR)/%.rel: %.asm | create_build_dir
@@ -149,7 +127,6 @@ $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/rtlplayground.i
 	tools/output/imagebuilder -i $^ $@
 	tools/output/fileadder -a $(DEFAULT_CONFIG_LOCATION) -s $(IMAGESIZE) -d config.txt $@
 	tools/output/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d config.txt $@
-	tools/output/fileadder -a $(HTML_LOCATION) -s $(IMAGESIZE) -z -d $(HTML_MIN) -p html_data -b BANK1 $@
 	tools/output/crc_calculator -u $@
 	ln -sf $(MACHINE)/rtlplayground-$(FILENAME_EXTENSION).bin output/rtlplayground.bin
 

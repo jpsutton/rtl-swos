@@ -92,22 +92,19 @@ typedef unsigned short uip_stats_t;
 /**
  * Maximum number of TCP connections. TODO: Increase this, but also make the socket state/buffer per-connection.
  *
- * Two slots so a telnet session and the web UI do not compete: with a
- * single slot, and telnet exempt from the idle reaper below, an open
- * telnet session would hold the only slot for its whole idle timeout
- * and lock out the web UI. The packet buffer stays shared
- * (UIP_CONF_EXTERNAL_BUFFER), so the extra slot costs only one more
- * uip_conn in xdata.
+ * Two slots so a lingering half-closed session (FIN_WAIT etc.) does not
+ * lock out a fresh telnet connection while it drains. The packet buffer
+ * stays shared (UIP_CONF_EXTERNAL_BUFFER), so the extra slot costs only
+ * one more uip_conn in xdata.
  *
  * \hideinitializer
  */
 #define UIP_CONF_MAX_CONNECTIONS 2
 
 /**
- * This httpd closes after every response, so an ESTABLISHED connection
- * that stays idle is a peer that died or never sent its request. With a
- * single connection slot it would hold the web UI until the next power
- * cycle, so it is aged out instead.
+ * Age out ESTABLISHED connections that stay idle: a peer that died or
+ * never sent anything would otherwise hold a connection slot until the
+ * next power cycle.
  *
  * uip_periodic() runs from idle() once per system tick; interrupt
  * wake-ups only add sweeps, so the timeout can fire early but never
@@ -119,18 +116,18 @@ typedef unsigned short uip_stats_t;
 #define UIP_CONF_IDLE_TIMEOUT 30
 
 /*
- * Exempt the telnet port from the idle reaper above. The reaper frees
- * the connection slot from an abandoned httpd connection after ~30s,
- * but telnet is a long-lived interactive session and the telnet server
- * enforces its own, longer idle timeout instead. httpd is unaffected.
+ * Exempt the telnet port from the idle reaper above: telnet is a
+ * long-lived interactive session and the telnet server enforces its
+ * own, longer idle timeout instead.
  */
 #define UIP_IDLE_EXEMPT_LPORT 23
 
 /**
- * Maximum number of listening TCP ports. TODO: increase this!
+ * Maximum number of listening TCP ports.
  *
- * One slot for the httpd (port 80) and one for the telnet server (port
- * 23). uip_listen() fails silently when no listen slot is free.
+ * The telnet server (port 23) is the only TCP listener; one spare slot
+ * for a future service. uip_listen() fails silently when no listen slot
+ * is free.
  *
  * \hideinitializer
  */
@@ -199,7 +196,7 @@ typedef unsigned short uip_stats_t;
 /* Here we include the header file for the application(s) we use in
    our project. */
 /*#include "smtp.h"*/
-#include "httpd.h"
+#include "tcp_app.h"
 #include "udp_apps.h"
 /*#include "telnetd.h"*/
 /*#include "webserver.h" */

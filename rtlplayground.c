@@ -25,7 +25,6 @@
 #include "machine.h"
 #include "phy.h"
 #include "syslog.h"
-#include "httpd/page_impl.h"
 #include "telnetd.h"
 #include "boot.h"
 #include "sfp.h"
@@ -219,11 +218,10 @@ void isr_serial(void) __interrupt(4)
 }
 
 
-/* Set by the httpd while it runs a command that arrived over the network, so
- * that everything the command prints lands in the response as well. */
-__xdata uint8_t cmd_capture;
-extern __xdata uint8_t outbuf[TCP_OUTBUF_SIZE];
-extern __xdata uint16_t slen;
+/* Admin password gating the telnet console; set by `passwd`, default
+ * applied in execute_config(). */
+__xdata char passwd[21];
+
 extern __xdata uint8_t telnet_outbuf[TELNET_OUTBUF];
 extern __xdata uint16_t telnet_slen;
 extern __xdata uint8_t telnet_capture;
@@ -233,13 +231,8 @@ void write_char_no_syslog(char c)
 	/* Capturing sits here rather than in write_char() so that the messages
 	 * printed through print_string_no_syslog() are captured too: those are
 	 * the replies of the syslog commands, which must not generate a syslog
-	 * packet but do belong in the answer to a command sent over HTTP. */
-	if (cmd_capture) {
-		if (slen < TCP_OUTBUF_SIZE - sizeof(CMD_TRUNCATED))
-			outbuf[slen++] = c;
-		else
-			cmd_capture = 2;	/* out of room, httpd says so */
-	} else if (telnet_capture) {
+	 * packet but do belong in the answer to a command sent over telnet. */
+	if (telnet_capture) {
 		/* Telnet needs CRLF line endings on the wire */
 		if (telnet_slen < TELNET_OUTBUF - 2) {
 			if (c == '\n')
@@ -1740,7 +1733,6 @@ void main(void)
 	bandwidth_setup();
 	uip_init();
 	uip_arp_init();
-	httpd_init();
 	telnetd_init();
 
 	management_vlan = 1; // Default management VLAN is 1

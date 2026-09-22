@@ -1,7 +1,7 @@
 /*
  * Minimal telnet server providing the same command line as the serial
- * console and the httpd /cmd endpoint. One session at a time; a second
- * connection attempt is aborted. Login uses the web/admin password.
+ * console. One session at a time; a second connection attempt is
+ * aborted. Login uses the admin password.
  *
  * The server negotiates character-at-a-time mode (WILL ECHO + WILL SGA)
  * and does its own echo and line editing, so the password is not echoed.
@@ -180,7 +180,7 @@ static uint8_t tn_is(__code const char *p)
 
 static void tn_pump(void)
 {
-	__xdata struct httpd_state * __xdata s = &(uip_conn->appstate);
+	__xdata struct tcp_app_state * __xdata s = &(uip_conn->appstate);
 
 	if (s->tstate == TN_TX)
 		return;
@@ -324,7 +324,7 @@ static void tn_input(uint8_t c)
 
 void telnetd_appcall(void) __banked
 {
-	__xdata struct httpd_state * __xdata s = &(uip_conn->appstate);
+	__xdata struct tcp_app_state * __xdata s = &(uip_conn->appstate);
 
 	if (uip_connected()) {
 		if (!tn.enabled || tn.conn) {
@@ -408,4 +408,15 @@ void telnetd_appcall(void) __banked
 	}
 
 	tn_pump();
+}
+
+
+/* uIP has a single TCP application callback; the telnet server is the
+ * only TCP application. */
+void tcp_appcall(void)
+{
+	if (uip_conn->lport == HTONS(TELNET_PORT))
+		telnetd_appcall();
+	else
+		uip_abort();
 }
