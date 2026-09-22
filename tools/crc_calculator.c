@@ -28,7 +28,7 @@ struct arguments {
 };
 
 const char *argp_program_version = "crc_calculator 0.1";
-const char *argp_program_bug_address = "https://github.com/logicog/RTLPlayground/issues";
+const char *argp_program_bug_address = "";
 static char doc[] = "Calculate (and optionally update) the CRC of an image";
 static char args_doc[] = "crc_calculator [options] INPUT_IMAGE";
 static struct argp_option options[] = {

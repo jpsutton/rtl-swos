@@ -108,7 +108,7 @@ extern __xdata uint8_t gpio_last_value[8];
 
 extern __xdata struct flash_region_t flash_region;
 
-__code const uint8_t * __code const greeting = "\nA minimal prompt to explore the RTL8372:\n";
+__code const uint8_t * __code const greeting = "\nrtl-swos console:\n";
 __code const uint8_t * __code const hex = "0123456789abcdef";
 
 __xdata uint8_t flash_buf[FLASH_BUF_SIZE];

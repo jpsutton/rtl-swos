@@ -46,7 +46,7 @@ BUILD_DATE := $(shell date -u -d @$(SOURCE_DATE_EPOCH) +"%Y-%m-%d %H:%M:%S" 2>/d
 	|| date -u -r $(SOURCE_DATE_EPOCH) +"%Y-%m-%d %H:%M:%S")
 endif
 
-all: create_build_dir $(VERSION_HEADER) $(SUBDIRS) $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin
+all: create_build_dir $(VERSION_HEADER) $(SUBDIRS) $(BUILDDIR)/rtl-swos-$(FILENAME_EXTENSION).bin
 
 create_build_dir:
 	mkdir -p "$(BUILDDIR)"
@@ -59,7 +59,7 @@ SRCS = \
 	cmd_editor.c \
 	cmd_parser.c \
 	dhcp.c \
-	rtlplayground.c \
+	main.c \
 	boot.c \
 	sfp.c \
 	telnetd.c \
@@ -116,19 +116,19 @@ $(BUILDDIR)/%.rel: %.asm | create_build_dir
 	${ASM} ${AFLAGS} -o $@ $<
 #	mv -f $(addprefix $(basename $^), .lst .rel .sym) .
 
-$(BUILDDIR)/rtlplayground.ihx: $(OBJS) $(BUILDDIR)/crtbank.rel $(BUILDDIR)/crc16.rel
+$(BUILDDIR)/rtl-swos.ihx: $(OBJS) $(BUILDDIR)/crtbank.rel $(BUILDDIR)/crc16.rel
 	$(CC) $(CC_FLAGS) -Wl-bHOME=0x00000 -Wl-bBANK1=0x14000 -Wl-bBANK2=0x24000 -Wl-bBANK3=0x34000 -Wl-r -o $@ $^
 
-$(BUILDDIR)/rtlplayground.img: $(BUILDDIR)/rtlplayground.ihx
+$(BUILDDIR)/rtl-swos.img: $(BUILDDIR)/rtl-swos.ihx
 	objcopy --input-target=ihex -O binary $< $@
 
-$(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/rtlplayground.img | tools
+$(BUILDDIR)/rtl-swos-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/rtl-swos.img | tools
 	if [ -e $@ ]; then rm $@; fi
 	tools/output/imagebuilder -i $^ $@
 	tools/output/fileadder -a $(DEFAULT_CONFIG_LOCATION) -s $(IMAGESIZE) -d config.txt $@
 	tools/output/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d config.txt $@
 	tools/output/crc_calculator -u $@
-	ln -sf $(MACHINE)/rtlplayground-$(FILENAME_EXTENSION).bin output/rtlplayground.bin
+	ln -sf $(MACHINE)/rtl-swos-$(FILENAME_EXTENSION).bin output/rtl-swos.bin
 
 .PHONY: clean distclean all $(SUBDIRS) $(SUBDIRSCLEAN) $(VERSION_HEADER) create_build_dir
 

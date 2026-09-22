@@ -212,7 +212,7 @@ static void tn_denied(void)
 static void tn_welcome(void)
 {
 	tn.authed = 2;
-	tn_puts("\r\nRTLPlayground telnet console. Type 'exit' to leave.\r\n");
+	tn_puts("\r\nrtl-swos telnet console. Type 'exit' to leave.\r\n");
 	tn_prompt();
 }
 

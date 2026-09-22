@@ -37,7 +37,7 @@ void dbg_short(uint16_t v) { (void)v; }
 void dbg_char(char c) { (void)c; }
 void dbg_byte(uint8_t v) { (void)v; }
 
-/* ---- copied verbatim from rtlplayground.c ---- */
+/* ---- copied verbatim from main.c ---- */
 uint16_t strtox(uint8_t *dst, const char *s)
 {
 	uint8_t *b = dst;

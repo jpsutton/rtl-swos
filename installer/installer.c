@@ -359,7 +359,7 @@ void installer(void)
 	EIE = 0;  // SFR e8: EIE. Disable all external IRQs
 
 	setup_serial_timer1();
-	print_string("\nRTLPlayground installer starting...\n");
+	print_string("\nrtl-swos installer starting...\n");
 
 	// Initialize flash functions with disable DIO because writing does not work otherwise
 	flash_init(0);

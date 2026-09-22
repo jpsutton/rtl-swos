@@ -164,10 +164,10 @@ void sfr_mask_data(uint8_t n, uint8_t mask, uint8_t set);
 void sfr_set_zero(void);
 void reset_chip(void);
 /* Firmware implementations that shadow libc names. Host unit-test builds
- * (RTLP_HOST_TEST) hide these prototypes so they don't clash with glibc;
+ * (SWOS_HOST_TEST) hide these prototypes so they don't clash with glibc;
  * argument order matches libc, so on-host callers transparently use the
  * C library. See test/. */
-#ifndef RTLP_HOST_TEST
+#ifndef SWOS_HOST_TEST
 void sleep(uint16_t t);
 void memcpy(__xdata void * __xdata dst, __xdata const void * __xdata src, uint16_t len);
 void memset(__xdata uint8_t *dst, __xdata uint8_t v, uint8_t len);

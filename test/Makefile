@@ -1,4 +1,4 @@
-# Host unit-test harness for RTLPlayground firmware logic.
+# Host unit-test harness for rtl-swos firmware logic.
 #
 # Compiles selected firmware translation units with host gcc + AddressSanitizer,
 # force-including sdcc_shim.h to erase 8051 keywords, and links them against
@@ -13,7 +13,7 @@ SRCROOT  = ..
 # -include shim first so __xdata/__code/__banked vanish before any firmware header.
 CFLAGS   = -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas \
            -Wno-pointer-sign \
-           -DRTLP_HOST_TEST \
+           -DSWOS_HOST_TEST \
            -fsanitize=address,undefined -fno-omit-frame-pointer \
            -include sdcc_shim.h -Istub -I. -I$(SRCROOT) -I$(SRCROOT)/uip
 ifeq ($(findstring clang,$(shell $(CC) --version 2>/dev/null)),)

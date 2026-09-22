@@ -33,7 +33,7 @@ fires — so it drops straight into CI.
   (`sbuf`), the command/history buffers, and the character-output sink
   (`write_char` etc.). Buffers are sized **exactly** as on target, so ASan
   redzones catch the same off-by-one overflows the 8051 hits.
-- Builds define **`RTLP_HOST_TEST`**, which hides the firmware's libc-named
+- Builds define **`SWOS_HOST_TEST`**, which hides the firmware's libc-named
   prototypes (`memset`/`strlen`/…) in `rtl837x_common.h` so they don't clash with
   glibc. Argument order matches libc, so on-host callers transparently use the C
   library. This guard is compiled out of normal firmware builds — zero on-target
