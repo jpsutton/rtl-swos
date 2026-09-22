@@ -1090,6 +1090,33 @@ err:
 }
 
 
+/* xget <hexaddr>: dump 16 bytes of XRAM (debug) */
+static void parse_xget(void)
+{
+	static __xdata uint16_t a;
+	static __xdata uint8_t k, hs;
+
+	if (cmd_words_len != 2)
+		goto err;
+	hs = atoi_hex(cmd_words_b[1]);
+	if (hs == 0 || hs > 2)
+		goto err;
+	a = hexvalue[0];
+	if (hs == 2)
+		a = (a << 8) | hexvalue[1];
+	print_short(a);
+	write_char(':');
+	for (k = 0; k < 16; k++) {
+		write_char(' ');
+		print_byte(((__xdata uint8_t *)a)[k]);
+	}
+	write_char('\n');
+	return;
+err:
+	cmd_error("xget <hexaddr>\n");
+}
+
+
 void parse_regget(void)
 {
 	if (cmd_words_len != 2) {
@@ -1947,6 +1974,8 @@ void cmd_parser(void) __banked
 			write_char('\n');
 		} else if (cmd_compare(0, "gpio")) {
 			print_gpio_status();
+		} else if (cmd_compare(0, "xget")) {
+			parse_xget();
 		} else if (cmd_compare(0, "regget")) {
 			parse_regget();
 		} else if (cmd_compare(0, "regset")) {

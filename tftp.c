@@ -90,9 +90,31 @@ static uint32_t ticks_now(void)
 }
 
 
+void tftp_init(void) __banked
+{
+	tftp.state = T_OFF;
+	tftp.conn = 0;
+}
+
+
+/* A real transfer always owns a UDP connection bound to the client
+ * port. Any other non-idle state is stale (it was once found set at
+ * boot for reasons still under investigation) and must never lock out
+ * firmware updates, so it is cleared here. */
 uint8_t tftp_busy(void) __banked
 {
-	return tftp.state != T_OFF;
+	static __xdata uint8_t i;
+
+	if (tftp.state == T_OFF)
+		return 0;
+	for (i = 0; i < UIP_UDP_CONNS; i++) {
+		if (tftp.conn == &uip_udp_conns[i]
+		    && uip_udp_conns[i].lport == HTONS(TFTP_CLIENT_PORT))
+			return 1;
+	}
+	tftp.state = T_OFF;
+	tftp.conn = 0;
+	return 0;
 }
 
 
@@ -126,7 +148,7 @@ void tftp_begin(uint8_t op, __xdata const char *fname) __banked
 	__xdata char *d = tftp.fname;
 	uint8_t n = 0;
 
-	if (tftp.state != T_OFF) {
+	if (tftp_busy()) {
 		print_string("TFTP transfer already in progress\n");
 		return;
 	}

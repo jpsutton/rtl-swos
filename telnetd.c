@@ -231,6 +231,9 @@ static void tn_denied(void)
 static void tn_welcome(void)
 {
 	tn.authed = 2;
+	/* The CLI state is shared with the console: a new session must not
+	 * inherit a privileged or config mode left by an earlier one. */
+	cli.mode = CLI_MODE_EXEC;
 	tn_puts("\r\nrtl-swos telnet console. Type 'exit' to leave.\r\n");
 	tn_prompt();
 }
@@ -406,6 +409,7 @@ void telnetd_appcall(void) __banked
 
 	if (uip_closed() || uip_aborted() || uip_timedout()) {
 		tn.conn = 0;
+		cli.mode = CLI_MODE_EXEC;	/* drop privilege with the session */
 		return;
 	}
 

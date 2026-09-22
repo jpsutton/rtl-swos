@@ -28,6 +28,7 @@
 #include "telnetd.h"
 #include "cli.h"
 #include "swcfg.h"
+#include "tftp.h"
 #include "boot.h"
 #include "sfp.h"
 
@@ -1767,6 +1768,7 @@ void main(void)
 	set_sys_led_state(SYS_LED_ON);
 
 	cmd_editor_init();
+	tftp_init();	/* last: nothing after this may leave it stale */
 
 	while (1) {
 		cmd_edit();
