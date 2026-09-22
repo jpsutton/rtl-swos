@@ -27,6 +27,7 @@
 #include "syslog.h"
 #include "telnetd.h"
 #include "cli.h"
+#include "swcfg.h"
 #include "boot.h"
 #include "sfp.h"
 
@@ -1728,6 +1729,7 @@ void main(void)
 	stp_defaults();		/* 802.1D/w default config before any "stp ..." replay */
 	nic_setup();
 	vlan_setup();
+	sw_init();	/* state model mirrors vlan_setup(): VLAN 1, all ports access */
 	port_l2_setup();
 	igmp_setup();
 	bandwidth_setup();

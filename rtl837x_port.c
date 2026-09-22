@@ -112,7 +112,6 @@ void port_pvid_set(uint8_t port, __xdata uint16_t pvid) __banked
 {
 	uint8_t lag = port_lag_of(port);
 
-	print_string("\nport_pvid_set called \n");
 	if (lag == PORT_LAG_NONE) {
 		port_pvid_write(port, pvid);
 		return;
@@ -141,7 +140,6 @@ void vlan_delete(uint16_t vlan) __banked
 	if (!vlan || vlan >= 0xfff)
 		return;
 
-	print_string("\nvlan_delete called \n"); print_short(vlan);
 	vlan_name_remove(vlan);
 	REG_WRITE(RTL837x_TBL_DATA_IN_A, 0, 0, 0, 0);
 	REG_WRITE(RTL837X_TBL_CTRL, vlan >> 8, vlan, TBL_VLAN, TBL_WRITE | TBL_EXECUTE);
@@ -232,10 +230,6 @@ void vlan_create(void) __banked
 	vlan_settings.members |= 0x0200; // Set 10th bit
 	vlan_settings.tagged |= 0x0200;
 
-	print_string("\nvlan_create called\nvlan: "); print_short(vlan_settings.vlan);
-	print_string(", members: "); print_short(vlan_settings.members);
-	print_string(", tagged: "); print_short(vlan_settings.tagged); write_char('\n');
-
 	uint16_t a = (~vlan_settings.members) ^ vlan_settings.tagged ^ vlan_settings.members;
 
 	// On RTL8372, port-bits 0-2 must be 0, although they are not members
@@ -250,7 +244,6 @@ void vlan_create(void) __banked
 
 	wait_table_ready();
 
-	print_string("vlan_create done \n");
 }
 
 

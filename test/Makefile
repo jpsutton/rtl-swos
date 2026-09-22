@@ -28,25 +28,21 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_cli \
         $(BUILDDIR)/test_port_tables
 
-# The table tests link the register mock and one environment file; stub/
-# stands in for the header a firmware build generates.
-TABLE_ENV = support.c hw_mock.c env_tables.c $(SRCROOT)/cmd_editor.c \
-            $(SRCROOT)/cli.c $(SRCROOT)/rtl837x_port.c
+# Every test links the same environment: the register mock plus the two
+# environment files, with the command editor, the CLI engine, the
+# switch-config state model and the port driver compiled UNMODIFIED from
+# the firmware tree. stub/ stands in for the header a firmware build
+# generates.
+CORE_ENV = support.c hw_mock.c env_tables.c env_cli.c \
+           $(SRCROOT)/cmd_editor.c $(SRCROOT)/cli.c $(SRCROOT)/swcfg.c \
+           $(SRCROOT)/rtl837x_port.c
 
 all: run
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
-# cmd_editor.c and cli.c are compiled UNMODIFIED from the firmware tree.
-$(BUILDDIR)/test_cmd_editor: test_cmd_editor.c support.c env_cli.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/cli.c | $(BUILDDIR)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
-
-$(BUILDDIR)/test_cli: test_cli.c support.c env_cli.c $(SRCROOT)/cli.c $(SRCROOT)/cmd_editor.c | $(BUILDDIR)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
-
-# rtl837x_port.c is compiled UNMODIFIED from the firmware tree.
-$(BUILDDIR)/test_port_tables: test_port_tables.c $(TABLE_ENV) hw_mock.h | $(BUILDDIR)
+$(BUILDDIR)/%: %.c $(CORE_ENV) hw_mock.h support.h | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
 run: $(TESTS)

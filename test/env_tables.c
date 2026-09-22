@@ -1,7 +1,8 @@
 /*
  * env_tables.c - what rtl837x_port.c links against besides the register
  * mock: the console, the machine description and leaf calls into
- * subsystems not under test. Buffers keep their firmware sizes so
+ * subsystems not under test. The cli.c / swcfg.c edges live in env_cli.c;
+ * every test binary links both. Buffers keep their firmware sizes so
  * AddressSanitizer sees the same bounds the 8051 has.
  */
 #include <stdint.h>
@@ -26,12 +27,6 @@ void print_byte(uint8_t v)
 void print_short(uint16_t v) { print_byte(v >> 8); print_byte(v); }
 void print_long(uint32_t v)  { print_short(v >> 16); print_short(v); }
 void print_reg(uint16_t v)   { print_short(v); }
-void itoa_short(uint16_t v)
-{
-	char b[6]; int n = 0;
-	do { b[n++] = '0' + v % 10; v /= 10; } while (v);
-	while (n) write_char(b[--n]);
-}
 void dbg_string(char *p) { (void)p; }
 void dbg_short(uint16_t v) { (void)v; }
 void dbg_char(char c) { (void)c; }
@@ -74,22 +69,12 @@ uint8_t  sfp_options[2];
 char     sfp_module_vendor[2][17];
 char     sfp_module_model[2][17];
 char     sfp_module_serial[2][17];
-char     hostname[24] = "hosttest";
-char     port_names[9][PORT_NAME_SIZE];
 struct flash_region_t flash_region;
 struct syslog_state syslog_state;
 bool     stp_enabled;
 
 uip_ipaddr_t uip_hostaddr, uip_draddr, uip_netmask;
 struct uip_eth_addr uip_ethaddr = { .addr = { 0x02, 0x11, 0x22, 0x33, 0x44, 0x55 } };
-
-/* ---- cli.c bridged actions, not under test here ---- */
-void execute_commands(uint8_t *p) { (void)p; }
-void print_sw_version(void) { }
-void cmd_save_config(void) { }
-void reset_chip(void) { }
-struct phy_settings phy_settings;
-void phy_set_speed(void) { }
 
 /* ---- leaf calls into subsystems not under test ---- */
 void     flash_read_bulk(uint8_t *dst) { (void)dst; }

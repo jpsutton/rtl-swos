@@ -28,11 +28,13 @@
 #define CLI_MODE_IF	3	/* (config-if)# */
 #define CLI_MODE_VLAN	4	/* (config-vlan)# */
 #define CLI_MODE_LINE	5	/* (config-line)# */
+#define CLI_MODE_SVI	6	/* (config-if)# on interface vlan N */
 
 /* Node flags */
 #define CLI_F_PRIV	0x01	/* hidden and refused in user EXEC */
 #define CLI_F_NO_OK	0x02	/* usable under `no` */
 #define CLI_F_NO_ONLY	0x04	/* only usable under `no` */
+#define CLI_F_NO_EXEC	0x08	/* executable here only under `no`; plain form is incomplete */
 
 /* Argument placeholder types (a node with word == 0 is an argument) */
 #define CLI_A_NONE	0
@@ -58,8 +60,9 @@ struct cli_state_t {
 	uint8_t mode;
 	uint8_t no;		/* current line carries a `no` prefix */
 	uint8_t await;		/* interactive sub-prompt, AWAIT_* */
-	uint8_t ctx_if;		/* logical port for MODE_IF */
-	uint16_t ctx_vlan;	/* vlan id for MODE_VLAN */
+	uint8_t ctx_if;		/* user-facing port number for MODE_IF */
+	uint8_t ctx_lport;	/* logical (driver) port for MODE_IF */
+	uint16_t ctx_vlan;	/* vlan id for MODE_VLAN and MODE_SVI */
 	uint8_t ctx_line;	/* 0 = console, 1 = vty */
 	uint8_t nargs;
 	uint32_t args[CLI_MAX_ARGS];

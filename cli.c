@@ -21,6 +21,10 @@
 #include "cmd_parser.h"
 #include "rtl837x_phy.h"
 #include "phy.h"
+#include "machine.h"
+#include "rtl837x_igmp.h"
+#include "boot.h"
+#include "swcfg.h"
 #include "cli.h"
 
 #pragma codeseg BANK1
@@ -28,6 +32,8 @@
 
 extern __xdata char hostname[24];
 extern __xdata struct phy_settings phy_settings;
+extern __code const struct machine machine;
+extern __xdata uint16_t management_vlan;
 void reset_chip(void);
 
 __xdata struct cli_state_t cli;
@@ -69,6 +75,19 @@ static __code const struct cli_node * __code const * __xdata w_children;
 #define ACT_SHUT	12	/* interface: shutdown / no shutdown */
 #define ACT_SPEED	13	/* interface: speed <val> (value in node->lo) */
 #define ACT_DESC	14	/* interface: description LINE / no description */
+#define ACT_SVI		15	/* interface vlan N */
+#define ACT_VLAN_NAME	16
+#define ACT_SW_MODE	17	/* mode in node->lo */
+#define ACT_SW_ACCESS	18
+#define ACT_SW_NATIVE	19
+#define ACT_SW_ALLOWED	20	/* operation in node->lo */
+#define ACT_MTU		21
+#define ACT_HOSTNAME	22
+#define ACT_IP_ADDR	23
+#define ACT_IP_DHCP	24
+#define ACT_DEFGW	25
+#define ACT_IGMP	26
+#define ACT_LOG_HOST	27
 
 /* ---------------- command tree ---------------- */
 
@@ -169,7 +188,9 @@ static __code const struct cli_node * __code const cli_root_exec[] = {
 	&n_reload, &n_show, &n_write, 0
 };
 
-/* config mode */
+/* ---- global configuration mode ---- */
+
+/* interface ethernet S/N | interface vlan N | interface S/N */
 static __code const struct cli_node n_arg_ifnum = {
 	0, CLI_A_IFACE, 0, 0, 0, NO_CHILDREN, ACT_IF,
 	"Interface number (e.g. 1/5)"
@@ -181,16 +202,28 @@ static __code const struct cli_node n_if_ethernet = {
 	"ethernet", 0, 0, 0, 0, ch_iface, ACT_NONE,
 	"Ethernet interface"
 };
+static __code const struct cli_node n_arg_svi = {
+	0, CLI_A_NUM, 0, 1, 4094, NO_CHILDREN, ACT_SVI,
+	"VLAN interface number"
+};
+static __code const struct cli_node * __code const ch_ifvlan[] = {
+	&n_arg_svi, 0
+};
+static __code const struct cli_node n_if_vlan = {
+	"vlan", 0, 0, 0, 0, ch_ifvlan, ACT_NONE,
+	"VLAN (management) interface"
+};
 static __code const struct cli_node * __code const ch_interface[] = {
-	&n_if_ethernet, &n_arg_ifnum, 0
+	&n_if_ethernet, &n_if_vlan, &n_arg_ifnum, 0
 };
 static __code const struct cli_node n_interface = {
 	"interface", 0, 0, 0, 0, ch_interface, ACT_NONE,
 	"Select an interface to configure"
 };
 
+/* vlan N */
 static __code const struct cli_node n_arg_vlanid = {
-	0, CLI_A_NUM, 0, 1, 4094, NO_CHILDREN, ACT_VLAN,
+	0, CLI_A_NUM, CLI_F_NO_OK, 1, 4094, NO_CHILDREN, ACT_VLAN,
 	"VLAN id"
 };
 static __code const struct cli_node * __code const ch_vlan[] = {
@@ -199,6 +232,84 @@ static __code const struct cli_node * __code const ch_vlan[] = {
 static __code const struct cli_node n_vlan = {
 	"vlan", 0, 0, 0, 0, ch_vlan, ACT_NONE,
 	"Add, delete or modify a VLAN"
+};
+
+/* hostname WORD */
+static __code const struct cli_node n_arg_hostname = {
+	0, CLI_A_WORD, 0, 0, 0, NO_CHILDREN, ACT_HOSTNAME,
+	"Up to 23 characters"
+};
+static __code const struct cli_node * __code const ch_hostname[] = {
+	&n_arg_hostname, 0
+};
+static __code const struct cli_node n_hostname = {
+	"hostname", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_hostname, ACT_HOSTNAME,
+	"Set the system name"
+};
+
+/* ip default-gateway A.B.C.D | ip igmp snooping */
+static __code const struct cli_node n_arg_gw = {
+	0, CLI_A_IP, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_DEFGW,
+	"Gateway address"
+};
+static __code const struct cli_node * __code const ch_gw[] = {
+	&n_arg_gw, 0
+};
+static __code const struct cli_node n_ip_defgw = {
+	"default-gateway", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_gw, ACT_DEFGW,
+	"Default gateway"
+};
+static __code const struct cli_node n_igmp_snooping = {
+	"snooping", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_IGMP,
+	"IGMP snooping"
+};
+static __code const struct cli_node * __code const ch_igmp[] = {
+	&n_igmp_snooping, 0
+};
+static __code const struct cli_node n_ip_igmp = {
+	"igmp", 0, 0, 0, 0, ch_igmp, ACT_NONE,
+	"IGMP configuration"
+};
+static __code const struct cli_node * __code const ch_ip_cfg[] = {
+	&n_ip_defgw, &n_ip_igmp, 0
+};
+static __code const struct cli_node n_ip_cfg = {
+	"ip", 0, 0, 0, 0, ch_ip_cfg, ACT_NONE,
+	"Global IP configuration"
+};
+
+/* logging host A.B.C.D [port N] */
+static __code const struct cli_node n_arg_logport = {
+	0, CLI_A_NUM, 0, 1, 65535, NO_CHILDREN, ACT_LOG_HOST,
+	"UDP port"
+};
+static __code const struct cli_node * __code const ch_logport[] = {
+	&n_arg_logport, 0
+};
+static __code const struct cli_node n_log_port = {
+	"port", 0, 0, 0, 0, ch_logport, ACT_NONE,
+	"Syslog server port (default 514)"
+};
+static __code const struct cli_node * __code const ch_loghost_ip[] = {
+	&n_log_port, 0
+};
+static __code const struct cli_node n_arg_loghost = {
+	0, CLI_A_IP, CLI_F_NO_OK, 0, 0, ch_loghost_ip, ACT_LOG_HOST,
+	"Syslog server address"
+};
+static __code const struct cli_node * __code const ch_loghost[] = {
+	&n_arg_loghost, 0
+};
+static __code const struct cli_node n_log_host = {
+	"host", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_loghost, ACT_LOG_HOST,
+	"Remote syslog server"
+};
+static __code const struct cli_node * __code const ch_logging[] = {
+	&n_log_host, 0
+};
+static __code const struct cli_node n_logging = {
+	"logging", 0, 0, 0, 0, ch_logging, ACT_NONE,
+	"Message logging"
 };
 
 static __code const struct cli_node n_exit_cfg = {
@@ -211,7 +322,8 @@ static __code const struct cli_node n_end = {
 };
 
 static __code const struct cli_node * __code const cli_root_config[] = {
-	&n_end, &n_exit_cfg, &n_interface, &n_vlan, 0
+	&n_end, &n_exit_cfg, &n_hostname, &n_interface, &n_ip_cfg,
+	&n_logging, &n_vlan, 0
 };
 
 /* ---- interface configuration mode ---- */
@@ -256,12 +368,194 @@ static __code const struct cli_node * __code const ch_desc[] = {
 	&n_arg_desc, 0
 };
 static __code const struct cli_node n_if_description = {
-	"description", 0, CLI_F_NO_OK, 0, 0, ch_desc, ACT_DESC,
+	"description", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_desc, ACT_DESC,
 	"Interface description / name"
 };
 
+/* mtu N */
+static __code const struct cli_node n_arg_mtu = {
+	0, CLI_A_NUM, 0, 64, 16383, NO_CHILDREN, ACT_MTU,
+	"Maximum frame length in bytes"
+};
+static __code const struct cli_node * __code const ch_mtu[] = {
+	&n_arg_mtu, 0
+};
+static __code const struct cli_node n_if_mtu = {
+	"mtu", 0, 0, 0, 0, ch_mtu, ACT_NONE,
+	"Set the maximum frame length"
+};
+
+/* switchport mode access|trunk */
+static __code const struct cli_node n_swm_access = {
+	"access", 0, 0, SW_MODE_ACCESS, 0, NO_CHILDREN, ACT_SW_MODE,
+	"Untagged member of one VLAN"
+};
+static __code const struct cli_node n_swm_trunk = {
+	"trunk", 0, 0, SW_MODE_TRUNK, 0, NO_CHILDREN, ACT_SW_MODE,
+	"Tagged member of several VLANs"
+};
+static __code const struct cli_node * __code const ch_swmode[] = {
+	&n_swm_access, &n_swm_trunk, 0
+};
+static __code const struct cli_node n_sw_mode = {
+	"mode", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, SW_MODE_ACCESS, 0, ch_swmode, ACT_SW_MODE,
+	"Set the switchport mode"
+};
+
+/* switchport access vlan N */
+static __code const struct cli_node n_swa_vid = {
+	0, CLI_A_NUM, CLI_F_NO_OK, 1, 4094, NO_CHILDREN, ACT_SW_ACCESS,
+	"VLAN id"
+};
+static __code const struct cli_node * __code const ch_swa_vlan[] = {
+	&n_swa_vid, 0
+};
+static __code const struct cli_node n_swa_vlan = {
+	"vlan", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_swa_vlan, ACT_SW_ACCESS,
+	"Access VLAN"
+};
+static __code const struct cli_node * __code const ch_swaccess[] = {
+	&n_swa_vlan, 0
+};
+static __code const struct cli_node n_sw_access = {
+	"access", 0, 0, 0, 0, ch_swaccess, ACT_NONE,
+	"Access mode characteristics"
+};
+
+/* switchport trunk native vlan N */
+static __code const struct cli_node n_swn_vid = {
+	0, CLI_A_NUM, CLI_F_NO_OK, 1, 4094, NO_CHILDREN, ACT_SW_NATIVE,
+	"VLAN id"
+};
+static __code const struct cli_node * __code const ch_swn_vlan[] = {
+	&n_swn_vid, 0
+};
+static __code const struct cli_node n_swn_vlan = {
+	"vlan", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_swn_vlan, ACT_SW_NATIVE,
+	"Native (untagged) VLAN"
+};
+static __code const struct cli_node * __code const ch_swt_native[] = {
+	&n_swn_vlan, 0
+};
+static __code const struct cli_node n_swt_native = {
+	"native", 0, 0, 0, 0, ch_swt_native, ACT_NONE,
+	"Native VLAN of the trunk"
+};
+
+/* switchport trunk allowed vlan all|none|LIST|add LIST|remove LIST
+ * (the operation is carried in ->lo) */
+static __code const struct cli_node n_al_all = {
+	"all", 0, 0, SW_AL_ALL, 0, NO_CHILDREN, ACT_SW_ALLOWED, "All VLANs"
+};
+static __code const struct cli_node n_al_none = {
+	"none", 0, 0, SW_AL_NONE, 0, NO_CHILDREN, ACT_SW_ALLOWED, "No VLANs"
+};
+static __code const struct cli_node n_arg_al_add = {
+	0, CLI_A_WORD, 0, SW_AL_ADD, 0, NO_CHILDREN, ACT_SW_ALLOWED,
+	"VLAN list, e.g. 10,20-30"
+};
+static __code const struct cli_node * __code const ch_al_add[] = {
+	&n_arg_al_add, 0
+};
+static __code const struct cli_node n_al_add = {
+	"add", 0, 0, 0, 0, ch_al_add, ACT_NONE, "Add VLANs to the list"
+};
+static __code const struct cli_node n_arg_al_rem = {
+	0, CLI_A_WORD, 0, SW_AL_REMOVE, 0, NO_CHILDREN, ACT_SW_ALLOWED,
+	"VLAN list, e.g. 10,20-30"
+};
+static __code const struct cli_node * __code const ch_al_rem[] = {
+	&n_arg_al_rem, 0
+};
+static __code const struct cli_node n_al_remove = {
+	"remove", 0, 0, 0, 0, ch_al_rem, ACT_NONE, "Remove VLANs from the list"
+};
+static __code const struct cli_node n_arg_al_set = {
+	0, CLI_A_WORD, 0, SW_AL_SET, 0, NO_CHILDREN, ACT_SW_ALLOWED,
+	"VLAN list, e.g. 10,20-30"
+};
+static __code const struct cli_node * __code const ch_al_vlan[] = {
+	&n_al_add, &n_al_all, &n_al_none, &n_al_remove, &n_arg_al_set, 0
+};
+static __code const struct cli_node n_swal_vlan = {
+	"vlan", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, SW_AL_ALL, 0, ch_al_vlan, ACT_SW_ALLOWED,
+	"VLANs carried by the trunk"
+};
+static __code const struct cli_node * __code const ch_swt_allowed[] = {
+	&n_swal_vlan, 0
+};
+static __code const struct cli_node n_swt_allowed = {
+	"allowed", 0, 0, 0, 0, ch_swt_allowed, ACT_NONE,
+	"Allowed VLAN list"
+};
+static __code const struct cli_node * __code const ch_swtrunk[] = {
+	&n_swt_allowed, &n_swt_native, 0
+};
+static __code const struct cli_node n_sw_trunk = {
+	"trunk", 0, 0, 0, 0, ch_swtrunk, ACT_NONE,
+	"Trunk mode characteristics"
+};
+static __code const struct cli_node * __code const ch_switchport[] = {
+	&n_sw_access, &n_sw_mode, &n_sw_trunk, 0
+};
+static __code const struct cli_node n_if_switchport = {
+	"switchport", 0, 0, 0, 0, ch_switchport, ACT_NONE,
+	"Set switching mode characteristics"
+};
+
 static __code const struct cli_node * __code const cli_root_if[] = {
-	&n_end, &n_exit_cfg, &n_if_description, &n_if_shutdown, &n_if_speed, 0
+	&n_end, &n_exit_cfg, &n_if_description, &n_if_mtu, &n_if_shutdown,
+	&n_if_speed, &n_if_switchport, 0
+};
+
+/* ---- VLAN configuration mode ---- */
+static __code const struct cli_node n_arg_vname = {
+	0, CLI_A_WORD, 0, 0, 0, NO_CHILDREN, ACT_VLAN_NAME,
+	"Up to 32 characters"
+};
+static __code const struct cli_node * __code const ch_vname[] = {
+	&n_arg_vname, 0
+};
+static __code const struct cli_node n_vl_name = {
+	"name", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_vname, ACT_VLAN_NAME,
+	"Name of the VLAN"
+};
+static __code const struct cli_node * __code const cli_root_vlan[] = {
+	&n_end, &n_exit_cfg, &n_vl_name, 0
+};
+
+/* ---- VLAN (management) interface mode ---- */
+static __code const struct cli_node n_arg_ip_mask = {
+	0, CLI_A_IP, 0, 0, 0, NO_CHILDREN, ACT_IP_ADDR,
+	"Subnet mask"
+};
+static __code const struct cli_node * __code const ch_ip_mask[] = {
+	&n_arg_ip_mask, 0
+};
+static __code const struct cli_node n_arg_ip_addr = {
+	0, CLI_A_IP, 0, 0, 0, ch_ip_mask, ACT_NONE,
+	"IP address"
+};
+static __code const struct cli_node n_ip_dhcp = {
+	"dhcp", 0, 0, 0, 0, NO_CHILDREN, ACT_IP_DHCP,
+	"Obtain the address with DHCP"
+};
+static __code const struct cli_node * __code const ch_ipaddr[] = {
+	&n_ip_dhcp, &n_arg_ip_addr, 0
+};
+static __code const struct cli_node n_svi_address = {
+	"address", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_ipaddr, ACT_IP_ADDR,
+	"Set the interface IP address"
+};
+static __code const struct cli_node * __code const ch_svi_ip[] = {
+	&n_svi_address, 0
+};
+static __code const struct cli_node n_svi_ip = {
+	"ip", 0, 0, 0, 0, ch_svi_ip, ACT_NONE,
+	"Interface IP configuration"
+};
+static __code const struct cli_node * __code const cli_root_svi[] = {
+	&n_end, &n_exit_cfg, &n_svi_ip, 0
 };
 
 static __code const struct cli_node * __code const cli_root_sub[] = {
@@ -277,6 +571,9 @@ static __code const struct cli_node * __code const *root_for_mode(uint8_t mode)
 	case CLI_MODE_IF:
 		return cli_root_if;
 	case CLI_MODE_VLAN:
+		return cli_root_vlan;
+	case CLI_MODE_SVI:
+		return cli_root_svi;
 	case CLI_MODE_LINE:
 		return cli_root_sub;
 	default:
@@ -603,6 +900,17 @@ static uint8_t word_in_dedupe_root(__code const char *w)
 }
 
 
+/* Would <cr> execute the node reached so far? */
+static uint8_t node_runs_here(__code const struct cli_node * __xdata n)
+{
+	if (!n || !n->action)
+		return 0;
+	if ((n->flags & CLI_F_NO_EXEC) && !cli.no)
+		return 0;
+	return 1;
+}
+
+
 static void cli_list_candidates(uint8_t partial_tok)
 {
 	__code const struct cli_node * __code const * __xdata c;
@@ -610,7 +918,7 @@ static void cli_list_candidates(uint8_t partial_tok)
 	__xdata uint8_t any = 0;
 
 	if (!w_children) {
-		if (w_node && w_node->action)
+		if (node_runs_here(w_node))
 			print_string("  <cr>\n");
 		return;
 	}
@@ -651,7 +959,7 @@ static void cli_list_candidates(uint8_t partial_tok)
 		write_char('\n');
 		any = 1;
 	}
-	if (w_node && w_node->action && partial_tok == 0xff)
+	if (node_runs_here(w_node) && partial_tok == 0xff)
 		print_string("  <cr>\n");
 	if (!any && partial_tok != 0xff)
 		print_string("% Unrecognized command\n");
@@ -659,6 +967,67 @@ static void cli_list_candidates(uint8_t partial_tok)
 
 
 /* ---------------- actions ---------------- */
+
+/* ---------------- config handler helpers ---------------- */
+
+static __xdata uint8_t d_rc, d_lp;
+static __xdata uint16_t d_v;
+
+/* A name token: letters, digits, '-', '_', '.'; at least one char */
+static uint8_t name_ok(__xdata const char * __xdata s)
+{
+	static __xdata const char * __xdata p;
+	static __xdata char c;
+
+	p = s;
+	if (!*p || *p == ' ')
+		return 0;
+	while ((c = *p) && c != ' ') {
+		if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		      || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.'))
+			return 0;
+		p++;
+	}
+	return 1;
+}
+
+
+static void sw_err(__xdata uint8_t rc)
+{
+	switch (rc) {
+	case SW_ERR_FULL:
+		print_string("% VLAN database full\n");
+		break;
+	case SW_ERR_RANGE:
+		print_string("% VLAN id out of range (1-4094)\n");
+		break;
+	case SW_ERR_VLAN1:
+		print_string("% Default VLAN 1 may not be deleted\n");
+		break;
+	case SW_ERR_SYNTAX:
+		print_string("% Invalid VLAN list\n");
+		break;
+	}
+}
+
+
+/* Make sure a VLAN referenced by a port or the management interface
+ * exists. Returns 0 when the database is full, 1 when the VLAN existed,
+ * 2 when it was just created (the caller must sw_apply()). */
+static uint8_t vlan_ensure(__xdata uint16_t vid)
+{
+	if (sw_vlan_exists(vid))
+		return 1;
+	if (sw_vlan_add(vid) != SW_OK) {
+		print_string("% VLAN database full\n");
+		return 0;
+	}
+	print_string("% VLAN ");
+	itoa_short(vid);
+	print_string(" did not exist, created it\n");
+	return 2;
+}
+
 
 static void cli_dispatch(uint8_t action)
 {
@@ -682,6 +1051,7 @@ static void cli_dispatch(uint8_t action)
 		case CLI_MODE_IF:
 		case CLI_MODE_VLAN:
 		case CLI_MODE_LINE:
+		case CLI_MODE_SVI:
 			cli.mode = CLI_MODE_CONFIG;
 			break;
 		/* EXEC/PRIV: telnet intercepts `exit` itself; nothing to do
@@ -704,44 +1074,180 @@ static void cli_dispatch(uint8_t action)
 		reset_chip();
 		break;
 	case ACT_IF:
-		cli.ctx_if = cli.args[0];
+		/* User-facing port N maps through the board table, exactly
+		 * like the legacy `port N` command: on 4+2 boards the
+		 * logical numbering does not start at 0. */
+		d_v = cli.args[0];
+		if (d_v < 1 || d_v > 9) {
+			print_string("% Invalid interface\n");
+			break;
+		}
+		d_lp = machine.phys_to_log_port[d_v - 1];
+		if (d_lp < machine.min_port || d_lp > machine.max_port) {
+			print_string("% Invalid interface\n");
+			break;
+		}
+		cli.ctx_if = d_v;
+		cli.ctx_lport = d_lp;
 		cli.mode = CLI_MODE_IF;
 		break;
-	case ACT_VLAN:
+	case ACT_SVI:
 		cli.ctx_vlan = cli.args[0];
+		cli.mode = CLI_MODE_SVI;
+		break;
+	case ACT_VLAN:
+		d_v = cli.args[0];
+		if (cli.no) {
+			d_rc = sw_vlan_del(d_v);
+			if (d_rc)
+				sw_err(d_rc);
+			else if (d_v == management_vlan)
+				print_string("% Warning: that was the management VLAN\n");
+			break;
+		}
+		if (!sw_vlan_exists(d_v)) {
+			d_rc = sw_vlan_add(d_v);
+			if (d_rc) {
+				sw_err(d_rc);
+				break;
+			}
+			sw_apply();
+		}
+		cli.ctx_vlan = d_v;
 		cli.mode = CLI_MODE_VLAN;
+		break;
+	case ACT_VLAN_NAME:
+		if (cli.no) {
+			sw_vlan_name_set(cli.ctx_vlan, 0);
+			break;
+		}
+		if (!name_ok(cli_line + cli.argoff[0])) {
+			print_string("% Invalid name\n");
+			break;
+		}
+		d_rc = sw_vlan_name_set(cli.ctx_vlan, cli_line + cli.argoff[0]);
+		if (d_rc)
+			print_string("% VLAN name table full\n");
 		break;
 	case ACT_LEGACY:
 		execute_commands((__xdata uint8_t *)cli_line);
 		break;
 	case ACT_SHUT:
-		phy_settings.port = cli.ctx_if - 1;
+		phy_settings.port = cli.ctx_lport;
 		phy_settings.duplex = PHY_DUPLEX_BOTH;
 		phy_settings.speed = cli.no ? PHY_SPEED_AUTO : PHY_OFF;
 		phy_set_speed();
 		break;
 	case ACT_SPEED:
-		phy_settings.port = cli.ctx_if - 1;
+		phy_settings.port = cli.ctx_lport;
 		phy_settings.duplex = PHY_DUPLEX_BOTH;
 		phy_settings.speed = w_node->lo;
 		phy_set_speed();
 		break;
 	case ACT_DESC:
 	{
-		__xdata char *d = port_names[cli.ctx_if - 1];
+		static __xdata char * __xdata dd;
+		static __xdata char * __xdata ds;
+		static __xdata uint8_t dn;
+		dd = port_names[cli.ctx_lport];
 		if (cli.no || !cli.nargs) {
-			*d = 0;
-		} else {
-			__xdata char *sp = cli_line + cli.argoff[0];
-			uint8_t n = 0;
-			while (*sp && n < PORT_NAME_SIZE - 1) {
-				*d++ = *sp++;
-				n++;
-			}
-			*d = 0;
+			*dd = 0;
+			break;
 		}
+		ds = cli_line + cli.argoff[0];
+		for (dn = 0; *ds && dn < PORT_NAME_SIZE - 1; dn++)
+			*dd++ = *ds++;
+		*dd = 0;
 		break;
 	}
+	case ACT_MTU:
+		sw_mtu_set(cli.ctx_lport, cli.args[0]);
+		break;
+	case ACT_SW_MODE:
+		sw_ports[cli.ctx_lport].mode = cli.no ? SW_MODE_ACCESS : w_node->lo;
+		sw_apply();
+		break;
+	case ACT_SW_ACCESS:
+		d_v = cli.no ? 1 : cli.args[0];
+		if (!vlan_ensure(d_v))
+			break;
+		sw_ports[cli.ctx_lport].access_vid = d_v;
+		sw_apply();
+		break;
+	case ACT_SW_NATIVE:
+		sw_ports[cli.ctx_lport].native_vid = cli.no ? 1 : cli.args[0];
+		sw_apply();
+		break;
+	case ACT_SW_ALLOWED:
+		d_rc = cli.no ? SW_AL_ALL : w_node->lo;
+		d_rc = sw_allowed_edit(cli.ctx_lport, d_rc,
+				       cli.nargs ? cli_line + cli.argoff[0] : 0);
+		if (d_rc == SW_ERR_FULL) {
+			print_string("% Too many VLAN ranges (max 8)\n");
+			break;
+		}
+		if (d_rc) {
+			sw_err(d_rc);
+			break;
+		}
+		sw_apply();
+		break;
+	case ACT_HOSTNAME:
+	{
+		static __xdata char * __xdata hs;
+		static __xdata uint8_t hn;
+		if (cli.no) {
+			hostname[0] = 0;
+			set_hostname_default();
+			break;
+		}
+		hs = cli_line + cli.argoff[0];
+		if (!name_ok(hs)) {
+			print_string("% Invalid hostname\n");
+			break;
+		}
+		for (hn = 0; hn < sizeof(hostname) - 1 && hs[hn] && hs[hn] != ' '; hn++)
+			hostname[hn] = hs[hn];
+		hostname[hn] = 0;
+		break;
+	}
+	case ACT_IP_ADDR:
+		if (cli.no) {
+			sw_mgmt_ip_set(0, 0);
+			break;
+		}
+		d_rc = vlan_ensure(cli.ctx_vlan);
+		if (!d_rc)
+			break;
+		if (d_rc == 2)
+			sw_apply();
+		sw_mgmt_vlan_set(cli.ctx_vlan);
+		sw_mgmt_ip_set(cli.args[0], cli.args[1]);
+		break;
+	case ACT_IP_DHCP:
+		d_rc = vlan_ensure(cli.ctx_vlan);
+		if (!d_rc)
+			break;
+		if (d_rc == 2)
+			sw_apply();
+		sw_mgmt_vlan_set(cli.ctx_vlan);
+		sw_mgmt_dhcp();
+		break;
+	case ACT_DEFGW:
+		sw_gateway_set(cli.no ? 0 : cli.args[0]);
+		break;
+	case ACT_IGMP:
+		if (cli.no)
+			igmp_setup();
+		else
+			igmp_enable();
+		break;
+	case ACT_LOG_HOST:
+		if (cli.no)
+			sw_logging_off();
+		else
+			sw_logging_host(cli.args[0], cli.nargs >= 2 ? cli.args[1] : 0);
+		break;
 	}
 }
 
@@ -762,14 +1268,68 @@ uint8_t cli_hidden_input(void) __banked
 }
 
 
+/* A leading `no` in a configuration mode: set cli.no and drop the
+ * token. Exact match only, so a lone "n" is not taken for "no". */
+static void cli_strip_no(void)
+{
+	static __xdata uint8_t i;
+
+	cli.no = 0;
+	if (cli.mode < CLI_MODE_CONFIG || !ntok || tok_matches(0, "no") != 2)
+		return;
+	cli.no = 1;
+	for (i = 1; i < ntok; i++) {
+		tok_off[i - 1] = tok_off[i];
+		tok_len[i - 1] = tok_len[i];
+	}
+	ntok--;
+}
+
+
 /* Match the tokenized line against the mode root, then the EXEC root
  * (commands-anywhere), for tokens [start, upto). Returns 1 when some
  * root accepted the first token. */
+static __xdata uint8_t w_level;	/* root that matched: WL_* */
+#define WL_MODE		0	/* the current mode's own root */
+#define WL_PARENT	1	/* global config, reached from a submode */
+#define WL_EXEC		2	/* EXEC, reached from a config mode */
+
+static uint8_t walk_ok(void)
+{
+	return w_status == W_OK && node_runs_here(w_node);
+}
+
+/* Resolution order, as in the industry-standard CLIs:
+ *  1. the current mode's root;
+ *  2. from a submode, global config: a line that does not parse in
+ *     config-if/-vlan runs as a global command and leaves the submode.
+ *     This is what lets a block-structured config replay without `exit`
+ *     lines. Tried whenever step 1 did not yield something runnable;
+ *     its error wins only when step 1 did not even know the first word;
+ *  3. EXEC commands from any config mode, without `do` (never under
+ *     `no`), when nothing claimed the first word.
+ * Returns 0 when no root claims the first word (-> legacy parser). */
 static uint8_t cli_walk_roots(uint8_t upto)
 {
+	static __xdata uint8_t r0;
+
+	w_level = WL_MODE;
 	cli_walk(root_for_mode(cli.mode), upto);
+	if (walk_ok())
+		return 1;
+	r0 = w_status;
+	if (cli.mode > CLI_MODE_CONFIG) {
+		cli_walk(cli_root_config, upto);
+		if (walk_ok() || (r0 == W_NOMATCH0 && w_status != W_NOMATCH0)) {
+			w_level = WL_PARENT;
+			return 1;
+		}
+		/* report relative to the submode */
+		cli_walk(root_for_mode(cli.mode), upto);
+	}
 	if (w_status == W_NOMATCH0 && cli.mode >= CLI_MODE_CONFIG && !cli.no) {
 		cli_walk(cli_root_exec, upto);
+		w_level = WL_EXEC;
 	}
 	return w_status != W_NOMATCH0;
 }
@@ -783,19 +1343,10 @@ void cli_exec_line(__xdata char *line) __banked
 	if (!ntok)
 		return;
 
-	/* `no` prefix in configuration modes */
-	if (cli.mode >= CLI_MODE_CONFIG && tok_matches(0, "no")) {
-		__xdata uint8_t i;
-		cli.no = 1;
-		for (i = 1; i < ntok; i++) {
-			tok_off[i - 1] = tok_off[i];
-			tok_len[i - 1] = tok_len[i];
-		}
-		ntok--;
-		if (!ntok) {
-			print_string("% Incomplete command.\n\n");
-			return;
-		}
+	cli_strip_no();
+	if (cli.no && !ntok) {
+		print_string("% Incomplete command.\n\n");
+		return;
 	}
 
 	if (!cli_walk_roots(ntok)) {
@@ -823,6 +1374,12 @@ void cli_exec_line(__xdata char *line) __banked
 		cli_marker_error();
 		return;
 	}
+	if (!cli.no && (w_node->flags & CLI_F_NO_EXEC)) {
+		print_string("% Incomplete command.\n\n");
+		return;
+	}
+	if (w_level == WL_PARENT)
+		cli.mode = CLI_MODE_CONFIG;
 	cli_dispatch(w_node->action);
 }
 
@@ -848,6 +1405,7 @@ void cli_prompt(void) __banked
 		cli_plen += 8;
 		break;
 	case CLI_MODE_IF:
+	case CLI_MODE_SVI:
 		print_string("(config-if)");
 		cli_plen += 11;
 		break;
@@ -868,7 +1426,7 @@ void cli_prompt(void) __banked
 void cli_help(__xdata char *line) __banked
 {
 	cli_tokenize(line);
-	cli.no = 0;
+	cli_strip_no();
 
 	if (!ntok || (ntok == 1 && !trailing_space)) {
 		/* listing the root: match nothing, list all (filtered by a
@@ -905,16 +1463,34 @@ void cli_help(__xdata char *line) __banked
 }
 
 
+static void cplt_scan(__code const struct cli_node * __code const * __xdata root,
+		      __code const struct cli_node * __xdata * __xdata cand,
+		      __xdata uint8_t * __xdata ncand)
+{
+	static __code const struct cli_node * __code const * __xdata c;
+
+	for (c = root; *c; c++) {
+		if (!node_visible(*c) || !(*c)->word)
+			continue;
+		if (!tok_matches(ntok - 1, (*c)->word))
+			continue;
+		if (*cand && code_streq((*cand)->word, (*c)->word))
+			continue;	/* same word from another root */
+		*cand = *c;
+		(*ncand)++;
+	}
+}
+
+
 uint8_t cli_complete(__xdata char *line, uint8_t maxlen) __banked
 {
-	__code const struct cli_node * __code const * __xdata c;
 	__code const struct cli_node * __xdata cand = 0;
 	__xdata uint8_t ncand = 0;
 	__xdata uint8_t len, added = 0;
 	static __code const char * __xdata w;
 
 	cli_tokenize(line);
-	cli.no = 0;
+	cli_strip_no();
 	if (!ntok || trailing_space)
 		return 0;
 
@@ -924,25 +1500,13 @@ uint8_t cli_complete(__xdata char *line, uint8_t maxlen) __banked
 		if (!cli_walk_roots(ntok - 1) || w_status != W_OK || !w_children)
 			return 0;
 	}
-	for (c = w_children; *c; c++) {
-		if (!node_visible(*c) || !(*c)->word)
-			continue;
-		if (tok_matches(ntok - 1, (*c)->word)) {
-			cand = *c;
-			ncand++;
-		}
-	}
-	/* the first token in a config mode may also complete from EXEC */
-	if (ntok == 1 && cli.mode >= CLI_MODE_CONFIG) {
-		for (c = cli_root_exec; *c; c++) {
-			if (!node_visible(*c) || !(*c)->word)
-				continue;
-			if (tok_matches(0, (*c)->word)) {
-				cand = *c;
-				ncand++;
-			}
-		}
-	}
+	cplt_scan(w_children, &cand, &ncand);
+	/* the first token may also complete from global config (in a
+	 * submode) and from EXEC (in any config mode) */
+	if (ntok == 1 && cli.mode > CLI_MODE_CONFIG)
+		cplt_scan(cli_root_config, &cand, &ncand);
+	if (ntok == 1 && cli.mode >= CLI_MODE_CONFIG && !cli.no)
+		cplt_scan(cli_root_exec, &cand, &ncand);
 	if (ncand != 1)
 		return 0;
 
