@@ -79,6 +79,7 @@ uint16_t port_lag_members_get(uint8_t lag) __banked;
 uint8_t port_lag_of(uint8_t port) __banked;
 void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banked;
 void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash) __banked;
+uint8_t port_lag_hash_get(uint8_t lag) __banked;
 void port_eee_enable_all(__xdata uint8_t speed) __banked;
 void port_eee_enable(__xdata uint8_t port, __xdata uint8_t speed) __banked;
 void port_eee_disable(uint8_t port) __banked;

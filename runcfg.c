@@ -299,10 +299,10 @@ static void rc_pc_global(void)
 
 	rc_pc_glob = 0;
 	for (g = 0; g < 4; g++) {
-		reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (g << 2));
+		k = port_lag_hash_get(g);
 		if (!g)
-			h = sfr_data[3];
-		else if (sfr_data[3] != h)
+			h = k;
+		else if (k != h)
 			return;
 	}
 	for (k = 0; k < sizeof(pclb_bits); k++) {
@@ -332,8 +332,7 @@ static void rc_port_channels(void)
 			rc_dec(lacp_minlinks[g]);
 			rc_c('\n');
 		}
-		reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (g << 2));
-		h = sfr_data[3];
+		h = port_lag_hash_get(g);
 		if (h != (rc_pc_glob ? rc_pc_glob : LAG_HASH_DEFAULT)) {
 			rc_s(" load-balance");
 			rc_hash_field(h, LAG_HASH_SOURCE_PORT_NUMBER, "src-port");

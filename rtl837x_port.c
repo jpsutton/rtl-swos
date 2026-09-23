@@ -774,6 +774,20 @@ void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banke
 
 
 /*
+ * The hash a LAG uses. A pristine group (reset value, or 0) reads as the
+ * default, which port_lag_members_set() installs when a member joins.
+ */
+uint8_t port_lag_hash_get(uint8_t lag) __banked
+{
+	reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (lag << 2));
+	if (!(sfr_data[0] | sfr_data[1] | sfr_data[2])
+	    && (sfr_data[3] == LAG_HASH_RESET || sfr_data[3] == 0))
+		return LAG_HASH_DEFAULT;
+	return sfr_data[3];
+}
+
+
+/*
  * Configures the hash algorithm used for a LAG
  * lag is the Group to configure and hash is a bitmask
  */

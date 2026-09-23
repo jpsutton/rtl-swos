@@ -395,8 +395,7 @@ void show_po_summary(void) __banked
 			}
 		}
 		sh_to(48);
-		reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (g << 2));
-		h = sfr_data[3];
+		h = port_lag_hash_get(g);
 		if (h & LAG_HASH_SOURCE_PORT_NUMBER) sh_s("src-port ");
 		if (h & LAG_HASH_L2_SMAC) sh_s("src-mac ");
 		if (h & LAG_HASH_L2_DMAC) sh_s("dst-mac ");

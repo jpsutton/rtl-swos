@@ -1492,6 +1492,22 @@ static void test_lacp(void)
 	CHECK(!lacp_group[4] && lacp_ports == ((1 << 5) | (1 << 7)), "no channel-group leaves LACP");
 	run("channel-group 4");
 	CHECK(port_lag_of(4) == 3 && !lacp_group[4], "a bare channel-group N is still static");
+	/* a port-channel whose LACP ports never bundled keeps the chip's
+	 * pristine hash; it must not render as a load-balance setting */
+	wipe_all();
+	for (int g = 0; g < 4; g++)
+		hw_reg_set(RTL837X_TRK_HASH_CTRL_BASE + (g << 2), LAG_HASH_RESET);
+	run("enable");
+	to_if("ethernet 1/3");
+	run("channel-group 3 mode active");
+	render_into(cfg);
+	CHECK(strstr(cfg, "interface port-channel 3\n!\n") && !strstr(cfg, "load-balance"),
+	      "a pristine hash renders as the default");
+	run("show port-channel summary");
+	CHECK(out_has("src-mac dst-mac src-ip dst-ip l4-src-port l4-dst-port"), "and shows as the default");
+	run("no channel-group");
+
+	run("enable");
 	to_if("ethernet 1/6");
 	run("no channel-group");
 	to_if("ethernet 1/8");
