@@ -1654,6 +1654,32 @@ static void test_totp_cfg(void)
 	CHECK(!out_has("TOTP"), "show totp needs privileged EXEC");
 }
 
+static void test_copy_forms(void)
+{
+	printf("[test] copy run start and copy start run\n");
+	wipe_all();
+	run("enable");
+	run("copy run start");
+	CHECK(saved_ok(), "copy run start saves");
+	run("configure terminal");
+	run("hostname merged");
+	run("end");
+	run("copy running-config startup-config");
+	CHECK(saved_ok() && strstr((char *)fake_cfg, "hostname merged\n"), "the full spelling saves too");
+	run("configure terminal");
+	run("hostname changed");
+	run("vlan 77");
+	run("end");
+	run("copy start run");
+	CHECK(!strcmp(hostname, "merged") && cli.mode == CLI_MODE_PRIV, "copy start run merges the startup config");
+	CHECK(sw_vlan_exists(77), "a merge adds; it does not remove what the startup config lacks");
+	run("configure terminal");
+	run("hostname again");
+	run("copy startup-config running-config");
+	CHECK(!strcmp(hostname, "merged") && cli.mode == CLI_MODE_CONFIG,
+	      "full spelling from config mode, which stays config mode");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1695,6 +1721,7 @@ int main(void)
 	test_dns();
 	test_ntp();
 	test_totp_cfg();
+	test_copy_forms();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

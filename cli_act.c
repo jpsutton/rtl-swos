@@ -339,6 +339,13 @@ void cli_act(uint8_t action) __banked
 		else
 			igmp_router_port_set(igmp_mrouter | ((uint16_t)1 << cli.ctx_lport));
 		break;
+	case ACT_COPY_SR:
+		if (cli_replaying) {	/* a startup config that copies itself */
+			print_string("% Not while a configuration is being replayed\n");
+			break;
+		}
+		config_merge();
+		break;
 	case ACT_SHOW_START:
 		startup_show();
 		break;

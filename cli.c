@@ -270,8 +270,12 @@ static __code const struct cli_node n_copy_tftp = {
 static __code const struct cli_node n_cp_s_tftp = {
 	"tftp", 0, CLI_F_PRIV, 0, 0, n_cp_cfgout_ipch, ACT_NONE, "Upload to a TFTP server"
 };
+static __code const struct cli_node n_cp_s_run = {
+	"running-config", 0, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_COPY_SR,
+	"Merge into the running configuration"
+};
 static __code const struct cli_node * __code const ch_cp_start[] = {
-	&n_cp_s_tftp, 0
+	&n_cp_s_run, &n_cp_s_tftp, 0
 };
 static __code const struct cli_node n_copy_start = {
 	"startup-config", 0, CLI_F_PRIV, 0, 0, ch_cp_start, ACT_NONE, "From the startup config"
@@ -2177,6 +2181,25 @@ void cli_replay_begin(void) __banked
 void cli_replay_line(__xdata char *line) __banked
 {
 	cli_exec_line(line);
+}
+
+
+static __xdata uint8_t merge_mode;
+
+void cli_merge_begin(void) __banked
+{
+	merge_mode = cli.mode;
+	cli.mode = CLI_MODE_CONFIG;
+	cli_replaying = 1;
+	sw_defer(1);
+}
+
+
+void cli_merge_end(void) __banked
+{
+	cli_replaying = 0;
+	cli.mode = merge_mode;
+	sw_defer(0);
 }
 
 

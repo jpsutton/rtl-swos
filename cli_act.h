@@ -69,6 +69,7 @@
 #define ACT_CLOCK_TZ	58	/* clock timezone NAME HOURS [MINUTES] */
 #define ACT_CLOCK_ST	59	/* clock summer-time NAME recurring [eu|us]; NTP_DST_* in ->lo */
 #define ACT_TOTP	60	/* TOTPC_* in ->lo */
+#define ACT_COPY_SR	61	/* copy startup-config running-config */
 #define TOTPC_SECRET	1
 #define TOTPC_LOGIN	2
 

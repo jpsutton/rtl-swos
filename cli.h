@@ -112,6 +112,10 @@ uint8_t cli_complete(__xdata char *line, uint8_t maxlen) __banked;
 void cli_replay_begin(void) __banked;
 void cli_replay_line(__xdata char *line) __banked;
 void cli_replay_end(void) __banked;
+/* The same inside a session (copy startup-config running-config): lines
+ * run in global config mode, and the session's mode is restored after. */
+void cli_merge_begin(void) __banked;
+void cli_merge_end(void) __banked;
 /* set while the startup config replays: handlers skip advisory warnings */
 extern __xdata uint8_t cli_replaying;
 

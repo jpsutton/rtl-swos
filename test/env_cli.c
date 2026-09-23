@@ -288,3 +288,28 @@ uint8_t totp_set_secret(uint8_t *b32)
 	return 1;
 }
 void totp_status_print(void) { print_string("TOTP\n"); }
+
+/* ---- console.c is not linked: config_merge() over the fake sector ---- */
+#include "cli.h"
+void config_merge(void)
+{
+	char line[CMD_BUF_SIZE];
+	int n = 0;
+
+	cli_merge_begin();
+	for (int i = 0; i < CONFIG_LEN; i++) {
+		uint8_t c = fake_cfg[i];
+		if (c == '\n' || c == 0 || c == 0xff) {
+			line[n] = 0;
+			if (n)
+				cli_replay_line(line);
+			n = 0;
+			if (c != '\n')
+				break;
+			continue;
+		}
+		if (n < CMD_BUF_SIZE - 1)
+			line[n++] = c;
+	}
+	cli_merge_end();
+}

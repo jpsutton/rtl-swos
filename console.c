@@ -56,15 +56,29 @@ void clear_command_history(void) __banked
 #if CONFIG_LEN % FLASH_READ_BURST_SIZE
 	#error "CONFIG_LEN not a multiple of FLASH_READ_BURST_SIZE"
 #endif
-void execute_config(void) __banked
+/* The startup config is read into its own buffer: a merge runs while the
+ * console's cfg_line may still hold the command that started it */
+static __xdata uint8_t cfg_line[CMD_BUF_SIZE];
+
+/*
+ * Replay the startup config sector through the CLI. At boot (merge = 0)
+ * it starts from the default password and leaves the console in user
+ * EXEC; `copy startup-config running-config` merges it into the running
+ * configuration of the session that asked (merge = 1).
+ */
+static void config_replay(uint8_t merge)
 {
 	__xdata uint32_t pos = CONFIG_START;
 	__xdata uint8_t pages_left = CONFIG_LEN / FLASH_READ_BURST_SIZE;
 	__xdata uint8_t skipping = 0;
 
-	// Set default password, it can be overwritten in the configuration file
-	strtox(passwd, DEFAULT_PASSWORD);
-	cli_replay_begin();
+	if (merge) {
+		cli_merge_begin();
+	} else {
+		// Set default password, it can be overwritten in the configuration file
+		strtox(passwd, DEFAULT_PASSWORD);
+		cli_replay_begin();
+	}
 
 	uint8_t cmd_idx = 0;
 	do {
@@ -80,9 +94,9 @@ void execute_config(void) __banked
 				continue;	/* configs uploaded over TFTP may be CRLF */
 			/* NUL ends a saved config; 0xff is erased flash */
 			if (c == 0 || c == 0xff || c == '\n') {
-				cmd_buffer[cmd_idx] = NUL;
+				cfg_line[cmd_idx] = NUL;
 				if (cmd_idx && !skipping)
-					cli_replay_line((__xdata char *)cmd_buffer);
+					cli_replay_line((__xdata char *)cfg_line);
 				if (c != '\n')
 					goto config_done;
 				cmd_idx = 0;
@@ -92,14 +106,14 @@ void execute_config(void) __banked
 			if (skipping)
 				continue;
 			if (cmd_idx >= (CMD_BUF_SIZE - 1)) {
-				cmd_buffer[cmd_idx] = NUL;
+				cfg_line[cmd_idx] = NUL;
 				print_string("% Config line too long, skipped: ");
-				print_string_x(cmd_buffer);
+				print_string_x(cfg_line);
 				write_char('\n');
 				skipping = 1;
 				continue;
 			}
-			cmd_buffer[cmd_idx] = c;
+			cfg_line[cmd_idx] = c;
 			cmd_idx++;
 		} while (cfg_idx);
 
@@ -108,8 +122,24 @@ void execute_config(void) __banked
 	} while(pages_left);
 
 config_done:
+	if (merge) {
+		cli_merge_end();
+		return;
+	}
 	cli_replay_end();
 	clear_command_history();
+}
+
+
+void execute_config(void) __banked
+{
+	config_replay(0);
+}
+
+
+void config_merge(void) __banked
+{
+	config_replay(1);
 }
 
 
