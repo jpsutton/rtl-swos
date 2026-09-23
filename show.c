@@ -14,6 +14,9 @@
 #include "sfp.h"
 #include "uip/uip.h"
 #include "telnetd.h"
+#include "ntp.h"
+
+extern __xdata struct machine_runtime machine_detected;
 #include "swcfg.h"
 #include "show.h"
 #include "lacp.h"
@@ -21,8 +24,8 @@
 #include "rtl837x_flash.h"
 #include "version.h"
 
-#pragma codeseg BANK3
-#pragma constseg BANK3
+#pragma codeseg BANK1
+#pragma constseg BANK1
 
 extern __code const struct machine machine;
 extern __xdata uint16_t management_vlan;
@@ -492,8 +495,13 @@ void show_version(void) __banked
 	static __xdata uint8_t k;
 
 	col = 0;
-	sh_s("rtl-swos " VERSION_SW "\nBuilt:     " BUILD_DATE "\nHardware:  ");
+	sh_s("rtl-swos " VERSION_SW ", command-line switch firmware\n"
+	     "Project:   https://github.com/jpsutton/rtl-swos\n"
+	     "Based on:  RTLPlayground, https://github.com/logicog/RTLPlayground\n"
+	     "License:   MIT; experimental, no warranty of any kind\n"
+	     "Built:     " BUILD_DATE "\nHardware:  ");
 	print_string(machine.machine_name);
+	sh_s(machine_detected.isRTL8373 ? " (RTL8373)" : " (RTL8372)");
 	sh_s("\nFlash:     ");
 	print_string(get_flash_size_str());
 	sh_s("\nMAC:       ");
@@ -515,7 +523,8 @@ void show_version(void) __banked
 	sh_dec((up / 60) % 60);
 	sh_s("m ");
 	sh_dec(up % 60);
-	sh_s("s\n");
+	sh_s("s\nClock:     ");
+	ntp_show_time();
 }
 
 
