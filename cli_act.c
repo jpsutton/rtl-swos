@@ -251,6 +251,9 @@ void cli_act(uint8_t action) __banked
 		case SHOW_IF_STATUS:
 			show_if_status();
 			break;
+		case SHOW_IF_DETAIL:
+			show_if_detail(cli.args[0]);
+			break;
 		case SHOW_IF_COUNT:
 			show_if_counters();
 			break;

@@ -97,6 +97,7 @@
 #define SHOW_CLOCK	18
 #define SHOW_NTP	19
 #define SHOW_TOTP	20
+#define SHOW_IF_DETAIL	21
 
 /* ACT_STP_G parameters */
 #define STPG_RSTP	1

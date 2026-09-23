@@ -2,6 +2,7 @@
 #define __SHOW_H__
 
 void show_if_status(void) __banked;	/* show interfaces status */
+void show_if_detail(uint16_t ports) __banked;	/* show interfaces [ethernet] LIST; bit N = port 1/N */
 void show_if_counters(void) __banked;	/* show interfaces counters */
 void show_if_trunk(void) __banked;	/* show interfaces trunk */
 void show_if_transceiver(void) __banked;	/* show interfaces transceiver */

@@ -20,6 +20,8 @@ extern __xdata struct machine_runtime machine_detected;
 #include "swcfg.h"
 #include "show.h"
 #include "lacp.h"
+#include "rtl837x_igmp.h"
+#include "phy.h"
 #include "syslog.h"
 #include "rtl837x_flash.h"
 #include "version.h"
@@ -216,6 +218,151 @@ void show_if_status(void) __banked
 		sh_to(56);
 		sh_s(machine.is_sfp[lp] ? "sfp" : "copper");
 		sh_c('\n');
+	}
+}
+
+
+/* show interface ethernet LIST: everything known about each port, in the
+ * style of NX-OS `show interface` */
+static void sh_nl(void)
+{
+	sh_c('\n');
+	col = 0;
+}
+
+void show_if_detail(uint16_t ports) __banked
+{
+	static __xdata uint16_t mask, bit, mtu;
+	static __xdata uint8_t lp, lc, g, r, e;
+	static __xdata struct sw_port * __xdata sp;
+	static __xdata uint32_t c[4];
+
+	mask = ports;
+	col = 0;
+	FOR_EACH_PORT(lp) {
+		if (!(mask & (1 << it_up)))
+			continue;
+		sp = &sw_ports[lp];
+		bit = (uint16_t)1 << lp;
+		lc = port_link_code(lp);
+		sh_s("Ethernet1/");
+		sh_dec(it_up);
+		sh_s(sp->shut ? " is administratively down" : lc == PORT_LINK_DOWN ? " is down (notconnect)" : " is up");
+		sh_nl();
+		if (port_names[lp][0]) {
+			sh_s("  Description: ");
+			sh_x(port_names[lp], 0, 32);
+			sh_nl();
+		}
+		sh_s(machine.is_sfp[lp] ? "  Type: SFP+ port" : "  Type: copper port");
+		sh_nl();
+		sh_s("  Speed: ");
+		if (lc != PORT_LINK_DOWN) {
+			sh_speed_code(lc);
+			sh_s(" Mb/s");
+		} else {
+			sh_s("-");
+		}
+		sh_s(" (configured ");
+		sh_cfg_speed(sp->speed);
+		sh_s("), duplex ");
+		sh_s(sp->duplex == PHY_DUPLEX_FULL ? "full" : sp->duplex == PHY_DUPLEX_HALF ? "half" : "auto");
+		sh_nl();
+		reg_read_m(RTL8373_REG_MAC_L2_PORT_MAX_LEN + ((uint16_t)lp << 8));
+		mtu = (((uint16_t)sfr_data[2] << 8) | sfr_data[3]) & 0x3fff;
+		sh_s("  MTU: ");
+		sh_dec(mtu);
+		sh_s(" bytes");
+		sh_nl();
+		g = port_lag_of(lp);
+		if (lacp_group[lp]) {
+			sh_s("  Port-channel: Po");
+			sh_dec(lacp_group[lp]);
+			sh_s(lacp_mode[lp] == LACP_MODE_ACTIVE ? ", LACP active" : ", LACP passive");
+			sh_s(lacp_bundled & bit ? ", bundled" : ", not bundled (forwarding on its own)");
+			sh_nl();
+		} else if (g != PORT_LAG_NONE) {
+			sh_s("  Port-channel: Po");
+			sh_dec(g + 1);
+			sh_s(", static");
+			sh_nl();
+		}
+		if (sp->mode == SW_MODE_TRUNK) {
+			sh_s("  Switchport: trunk, native VLAN ");
+			sh_dec(sp->native_vid);
+			sh_s(", allowed ");
+			if (!sp->nranges)
+				sh_s("none");
+			for (r = 0; r < sp->nranges; r++) {
+				if (r)
+					sh_c(',');
+				sh_dec(sp->allowed[r].lo);
+				if (sp->allowed[r].hi != sp->allowed[r].lo) {
+					sh_c('-');
+					sh_dec(sp->allowed[r].hi);
+				}
+			}
+			if (!sw_port_allows(lp, sp->native_vid))
+				sh_s(" (tagged frames only)");
+		} else {
+			sh_s("  Switchport: access, VLAN ");
+			sh_dec(sp->access_vid);
+		}
+		if (sp->prot)
+			sh_s(", protected");
+		sh_nl();
+		sh_s(sp->eee_off ? "  EEE: off" : "  EEE: on");
+		sh_nl();
+		if (sp->rl_in || sp->rl_out) {
+			sh_s("  Rate limit:");
+			if (sp->rl_in) {
+				sh_s(" input ");
+				sh_dec(sp->rl_in);
+				sh_s(sp->rl_in_drop ? " kbit/s (drop)" : " kbit/s (pause)");
+			}
+			if (sp->rl_out) {
+				sh_s(" output ");
+				sh_dec(sp->rl_out);
+				sh_s(" kbit/s");
+			}
+			sh_nl();
+		}
+		e = stp_ent_of[lp];
+		sh_s("  Spanning tree: ");
+		if (!stp_enabled)
+			sh_s("off");
+		else if (STP_PF_OUT(stp_pflags[e]))
+			sh_s("not taking part (bpdufilter)");
+		else
+			sh_s(stp_pflags[e] & STP_PF_OPEREDGE ? "edge port" : "taking part");
+		if (stp_pflags[e] & STP_PF_TRIPPED)
+			sh_s(", disabled by BPDU guard");
+		sh_nl();
+		if (sw_mon_dst == lp || ((sw_mon_rx | sw_mon_tx) & bit)) {
+			sh_s("  Monitor session 1: ");
+			if (sw_mon_dst == lp)
+				sh_s("destination");
+			else
+				sh_s((sw_mon_rx & sw_mon_tx & bit) ? "source (both)" : (sw_mon_rx & bit) ? "source (rx)" : "source (tx)");
+			sh_nl();
+		}
+		if (igmp_mrouter & bit) {
+			sh_s("  IGMP: multicast router port");
+			sh_nl();
+		}
+		port_counters_get(lp, c);
+		sh_s("  Input: ");
+		sh_dec(c[2]);
+		sh_s(" packets, ");
+		sh_dec(c[3]);
+		sh_s(" errors");
+		sh_nl();
+		sh_s("  Output: ");
+		sh_dec(c[0]);
+		sh_s(" packets, ");
+		sh_dec(c[1]);
+		sh_s(" errors");
+		sh_nl();
 	}
 }
 

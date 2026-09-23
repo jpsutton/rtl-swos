@@ -1727,6 +1727,34 @@ static void test_show_run_filters(void)
 	CHECK(saved_ok() && strstr((char *)fake_cfg, "hostname"), "and saving never filters");
 }
 
+static void test_show_if_detail(void)
+{
+	printf("[test] show interfaces ethernet LIST\n");
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	run("interface ethernet 1/3");
+	run("description desk");
+	run("switchport access vlan 10");
+	run("mtu 9000");
+	run("rate-limit input 1024 drop");
+	run("interface ethernet 1/9");
+	run("switchport mode trunk");
+	run("switchport trunk allowed vlan 10");
+	run("end");
+	run("show interfaces ethernet 1/3");
+	CHECK(out_has("Ethernet1/3 is ") && out_has("  Description: desk\n") && out_has("  MTU: 9000 bytes\n")
+	      && out_has("  Switchport: access, VLAN 10\n") && out_has("input 1024 kbit/s (drop)")
+	      && out_has("  Input: ") && !out_has("Ethernet1/4"), "one port in detail");
+	run("show int eth1/9");
+	CHECK(out_has("Ethernet1/9") && out_has("trunk, native VLAN 1, allowed 10 (tagged frames only)")
+	      , "NX-OS spelling, a trunk without its native VLAN");
+	run("show int 1/1-2");
+	CHECK(out_has("Ethernet1/1 ") && out_has("Ethernet1/2 ") && !out_has("Ethernet1/3"), "a list");
+	run("show interfaces status");
+	CHECK(out_has("Port      Name"), "the table views are unchanged");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1770,6 +1798,7 @@ int main(void)
 	test_totp_cfg();
 	test_copy_forms();
 	test_show_run_filters();
+	test_show_if_detail();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

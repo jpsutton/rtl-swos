@@ -150,8 +150,18 @@ SHOW_LEAF(n_sh_if_status, "status", SHOW_IF_STATUS, "Link, VLAN and speed per po
 SHOW_LEAF(n_sh_if_count, "counters", SHOW_IF_COUNT, "Packet and error counters")
 SHOW_LEAF(n_sh_if_trunk, "trunk", SHOW_IF_TRUNK, "Trunk ports")
 SHOW_LEAF(n_sh_if_xcvr, "transceiver", SHOW_IF_XCVR, "SFP modules and diagnostics")
+/* show interfaces [ethernet] LIST: the detail of each port */
+static __code const struct cli_node n_sh_if_list = {
+	0, CLI_A_IFLIST, 0, SHOW_IF_DETAIL, 0, NO_CHILDREN, ACT_SHOW, "Port or list, e.g. 1/3 or 1/1-4"
+};
+static __code const struct cli_node * __code const ch_sh_if_eth[] = {
+	&n_sh_if_list, 0
+};
+static __code const struct cli_node n_sh_if_eth = {
+	"ethernet", 0, 0, 0, 0, ch_sh_if_eth, ACT_NONE, "Detail of ethernet interfaces"
+};
 static __code const struct cli_node * __code const ch_sh_if[] = {
-	&n_sh_if_count, &n_sh_if_status, &n_sh_if_xcvr, &n_sh_if_trunk, 0
+	&n_sh_if_count, &n_sh_if_eth, &n_sh_if_status, &n_sh_if_xcvr, &n_sh_if_trunk, &n_sh_if_list, 0
 };
 static __code const struct cli_node n_sh_if = {
 	"interfaces", 0, 0, SHOW_IF_STATUS, 0, ch_sh_if, ACT_SHOW, "Interface status"

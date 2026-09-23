@@ -85,6 +85,7 @@ runs once for each port, in port order.
 | `show startup-config` | The configuration replayed at boot |
 | `show version` | Software, build, board, flash size, MAC, uptime |
 | `show interfaces [status]` | Link, VLAN, speed and type per port |
+| `show interfaces [ethernet] LIST` | Detail per port, e.g. `show int eth1/3`: link, speed, MTU, VLANs, port-channel, EEE, rate limits, STP, counters |
 | `show interfaces counters` | Packet and error counters |
 | `show interfaces trunk` | Trunk ports, native and allowed VLANs |
 | `show interfaces transceiver` | SFP modules and their diagnostics (DDM) |
