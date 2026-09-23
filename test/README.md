@@ -1,16 +1,17 @@
 # Host unit-test harness
 
 Compile and test individual firmware translation units on the build host with
-**gcc + AddressSanitizer + UBSan** — no SDCC, no flashing, no hardware. This is
-the fast inner loop for the logic-level bugs in `../../NOTES/08-findings.md`
-(parser, line editor, HTTP header, DHCP): edit → `make` → see red/green in
-seconds instead of a minutes-long flash-and-reboot cycle.
+**gcc + AddressSanitizer + UBSan**: no SDCC, no flashing, no hardware. It is
+the fast inner loop for the CLI, the configuration model and the drivers
+behind them: edit, `make`, see red/green in seconds instead of a
+flash-and-reboot cycle.
 
 ## Run
 ```
 cd test
 make            # build + run all tests (ASan/UBSan on)
 make clean
+build/test_replay file.cfg [expected...]   # replay a config through the CLI
 ```
 Exit status is non-zero if any check fails, a sanitizer trips, or the watchdog
 fires — so it drops straight into CI.
@@ -25,15 +26,16 @@ fires — so it drops straight into CI.
   fetches a MIB counter on `STAT_GET` and drops entries on `L2_TBL_FLUSH_CTRL`.
   Nothing ever reports busy, so a polling loop runs once. The header states the
   VLAN and L2 entry layouts independently of the firmware, so a test can hold
-  what `rtl837x_port.c` writes against what `page_impl.c` reads.
-- **`env_tables.c`** carries the globals and leaf calls those two modules link
-  against; **`stub/`** stands in for the two headers only a firmware build
-  generates, so the harness needs no SDCC build first.
+  what `rtl837x_port.c` writes against what it reads back.
+- **`env_tables.c`** and **`env_cli.c`** carry the globals and edge functions
+  the firmware modules link against (PHY, DHCP, syslog, telnet, flash, frame
+  output), recording calls so tests can assert on them; **`stub/`** stands in
+  for `version.h`, which only a firmware build generates.
 - **`support.c` / `support.h`** mock the hardware edges: the 16-byte serial ring
   (`sbuf`), the command/history buffers, and the character-output sink
   (`write_char` etc.). Buffers are sized **exactly** as on target, so ASan
   redzones catch the same off-by-one overflows the 8051 hits.
-- Builds define **`RTLP_HOST_TEST`**, which hides the firmware's libc-named
+- Builds define **`SWOS_HOST_TEST`**, which hides the firmware's libc-named
   prototypes (`memset`/`strlen`/…) in `rtl837x_common.h` so they don't clash with
   glibc. Argument order matches libc, so on-host callers transparently use the C
   library. This guard is compiled out of normal firmware builds — zero on-target
@@ -42,21 +44,19 @@ fires — so it drops straight into CI.
   test failure instead of a hung runner.
 
 ## Current coverage
-| Test binary | TU under test | Findings exercised |
-|-------------|---------------|--------------------|
-| `test_cmd_editor` | `cmd_editor.c` | **C4** — full-line hang + `cmd_buffer` 1-byte overflow; basic entry & backspace regressions |
-| `test_port_tables` | `rtl837x_port.c` | VLAN entry layout and round trip, PVID register sharing, static multicast and management entries, per-port flush, trunk membership and hash seed |
-| `test_page_json` | `httpd/page_impl.c` + `rtl837x_port.c` | `/vlan.json`, `/vlanlist`, `/l2.json` (walk, wrap marker, paging inside `outbuf`), 64-bit counters in `/status.json` and `/counters.json` |
-| `test_httpd_tx` | `httpd/httpd.c` + `uip/uip.c` | a GET of a static file against a client that moves its receive window: ACK accounting, continuation chunks out of flash, retransmission |
+Every binary links the same environment (`CORE_ENV` in the Makefile): the
+command editor, the CLI engine and actions, the configuration model, the
+running-config serializer, the show commands, LACP and the port driver,
+compiled unmodified from the firmware tree.
 
-## Adding a test for another module
-1. Write `test_<module>.c` with `main()` driving the module's entry points and
-   `CHECK(cond, msg)` assertions.
-2. Add any missing mocked symbols to `support.c` (only what the linker asks for).
-3. Add a target in the `Makefile` listing `test_<module>.c support.c ../<module>.c`.
-4. If the module calls a firmware libc-name (`memcpy`/`strcpy`/…), it will use the
-   C library on host (compatible arg order); provide a `fw_*`-style mock only if
-   the semantics differ in a way the test cares about.
+| Test binary | Focus |
+|-------------|-------|
+| `test_cmd_editor` | line editor: full-line hang, buffer bounds, entry and backspace |
+| `test_cli` | modes, abbreviation, help, completion, errors, every configuration command, running config round trip, boot replay, sessions, show output, interface ranges, spanning tree, port-channels, LACP against a simulated partner |
+| `test_port_tables` | VLAN entry layout and round trip, PVID register sharing, static multicast and management entries, per-port flush, trunk membership and hash seed |
+| `test_replay` | replays a configuration file as the switch does at boot; `make run` uses it on `config.txt` and on the converted example configuration |
 
-Good next targets (pure logic, high finding density): `cmd_parser.c` (C6/C8),
-the HTTP header parser in `httpd/httpd.c` (S1), `dhcp.c` (S5).
+## Adding a test
+Add a `test_<topic>` function to `test_cli.c`, or a new `test_<topic>.c` with
+its own `main()` and a line in `TESTS`; `CORE_ENV` provides the environment.
+Add missing edge functions to `env_cli.c` only as the linker asks for them.

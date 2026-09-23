@@ -14,16 +14,20 @@ extern __xdata uint8_t sfr_data[4];
 
 void bandwidth_setup(void) __banked
 {
+#ifdef DEBUG
 	print_string("bandwidth_setup called\n");
+#endif
 	// Exclude all packets possibly for the CPU port, but do not include bypassed packets or Inter-Frame-Gap into bandwidth
 	REG_SET(RTL837X_IGBW_CTRL, IGBW_ADM_DHCP | IGBW_ADM_ARPREQ | IGBW_ADM_RMA | IGBW_ADM_BPDU | IGBW_ADM_RTKPKT | IGBW_ADM_IGMP);
 
 	// We do not count IFG for Egress and allways allow CPU-traffic
 	REG_SET(RTL837X_EGBW_CTRL, EGBW_CPUMODE);
 
+#ifdef DEBUG
 	print_string("RTL837X_IGBW_CTRL: "); print_reg(RTL837X_IGBW_CTRL); write_char('\n');
 	print_string("RTL837X_EGBW_CTRL: "); print_reg(RTL837X_EGBW_CTRL); write_char('\n');
 	print_string("bandwidth_setup done\n");
+#endif
 }
 
 
@@ -35,7 +39,9 @@ void bandwidth_ingress_set(uint8_t port, __xdata uint32_t bw) __banked
 {
 	__xdata uint8_t * __xdata bwptr = &bw;
 
+#ifdef DEBUG
 	print_string("bandwidth_ingress_set called, port "); print_byte(port); write_char('\n');
+#endif
 	sfr_data[0] = 0;
 	sfr_data[1] = 0x10 | (*(bwptr + 2) >> 4);  // Set bit 20 to enable ingress bandwidth control
 	sfr_data[2] = (*(bwptr + 2) << 4) | (*(bwptr + 1) >> 4);
@@ -50,20 +56,26 @@ void bandwidth_ingress_set(uint8_t port, __xdata uint32_t bw) __banked
 void bandwidth_ingress_drop(uint8_t port) __banked
 {
 	reg_bit_clear(RTL837X_IGBW_PORT_FC_CTRL, port);
+#ifdef DEBUG
 	print_string("RTL837X_IGBW_PORT_FC_CTRL:"); print_reg(RTL837X_IGBW_PORT_FC_CTRL); write_char('\n');
+#endif
 }
 
 
 void bandwidth_ingress_fc(uint8_t port) __banked
 {
 	reg_bit_set(RTL837X_IGBW_PORT_FC_CTRL, port);
+#ifdef DEBUG
 	print_string("RTL837X_IGBW_PORT_FC_CTRL:"); print_reg(RTL837X_IGBW_PORT_FC_CTRL); write_char('\n');
+#endif
 }
 
 
 void bandwidth_ingress_disable(uint8_t port) __banked
 {
+#ifdef DEBUG
 	print_string("Ingress bandwidth limit disabled, port "); print_byte(port); write_char('\n');
+#endif
 	REG_SET(RTL837X_IGBW_PORT_CTRL + port * 4, 0x0fffff);
 }
 
@@ -72,7 +84,9 @@ void bandwidth_egress_set(uint8_t port, __xdata uint32_t bw) __banked
 {
 	__xdata uint8_t * __xdata bwptr = &bw;
 
+#ifdef DEBUG
 	print_string("bandwidth_egress_set called, port "); print_byte(port); write_char('\n');
+#endif
 	sfr_data[0] = 0;
 	sfr_data[1] = 0x10 | (*(bwptr + 2) >> 4);  // Set bit 20 to enable egress bandwidth control
 	sfr_data[2] = (*(bwptr + 2) << 4) | (*(bwptr + 1) >> 4);
@@ -83,7 +97,9 @@ void bandwidth_egress_set(uint8_t port, __xdata uint32_t bw) __banked
 
 void bandwidth_egress_disable(uint8_t port) __banked
 {
+#ifdef DEBUG
 	print_string("Egress bandwidth limit disabled, port "); print_byte(port); write_char('\n');
+#endif
 	REG_SET(RTL837X_EGBW_PORT_CTRL + port * 1024, 0x0fffff);
 }
 

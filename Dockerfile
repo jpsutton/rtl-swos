@@ -4,11 +4,8 @@ RUN apt-get update && apt-get install -y \
     make \
     gcc \
     sdcc \
-    xxd \
     python3 \
-    libjson-c-dev \
     git \
-    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # git safe.directory for mounted repos (Makefile uses git describe)

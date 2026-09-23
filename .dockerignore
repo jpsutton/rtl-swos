@@ -5,13 +5,10 @@
 output/
 installer/output/
 *.bin
-html_data.c
-html_data.h
 *.o
 *.rel
 *.lst
 *.sym
-*.asm
 *.ihx
 *.img
 *.map

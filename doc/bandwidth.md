@@ -13,7 +13,7 @@ destination IP, IPv4/IPv6 TOS field, IPv6 Flow Label and even TCP/UDP
 source/destination port. Once in a queue, packets are scheduled for egress
 based on differnent configurable algorithms.
 
-RTLPlayground currently allows only to control the bandwidth at ingress at a port
+rtl-swos currently allows only to control the bandwidth at ingress at a port
 or just before packets leave a port. There is no control of the priority assignment
 or queue scheduling mechanisms. The bandwidth can be controlled in steps of 16Kbit/s
 from 16Kbit/s to 10Gbp/s.
@@ -62,10 +62,11 @@ void bandwidth_setup(void) __banked;
 void bandwidth_ingress_set(uint8_t port, __xdata uint32_t bw) __banked;
 void bandwidth_ingress_disable(uint8_t port) __banked;
 void bandwidth_ingress_drop(uint8_t port) __banked;
+void bandwidth_ingress_fc(uint8_t port) __banked;
 void bandwidth_egress_set(uint8_t port, __xdata uint32_t bw) __banked;
 void bandwidth_egress_disable(uint8_t port) __banked;
 void bandwidth_status(uint8_t port) __banked;
-```c
+```
 
 `bandwidth_setup()` is called at boot-time and configures excluding all special packets
 that may be for the CPU and packets outgoing from the CPU to be excluded from bandwidth
@@ -74,45 +75,51 @@ control. IFG is not part of the bandwidth calculation.
 `bandwidth_ingress_set()` enables ingress bandwidth control for a particular port given
 the specified bandwidth. This also enabled Flow Control at a port.
 
-`bandwidth_ingress_set()` enables egress bandwidth control for a particular port given
+`bandwidth_egress_set()` enables egress bandwidth control for a particular port given
 the specified bandwidth
 
 `bandwidth_ingress_disable() / bandwidth_egress_disable()` disable ingress and egress
 bandwidth control at a given port
 
 `bandwidth_ingress_drop(port)` configures packets exceeding bandwidth limitations to
-simply be dropped
+simply be dropped, `bandwidth_ingress_fc(port)` switches back to Flow Control
 
 `bandwidth_status(port)` shows the current bandwidth control status for a given port
 
-## Bandwidth control configuration on the Serial Console
-The following commands are provided on the serial console:
+## Bandwidth control configuration on the CLI
+Bandwidth control is configured per port in interface configuration mode:
 ```
-> bw [in|out|status] <port> [<hexvalue>|off|drop]
-  Configures or shows the status of bandwidth control
+rate-limit input <kbit/s> [drop]
+rate-limit output <kbit/s>
+no rate-limit input
+no rate-limit output
 ```
-The bandwidth is given as the `<hexvalue>` in Kbit/s. Note that the control is only
-possible at a granularity of 16 Kbit/s and the minimum value is also 16 Kbit/s. The
-hexadecimal numbers must be given in full bytes, i.e. have an even number of digits.
+The bandwidth is given in decimal Kbit/s, from 16 to 10000000. The hardware
+works in steps of 16 Kbit/s, so the value is rounded down to a multiple of 16.
+An ingress limit uses Flow Control (pause frames) to slow the sender down;
+with `drop` the excess packets are dropped instead. Entering
+`rate-limit input` again without `drop` returns to Flow Control.
 
-To enable bandwidth control of ingress for physical port 2 to be set to 256 Kbit/s
-do:
+To limit ingress on port 2 to 256 Kbit/s:
 ```
-> bw in 2 0100 
-```
-
-To drop packets when the bandwidth is exceeeded at port 2 do:
-```
-> bw in 2 drop 
-```
-
-To disable bandwidth control for incoming packets on port 2 do:
-```
-> bw in 2 off
+switch(config)# interface ethernet 1/2
+switch(config-if)# rate-limit input 256
 ```
 
-## Bandwidth configuration via the Web Interface
-Not implemented, yet!
+To drop packets when the bandwidth is exceeded at port 2 instead:
+```
+switch(config-if)# rate-limit input 256 drop
+```
+
+To disable bandwidth control for incoming packets on port 2:
+```
+switch(config-if)# no rate-limit input
+```
+
+The limits appear in `show running-config` as ` rate-limit input 256 drop`
+and ` rate-limit output 20000` under the interface. A limit applied to an
+interface range (`interface ethernet 1/1-4`) is set on each port of the range
+individually.
 
 ## A Test using iperf3
 The following is and example how to test bandwidth control with a signle Linux device using
@@ -166,11 +173,13 @@ Connecting to host 192.168.99.2, port 5201
 ```
 
 Now, we limit ingress on port 1 (connected to eth0) to 4 MBit/s:
-```> bw in 1 1000
-bandwidth_ingress_set called, port 04
-RTL837X_IGBW_PORT_CTRL:0x00100100
-RTL837X_IGBW_PORT_FC_CTRL:0x00000010
 ```
+switch(config)# interface ethernet 1/1
+switch(config-if)# rate-limit input 4096
+```
+On the board used here, port 1 is logical port 4, so this sets
+`RTL837X_IGBW_PORT_CTRL` of that port to `0x00100100` and bit 4 of
+`RTL837X_IGBW_PORT_FC_CTRL` (`0x00000010`); `debug register read` shows both.
 
 We now get:
 ```
@@ -200,14 +209,10 @@ Flow Control is used to signal the Ethernet adapter on the incoming interface
 
 We can also configure a mere 256KBit/s and packet drop to simulate a bad connection:
 ```
-> bw in 1 0100
-bandwidth_ingress_set called, port 04
-RTL837X_IGBW_PORT_CTRL:0x00100010
-RTL837X_IGBW_PORT_FC_CTRL:0x00000010
-
-> bw in 1 drop
-RTL837X_IGBW_PORT_FC_CTRL:0x00000000
+switch(config-if)# rate-limit input 256 drop
 ```
+This sets `RTL837X_IGBW_PORT_CTRL` to `0x00100010` and clears the port's bit in
+`RTL837X_IGBW_PORT_FC_CTRL` (`0x00000000`).
 
 We now get:
 ```

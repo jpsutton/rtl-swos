@@ -1,0 +1,1683 @@
+#include <8051.h>
+#include <stdint.h>
+
+// #define REGDBG 1
+// #define RXTXDBG 1
+
+#include "rtl837x_sfr.h"
+#include "rtl837x_regs.h"
+#include "rtl837x_common.h"
+#include "rtl837x_flash.h"
+#include "rtl837x_pins.h"
+#include "rtl837x_phy.h"
+#include "rtl837x_port.h"
+#include "rtl837x_stp.h"
+#include "rtl837x_igmp.h"
+#include "rtl837x_leds.h"
+#include "rtl837x_bandwidth.h"
+#include "rtl837x_init.h"
+#include "dhcp.h"
+#include "console.h"
+#include "cmd_editor.h"
+#include "uip/uipopt.h"
+#include "uip/uip.h"
+#include "uip/uip_arp.h"
+#include "machine.h"
+#include "phy.h"
+#include "syslog.h"
+#include "telnetd.h"
+#include "cli.h"
+#include "show.h"
+#include "swcfg.h"
+#include "tftp.h"
+#include "boot.h"
+#include "sfp.h"
+#include "lacp.h"
+
+extern __code const struct machine machine;
+extern __xdata uint32_t flash_size;
+
+extern __xdata uint16_t crc_value;
+__xdata struct machine_runtime machine_detected;
+void crc16_bank1(__xdata uint8_t *v) __naked;
+
+// See setup_serial_timer1() for valid baudrate settings!
+#define SERIAL_BAUD_RATE 115200
+
+/* All RTL839x switches have an external 25MHz Oscillator,
+   VALID RTL8372/3 CPU frequencies found in switches are:
+   0x07735940 = 125,000,000
+   0x03b9aca0 =  62,500,000
+   0x01dcd650 =  31,250,000
+   0x013d6200 =  20,800,000
+   For the following frequencies, divider settings are known
+   and can be selected on all known HW (Register 0x6040)
+*/
+#define CLOCK_HZ 125000000
+//#define CLOCK_HZ 20800000
+
+// Derive the divider settings for the internal clock
+#if CLOCK_HZ == 20800000
+#define CLOCK_DIV 3
+#elif CLOCK_HZ == 31250000
+#define CLOCK_DIV 2
+#elif CLOCK_HZ == 62500000
+#define CLOCK_DIV 1
+#elif CLOCK_HZ == 125000000
+#define CLOCK_DIV 0
+#endif
+
+/* Derive divider for the system ticks
+   TIMER2 can divide the F_CPU by 4 or 12.
+   So the F_TICKS are in the range of:
+   -  F_TIMER_DIV4_OVERFLOW = F_SYS /  DIV4 / 1..65536 = 125MHz /  4 / 1..65536 = 31.25 MHz .. 476.8 Hz
+   - T_TIMER_DIV12_OVERFLOW = F_SYS / DIV12 / 1..65536 = 125MHz / 12 / 1..65536 = 10.42 MHz .. 158.9 Hz
+   Selecting dividor 12 settings to get lowest timer tick posiable which is already high.
+*/
+#define SYS_TICK_HZ 200
+
+#define TIMER2_DIV (CLOCK_HZ / 12 / SYS_TICK_HZ)
+#if TIMER2_DIV > 0xFFFF
+#error "SYS_TICK_HZ to low, must be >= 159"
+#endif
+#define SYSTICK_TIMER2_VALUE (0x10000 - TIMER2_DIV)
+
+__xdata uint8_t idle_ready;
+static __xdata uint16_t lacp_last_tick;
+
+__code const uint8_t ownIP[] = { 192, 168, 2, 2 };
+__code const uint8_t gatewayIP[] = { 192, 168, 2, 22};
+__code const uint8_t netmask[] = { 255, 255, 255, 0};
+
+__xdata struct uip_eth_addr uip_ethaddr;
+
+volatile __xdata uint32_t ticks;
+volatile __xdata uint8_t sec_counter;
+volatile __xdata uint16_t sleep_ticks;
+__xdata uint8_t stp_clock;
+__xdata uint8_t arp_age_secs;
+extern __xdata struct dhcp_state dhcp_state;
+
+#define STP_TICK_DIVIDER 3
+
+/* Buffer for serial input, SBUF_SIZE must be power of 2 < 256
+ * Writing to this buffer is under the sole control of the serial ISR
+ * Note that key-presses such as <cursor-left> can create multiple
+ * keys being sent via the serial line */
+__xdata volatile uint8_t sbuf_ptr;
+__xdata uint8_t sbuf[SBUF_SIZE];
+
+// Registry data in sfr is in *big endian* order, so sfr_data[0] is the MSB and sfr_data[3] the LSB
+__xdata uint8_t sfr_data[4];
+
+
+extern __xdata struct flash_region_t flash_region;
+
+__code const uint8_t * __code const greeting = "\nrtl-swos console:\n";
+__code const uint8_t * __code const hex = "0123456789abcdef";
+
+__xdata uint8_t flash_buf[FLASH_BUF_SIZE];
+
+// NIC buffers for packet RX/TX
+__xdata uint8_t rx_headers[16]; // Packet header(s) on RX
+__xdata uint8_t uip_buf[UIP_CONF_BUFFER_SIZE+2];
+
+__xdata uint16_t rx_packet_vlan;
+__xdata uint16_t management_vlan;
+__xdata bool frame_tagged;
+__xdata uint8_t tx_seq;
+
+__xdata bool stp_enabled;
+__xdata uint8_t igmpEnabled;
+__xdata uint16_t igmp_mrouter;	/* static multicast router ports, logical port mask */
+__xdata char hostname[24];	/* device hostname, default set at boot, see rtl837x_common.h */
+
+__code const uint16_t bit_mask[16] = {
+	0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080,
+	0x0100, 0x0200, 0x0400, 0x0800, 0x1000, 0x2000, 0x4000, 0x8000
+};
+
+
+__xdata uint8_t linkbits_last[4];
+__xdata uint8_t linkbits_last_p89;
+// Last known state of the SFP detection/Loss of Signal pins
+__xdata bool button_last;
+__xdata uint8_t button_sec_counter_last;
+volatile __bit tx_buf_empty;
+
+
+struct eth_in {
+	struct uip_eth_addr dst;
+	struct uip_eth_addr src;
+	struct rtl_tag rtl_tag;
+	struct vlan_tag vlan_tag;
+	u16_t ether_type;
+};
+
+// Dot 1Q tag size is the size of tpid + tci
+#define DOT_1Q_TAG_SIZE 4
+
+struct q_frame {
+	uint8_t tx_seq;
+	uint8_t chksum_flags;	// 0x7 enables Checksums for frame header, L2 and L3
+	uint8_t reserved_1 [2];
+	uint16_t len; // Length is Little Endian
+	uint8_t reserved_2 [2];
+	struct uip_eth_addr dst;
+	struct uip_eth_addr src;
+	uint16_t tpid;
+	uint16_t tci;
+};
+
+struct nonq_frame {
+	uint8_t padding[DOT_1Q_TAG_SIZE];
+	uint8_t tx_seq;
+	uint8_t chksum_flags;	// 0x7 enables Checksums for frame header, L2 and L3
+	uint8_t reserved_1 [2];
+	uint16_t len; // Length is Little Endian
+	uint8_t reserved_2 [2];
+	struct uip_eth_addr dst;
+	struct uip_eth_addr src;
+};
+
+#define ETH_IN ((__xdata struct eth_in *)&uip_buf[0])
+#define ETHERTYPE_OFFSET (12 + VLAN_TAG_SIZE + RTL_TAG_SIZE)
+
+// The output frame structure with initial frame descriptor including padding
+#define FRAME ((__xdata struct nonq_frame *)&uip_buf[0])
+
+// The output frame structure with 802.1Q field and the padding moved before the buffer-start
+#define FRAME_Q ((__xdata struct q_frame *)&uip_buf[0])
+
+// Ether-type of the output frame, which is the RTL tag on a CPU-tagged frame
+#define FRAME_ETHERTYPE (*(__xdata uint16_t *)&uip_buf[RTL_FRAME_DESC_SIZE + 2 * sizeof(struct uip_eth_addr)])
+
+void isr_timer0(void) __interrupt(1)
+{
+}
+
+
+// Timer2: Handle SYS_TICK
+void isr_timer2(void) __interrupt(5)
+{
+	ticks++;
+	if (sleep_ticks > 0)
+		sleep_ticks--;
+	sec_counter++;
+
+	// Clear TF2 & EXF2 by software
+	T2CON &= ~0xC0;
+}
+
+
+void isr_serial(void) __interrupt(4)
+{
+	if (RI == 1) {
+		RI = 0;
+		sbuf[sbuf_ptr] = SBUF;
+		sbuf_ptr = (sbuf_ptr + 1) & (SBUF_SIZE - 1);
+	}
+	if (TI == 1) {
+		TI = 0;
+		tx_buf_empty = 1;
+	}
+}
+
+
+/* Admin password gating the telnet console; set by `passwd`, default
+ * applied in execute_config(). */
+__xdata char passwd[21];
+
+extern __xdata uint16_t telnet_slen;
+extern __xdata uint8_t telnet_capture;
+
+void write_char_no_syslog(char c)
+{
+	/* Capturing sits here rather than in write_char() so that the messages
+	 * printed through print_string_no_syslog() are captured too: those are
+	 * the replies of the syslog commands, which must not generate a syslog
+	 * packet but do belong in the answer to a command sent over telnet. */
+	if (telnet_capture) {
+		/* Telnet needs CRLF line endings on the wire */
+		if (telnet_slen < TELNET_OUTBUF - 2) {
+			if (c == '\n')
+				telnet_outbuf[telnet_slen++] = '\r';
+			telnet_outbuf[telnet_slen++] = c;
+		} else {
+			telnet_capture = 2;	/* out of room, telnetd says so */
+		}
+	}
+
+	do {
+	} while (tx_buf_empty == 0);
+	if (c =='\n') {
+		tx_buf_empty = 0;
+		SBUF = '\r';
+		do {
+		} while (tx_buf_empty == 0);
+	}
+	tx_buf_empty = 0;
+	SBUF = c;
+}
+
+void write_char(char c)
+{
+	write_char_no_syslog(c);
+
+	if (syslog_state.enabled) {
+		logbuf[syslog_state.writeptr++] = c;
+		syslog_state.writeptr &= (LOGBUF_SIZE - 1);
+		if (c == '\n')
+			syslog_state.line_available = 1;
+	}
+}
+
+void itoa(uint8_t v)
+{
+	uint8_t t = (v / 100);
+	// when print_zeros is not zero, we know that a non-zero number has printed.
+	// That have to print all the next numbers.
+	uint8_t print_zeros = t;
+	if (print_zeros)
+		write_char('0' + t);
+	t = (v / 10) % 10;
+	print_zeros |= t;
+	if (print_zeros)
+		write_char('0' + t);
+	write_char('0' + (v % 10));
+}
+
+
+/* Same as itoa(), one decade wider: enough for a port number. Kept separate
+ * rather than widening itoa() itself, because every existing caller passes a
+ * byte and would start paying for 16-bit divisions it does not need. */
+void itoa_short(uint16_t v)
+{
+	uint8_t t = v / 10000;
+	uint8_t print_zeros = t;
+
+	if (print_zeros)
+		write_char('0' + t);
+	t = (v / 1000) % 10;
+	print_zeros |= t;
+	if (print_zeros)
+		write_char('0' + t);
+	t = (v / 100) % 10;
+	print_zeros |= t;
+	if (print_zeros)
+		write_char('0' + t);
+	t = (v / 10) % 10;
+	print_zeros |= t;
+	if (print_zeros)
+		write_char('0' + t);
+	write_char('0' + (v % 10));
+}
+
+
+void print_string(__code const char *p)
+{
+	while (*p)
+		write_char(*p++);
+}
+
+void print_string_no_syslog(__code const char *p)
+{
+	while (*p)
+		write_char_no_syslog(*p++);
+}
+
+void print_string_newline_no_syslog(__code const char *p)
+{
+	write_char_no_syslog('\n');
+	print_string_no_syslog(p);
+}
+
+void print_string_x(__xdata char *p)
+{
+	while (*p)
+		write_char(*p++);
+}
+
+
+void memcpy(__xdata void * __xdata dst, __xdata const void * __xdata src, uint16_t len)
+{
+	__xdata uint8_t *d = dst;
+	__xdata const uint8_t *s = src;
+	while (len--)
+		*d++ = *s++;
+}
+
+
+void memcpyc(__xdata uint8_t *dst, __code const uint8_t *src, uint16_t len)
+{
+	while (len--)
+		*dst++ = *src++;
+}
+
+
+void memset(__xdata uint8_t *dst, __xdata uint8_t v, uint8_t len)
+{
+	while (len--)
+		*dst++ = v;
+}
+
+uint16_t strtox(__xdata uint8_t *dst, __code const char *s)
+{
+	__xdata uint8_t *b = dst;
+	while (*s)
+		*dst++ = *s++;
+	*dst = 0;
+	return dst - b;
+}
+
+
+
+uint16_t strlen_x(__xdata const char *s)
+{
+	uint16_t l = 0;
+	while (s[l])
+		l++;
+	return l;
+}
+
+
+char strcmp(__xdata const uint8_t *a, __code const uint8_t *b)
+{
+	uint8_t i = 0;
+
+	while (b[i] && (b[i] == a[i]))
+		i++;
+
+	if (a[i] < b[i])
+		return -1;
+	else if (a[i] > b[i])
+		return 1;
+	return 0;
+}
+
+
+
+
+void print_short(uint16_t a)
+{
+	// allocating the registers first improves the sdcc code here
+	uint8_t h = a >> 8;
+	uint8_t l = a;
+
+	print_string("0x");
+	print_byte(h);
+	print_byte(l);
+}
+
+void print_long(uint32_t a)
+{
+	// allocating the registers first improves the sdcc code here
+	uint8_t a24 = a >> 24;
+	uint8_t a16 = a >> 16;
+	uint8_t a8 = a >> 8;
+	uint8_t a0 = a;
+
+	print_string("0x");
+	print_byte(a24);
+	print_byte(a16);
+	print_byte(a8);
+	print_byte(a0);
+}
+
+void print_byte(uint8_t a)
+{
+	char high = (a >> 4) + '0';
+	if (high > '9') {
+		high += 'a' - ('0' + 10);
+	}
+	write_char(high);
+
+	char low = (a & 0xf) + '0';
+	if (low > '9') {
+		low += 'a' - ('0' + 10);
+	}
+	write_char(low);
+}
+
+/* The serial console's prompt */
+void print_cmd_prompt(void)
+{
+	write_char_no_syslog('\n');
+	cli_use(CLI_CONSOLE);
+	cli_prompt();
+}
+
+/*
+ * External IRQ 0 Service Routine: Called on link change?
+ * Note that all registers are being put on the STACK because of calling a subroutine
+ */
+void isr_ext0(void) __interrupt(0)
+{
+	EX0 = 0;	// Disable interrupt for the moment
+	IT0 = 1;	// Trigger on falling edge of external interrupt
+	EX0 = 1;	// Re-enable interrupt
+}
+
+
+/*
+ * External IRQ 1 Service Routine, triggered by the NIC recieving a packet
+ */
+void isr_ext1(void) __interrupt(2)
+{
+	// This flag should only be reset after all packets have been read
+	EX1 = 0;
+	EX1 = 1;
+}
+
+/*
+ * External IRQ 2 Service Routine
+ * Note that all registers are being put on the STACK because of calling a subroutine
+ */
+void isr_ext2(void) __interrupt(8)
+{
+	EXIF &= 0xef;	// Clear IRQ flag (bit 4) in EXIF
+}
+
+/*
+ * External IRQ 3 Service Routine
+ * Note that all registers are being put on the STACK because of calling a subroutine
+ */
+void isr_ext3(void) __interrupt(9)
+{
+	EXIF &= 0xdf;	// Clear IRQ flag (bit 5) in EXIF
+}
+
+// Timer2: handles system tick.
+void setup_timer2(void)
+{
+	T2CON = 0x00; // Timer2: Mode 16-bit timer with auto-reload, disable the timer.
+
+	// Timer 2 clock select F_SYS / 12;
+	// T2M = 0 uses clk/12;
+	CKCON &= ~0x20;
+
+	// The RCAP2 registers contain the high/low byte that is loaded into
+	// timer2 when T2 overflows to 0x10000
+	RCAP2_U16 = SYSTICK_TIMER2_VALUE;
+
+	T2CON |= 0x04; // Timer2: Enable
+
+	// IP |= 0x20; // TEST: Make Timer 2 interrupt as high priority.
+	ET2 = 1; // Enable Timer2 interrupt.
+
+
+}
+
+
+void reg_read(uint16_t reg_addr)
+{
+	SFR_REG_ADDR_U16 = reg_addr;
+	SFR_EXEC_GO = SFR_EXEC_READ_REG;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+	/* The result is now in SFR A4, A5, A6, A7 */
+}
+
+
+void reg_read_m(uint16_t reg_addr)
+{
+#ifdef REGDBG
+	if (EA) { write_char('r'); print_byte(reg_addr >> 8); print_byte(reg_addr); write_char(':'); }
+#endif
+	SFR_REG_ADDR_U16 = reg_addr;
+	SFR_EXEC_GO = SFR_EXEC_READ_REG;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+	sfr_data[0] = SFR_DATA_24;
+	sfr_data[1] = SFR_DATA_16;
+	sfr_data[2] = SFR_DATA_8;
+	sfr_data[3] = SFR_DATA_0;
+#ifdef REGDBG
+	if (EA) { print_byte(sfr_data[0]);  print_byte(sfr_data[1]);  print_byte(sfr_data[2]);  print_byte(sfr_data[3]); write_char(' '); }
+#endif
+}
+
+
+void reg_write(uint16_t reg_addr)
+{
+	/* Data to write must be in SFR A4, A5, A6, A7 */
+	SFR_REG_ADDR_U16 = reg_addr;
+	SFR_EXEC_GO = SFR_EXEC_WRITE_REG;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+}
+
+
+void reg_write_m(uint16_t reg_addr)
+{
+#ifdef REGDBG
+	if (EA) {
+		write_char('R'); print_byte(reg_addr >> 8); print_byte(reg_addr); write_char('-');
+		print_byte(sfr_data[0]);  print_byte(sfr_data[1]);  print_byte(sfr_data[2]);  print_byte(sfr_data[3]); write_char(' ');
+	}
+#endif
+	SFR_REG_ADDR_U16 = reg_addr;
+	SFR_DATA_24 = sfr_data[0] ;
+	SFR_DATA_16 = sfr_data[1];
+	SFR_DATA_8 = sfr_data[2];
+	SFR_DATA_0 = sfr_data[3];
+
+	SFR_EXEC_GO = SFR_EXEC_WRITE_REG;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+}
+
+
+/*
+ * This sets a bit in the 32bit wide switch register reg_addr
+ */
+void reg_bit_set(uint16_t reg_addr, char bit)
+{
+	uint8_t bit_mask = 1 << (bit & 0x7);
+
+	bit >>= 3;
+	reg_read_m(reg_addr);
+	sfr_data[3-bit] |= bit_mask;
+	reg_write_m(reg_addr);
+}
+
+
+/*
+ * This sets a bit in the 32bit wide switch register reg_addr
+ */
+void reg_bit_clear(uint16_t reg_addr, char bit)
+{
+	uint8_t bit_mask = 1 << (bit & 0x7);
+
+	bit >>= 3;
+	reg_read_m(reg_addr);
+	bit_mask = ~bit_mask;
+	sfr_data[3-bit] &= bit_mask;
+	reg_write_m(reg_addr);
+}
+
+
+/*
+ * This tests a bit in the 32bit wide switch register reg_addr
+ */
+uint8_t reg_bit_test(uint16_t reg_addr, char bit)
+{
+	uint8_t bit_mask = 1 << (bit & 0x7);
+
+	bit >>= 3;
+	reg_read_m(reg_addr);
+	bit_mask = bit_mask;
+	if (sfr_data[3-bit] & bit_mask)
+		return 1;
+	return 0;
+}
+
+
+/*
+ * This masks the sfr data fields, first &-ing with ~mask, then setting the bits in set
+ */
+void sfr_mask_data(uint8_t n, uint8_t mask, uint8_t set)
+{
+	uint8_t b = sfr_data[3-n];
+	b &= ~mask;
+	b |= set;
+	sfr_data[3-n] = b;
+}
+
+
+/*
+ * Create 32 random number in sfr_data
+ */
+void get_random_32(void)
+{
+	// In order to get a new random numner, this bit has to be set each time!
+	reg_bit_set(RTL837X_RLDP_RLPP, RLDP_RND_EN);
+	reg_read_m(RTL837X_RAND_NUM0);
+}
+
+
+/*
+ * Transfer Network Interface RX data from the ASIC to the 8051 XMEM
+ * data will be stored in the rx_header structure
+ * len is the length of data to be transferred
+ */
+bool nic_rx_header(uint16_t ring_ptr)
+{
+	uint16_t buffer = (uint16_t) &rx_headers[0];
+	uint16_t guard = 0;
+
+	SFR_NIC_DATA_U16LE = buffer;
+	SFR_NIC_RING_U16LE = ring_ptr;
+	SFR_NIC_CTRL = 1;
+	while (SFR_NIC_CTRL != 0) {
+		if (++guard == 0) {
+			print_string("NIC: RX header transfer did not complete\n");
+			return false;
+		}
+	}
+	return true;
+}
+
+
+/*
+ * Transfer Network Interface RX data from the ASIC to the 8051 XMEM
+ * the description of the packet must be in the rx_headers data structure
+ * data will be returned in the xmem buffer points to
+ * ring_ptr is the current position of the RX Ring on the ASIC side
+ */
+bool nic_rx_packet(uint16_t buffer, uint16_t ring_ptr)
+{
+	uint16_t guard = 0;
+
+	SFR_NIC_DATA_U16LE = buffer;
+	SFR_NIC_RING_U16LE = ring_ptr;
+
+	uint16_t len = (((uint16_t)rx_headers[5]) << 8) | rx_headers[4];
+	len += 7;
+	len >>= 3;
+#ifdef RXTXDBG
+	print_string(" len: ");
+	print_short(len);
+#endif
+	SFR_NIC_CTRL = len;
+	while (SFR_NIC_CTRL != 0) {
+		if (++guard == 0) {
+			print_string("NIC: RX transfer did not complete\n");
+			return false;
+		}
+	}
+	return true;
+}
+
+
+/*
+ * Transfers data in XMEM to the ASIC for transmission by the nic
+ */
+void nic_tx_packet(uint16_t ring_ptr)
+{
+	uint16_t len;
+	uint16_t guard = 0;
+
+	/* A frame that got a dot1Q tag was shifted forward over its padding, so it
+	 * starts at uip_buf and carries the q_frame layout. One that did not keeps
+	 * the padding in front and the nonq_frame layout, so the padding is skipped.
+	 */
+	if (frame_tagged) {
+		SFR_NIC_DATA_U16LE = (uint16_t) uip_buf;
+		len = FRAME_Q->len;
+		/*
+		(__xdata struct rtl_dot1q_frame *)uip_buf
+#define FRAME (((__xdata struct rtl_dot1q_frame *)&uip_buf[0]).nonq_frame)*/
+	} else {
+		SFR_NIC_DATA_U16LE = (uint16_t) uip_buf + VLAN_TAG_SIZE;
+		len = FRAME->len;
+	}
+
+#ifdef RXTXDBG
+	print_string("TX: \n");
+	for (uint8_t i = 0; i < 100; i++) {
+		print_byte(uip_buf[i]);
+		write_char(' ');
+	}
+	write_char('\n');
+#endif
+
+	ring_ptr <<= 3;
+	ring_ptr |= 0x8000;
+	SFR_NIC_RING_U16LE = ring_ptr;
+
+	len += 0xf;
+	len >>= 3;
+	SFR_NIC_CTRL = len;
+	while (SFR_NIC_CTRL != 0) {
+		if (++guard == 0) {
+			print_string("NIC: TX transfer did not complete\n");
+			return;
+		}
+	}
+}
+
+
+
+/*
+ * Read a SerDes register in the SoC
+ * Input must be: sds_id = 0/1, page < 128,  reg <= 0xff
+ * The result is in SFR A6 and A7 (SFR_DATA_8, SFR_DATA_0)
+ */
+void sds_read(uint8_t sds_id, uint8_t page, uint8_t reg)
+{
+#ifdef REGDBG
+	print_string("q"); print_byte(sds_id); print_byte(page); print_byte(reg);
+#endif
+	SFR_93 = reg;			// 93
+	SFR_94 = page << 1 | sds_id;	// 94
+	SFR_EXEC_GO = SFR_EXEC_READ_SDS;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+
+#ifdef REGDBG
+	write_char(':'); print_byte(SFR_DATA_8); print_byte(SFR_DATA_0); write_char(' ');
+#endif
+}
+
+
+/*
+ * Write a SerDes register in the SoC
+ * Input must be: sds_id = 0/1, page < 128,  reg <= 0xff
+ * The value written must be in SFR A6 and A7 (SFR_DATA_8, SFR_DATA_0)
+ */
+void sds_write_v(uint8_t sds_id, uint8_t page, uint8_t reg, uint16_t v)
+{
+#ifdef REGDBG
+	print_string("Q"); print_byte(sds_id); print_byte(page); print_byte(reg);
+	write_char(':'); print_byte(v >> 8); print_byte(v); write_char(' ');
+#endif
+	SFR_DATA_U16 = v;
+	SFR_93 = reg;
+	SFR_94 = page << 1 | sds_id;
+	SFR_EXEC_GO = SFR_EXEC_WRITE_SDS;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+}
+
+
+void print_sfr_data(void)
+{
+	write_char('0');
+	write_char('x');
+	print_byte(sfr_data[0]);
+	print_byte(sfr_data[1]);
+	print_byte(sfr_data[2]);
+	print_byte(sfr_data[3]);
+}
+
+
+void print_phy_data(void)
+{
+	write_char('0');
+	write_char('x');
+	print_byte(SFR_DATA_8);
+	print_byte(SFR_DATA_0);
+}
+
+
+void print_reg(uint16_t reg)
+{
+	reg_read_m(reg);
+	print_sfr_data();
+}
+
+// Print the physical port of a logical port number.
+void print_phys_port(uint8_t port)
+{
+	if (port < CPU_PORT)
+		write_char(machine.log_to_phys_port[port] + '0');
+	else if (port == CPU_PORT)
+		print_string("CPU");
+	else {
+		print_string("UNKNOWN ");
+		write_char(port + '0');
+	}
+}
+
+
+char cmp_4(__xdata uint8_t a[], __xdata uint8_t b[])
+{
+	for (uint8_t i = 0; i < 4; i++) {
+		if (a[i] == b[i])
+			continue;
+		if (a[i] < b[i])
+			return -1;
+		else
+			return 1;
+	}
+	return 0;
+}
+
+void cpy_4(__xdata uint8_t dest[], __xdata uint8_t source[])
+{
+	for (uint8_t i = 0; i < 4; i++)
+		dest[i] = source[i];
+}
+
+
+
+// Delay for given number of ticks without doing housekeeping
+void delay(uint16_t t)
+{
+	sleep_ticks = t;
+	while (sleep_ticks > 0)
+		PCON |= 1;
+}
+
+
+
+/*
+ * Adds TX Header to uip_buf and calls nic_tx_packet to send the packet
+ * over the wire
+ */
+void tcpip_output(void)
+{
+	// Add TX-TAG
+	FRAME->tx_seq = tx_seq++;
+	FRAME->chksum_flags = 0x07;    // Enable all checksums
+	FRAME->reserved_1[0] = 0x00; FRAME->reserved_1[1] = 0x00;
+	FRAME->len = uip_len;
+	FRAME->reserved_2[0] = 0x00; FRAME->reserved_2[1] = 0x00;
+
+	// For the management VLAN we insert an 802.1Q VLAN tag, but never into a
+	// CPU-tagged frame, where the ASIC expects its tag right behind the addresses
+	frame_tagged = false;
+	if (management_vlan && FRAME_ETHERTYPE != HTONS(RTL_FRAME_TAG_ID)) {
+		frame_tagged = true;
+		// Shift the ethernet header before the HW type including the rtl_frame_desc to the beginning of uip_buf
+		// to allow space to insert the dot 1Q tag
+		for (uint8_t i = 0; i < sizeof(struct q_frame) - DOT_1Q_TAG_SIZE; i++)
+			uip_buf[i] = uip_buf[i + DOT_1Q_TAG_SIZE];
+		FRAME_Q->len += DOT_1Q_TAG_SIZE;
+		FRAME_Q->tpid = HTONS(0x8100);  // Change ether-type to Dot1Q
+		FRAME_Q->tci = HTONS(management_vlan);
+	}
+
+	reg_read_m(RTL837X_REG_CPU_TX_CURR_PKT);
+	uint16_t ring_ptr = ((uint16_t)sfr_data[2]) << 8;
+	ring_ptr |= sfr_data[3];
+
+	// Move data over from xmem buffer to ASIC side using DMA
+	nic_tx_packet(ring_ptr);
+
+	// New position of the ring-pointer on the NIC-side indicates number of bytes transmitted
+	reg_read_m(RTL837X_REG_NIC_TX_CURR_PKT);
+
+	// Do actual TX of data on ASIC side
+	REG_SET(RTL837X_REG_NIC_TXCMD, 1);
+}
+
+
+#define RX_BUDGET 4
+
+void handle_rx(void)
+{
+	__xdata uint8_t budget = RX_BUDGET;
+
+	while (budget--) {
+		// Check the amount of data available on the NIC/ASIC side
+		reg_read(RTL837X_REG_NIC_RX_BUFF_DATA);
+		if (!SFR_DATA_U16)
+			break;
+		reg_read(RTL837X_REG_CPU_RX_CURR_PKT);
+		uint16_t ring_ptr = SFR_DATA_U16;
+		ring_ptr <<= 3;
+		if (!nic_rx_header(ring_ptr)) {
+			REG_SET(RTL837X_REG_NIC_RXCMD, 1);
+			return;
+		}
+#ifdef RXTXDBG
+		__xdata uint8_t *ptr = rx_headers;
+		print_string("RX on port "); print_byte(rx_headers[3] & 0xf);
+		print_string(": ");
+		for (uint8_t i = 0; i < 8; i++) {
+			print_byte(*ptr++);
+			write_char(' ');
+		}
+#endif
+		if (!nic_rx_packet((uint16_t) &uip_buf[0], ring_ptr + 8)) {
+			REG_SET(RTL837X_REG_NIC_RXCMD, 1);
+			return;
+		}
+
+#ifdef RXTXDBG
+		print_string("\n<< ");
+		ptr = &uip_buf[0];
+		for (uint8_t i = 0; i < 80; i++) {
+			print_byte(*ptr++);
+			write_char(' ');
+		}
+#endif
+		REG_SET(RTL837X_REG_NIC_RXCMD, 1);
+		uip_len = (((uint16_t)rx_headers[5]) << 8) | rx_headers[4];
+
+		rx_packet_vlan = NTOHS(ETH_IN->vlan_tag.vlan) & 0x0fff;
+
+#ifdef RXTXDBG
+		print_string(" RX-VLAN: "); print_short(rx_packet_vlan); write_char('\n');
+		print_string(" RX dst: "); print_byte(uip_buf[0]); print_byte(uip_buf[1]); print_byte(uip_buf[2]);
+		print_byte(uip_buf[3]); print_byte(uip_buf[4]); print_byte(uip_buf[5]); write_char('\n');
+		print_string(" MGMT-VLAN: "); print_short(management_vlan); write_char('\n');
+#endif
+		if (lacp_ports && uip_buf[0] == 0x01 && uip_buf[1] == 0x80 && uip_buf[2] == 0xc2 // LACPDU?
+			&& uip_buf[3] == 0x00 && uip_buf[4] == 0x00 && uip_buf[5] == 0x02) {
+			lacp_in();
+		} else if (stp_enabled && uip_buf[0] == 0x01 && uip_buf[1] == 0x80 && uip_buf[2] == 0xc2 // STP packet?
+			&& uip_buf[3] == 0x00 && uip_buf[4] == 0x00 && uip_buf[5] == 0x00) {
+			stp_in();
+			if (uip_len)
+				tcpip_output();
+		} else if (igmpEnabled && uip_buf[0] == 0x01 && uip_buf[1] == 0x00 && uip_buf[2] == 0x5e // IPv4-MC packet?
+			&& uip_buf[3] == 0x00 && uip_buf[4] == 0x00 && uip_buf[5] == 0x16) {
+			igmp_packet_handler();
+			if (uip_len) {
+				tcpip_output();
+			}
+		} else if (ETH_IN->ether_type == HTONS(0x0806)) { // ARP
+			uip_arp_arpin();
+			if (uip_len) {
+			    tcpip_output();
+			}
+		} else if (ETH_IN->ether_type == HTONS(0x0800)) { // IPv4
+			if (!management_vlan || management_vlan == rx_packet_vlan) {
+				uip_arp_ipin();
+				uip_input();
+				if (uip_len) {
+					// Add ethernet frame
+					uip_arp_out();
+					tcpip_output();
+				}
+			}
+		} else {
+#ifdef RXTXDBG
+			print_string("Unknown RX on port "); print_byte(rx_headers[3] & 0xf); write_char('\n');
+#endif
+		}
+	}
+}
+
+
+void handle_tx(void)
+{
+	for(uint8_t i = 0; i < UIP_CONNS; i++) {
+		uip_periodic(i);
+		if(uip_len > 0) {
+#ifdef RXTXDBG
+			write_char('.'); print_short(i);
+#endif
+			uip_arp_out();
+			tcpip_output();
+		}
+	}
+	for(uint8_t i = 0; i < UIP_UDP_CONNS; i++) {
+		uip_udp_periodic(i);
+		if(uip_len > 0) {
+			uip_arp_out();
+			tcpip_output();
+		}
+	}
+}
+
+
+
+bool gpio_pin_test(uint8_t pin)
+{
+	reg_read_m(RTL837X_REG_GPIO_00_31_INPUT + (pin > 31 ? 4 : 0));
+	return sfr_data[3-((pin >> 3) & 3)] & (1 << (pin & 7));
+}
+
+
+void flash_default_config(void)
+{
+	__xdata uint32_t source = DEFAULT_CONFIG_START;
+	__xdata uint32_t dest = CONFIG_START;
+
+	flash_region.addr = CONFIG_START;
+	flash_sector_erase();
+
+	for (uint8_t i = 0; i < 8; i++) // 8 * 512 Byte = 4 kByte (1 sector)
+	{
+		flash_region.addr = source;
+		flash_region.len = FLASH_BUF_SIZE;
+		flash_read_bulk(flash_buf);
+		flash_region.addr = dest;
+		flash_region.len = FLASH_BUF_SIZE;
+		flash_write_bytes(flash_buf);
+		dest += FLASH_BUF_SIZE;
+		source += FLASH_BUF_SIZE;
+	}
+
+	print_string("Written default config to flash\n");
+}
+
+void handle_button(void)
+{
+	if (machine.reset_pin == GPIO_NA) {
+		return;
+	}
+
+	bool button_pressed = !gpio_pin_test(machine.reset_pin);
+	if (button_last != button_pressed)
+	{
+		print_string(button_pressed ? "Button pressed\n" : "Button released\n");
+		reg_read_m(RTL837X_REG_SEC_COUNTER);
+		uint8_t diff_sec_counter = sfr_data[3] - button_sec_counter_last;
+		button_last = button_pressed;
+		button_sec_counter_last = sfr_data[3];
+
+		if (!button_pressed)
+		{
+			if (diff_sec_counter > 10)
+			{
+				print_string(">10s button detected; reverting to default settings:\n");
+				flash_default_config();
+				print_string("Now resetting...\n");
+				reset_chip();
+			}
+			else if (diff_sec_counter > 3)
+			{
+				print_string(">3s button detected; resetting chip...\n");
+				reset_chip();
+			}
+			else
+			{
+				print_string("Short button press detected; no action.\n");
+				set_sys_led_state(SYS_LED_ON);
+			}
+		}
+		else
+		{
+			// Give the user feedback for button press
+			set_sys_led_state(SYS_LED_SLOW);
+		}
+	}
+}
+
+//
+// An idle function that sleeps for 1 tick and does all the house-keeping
+//
+void idle(void)
+{
+	reg_read(RTL837X_REG_NIC_RX_BUFF_DATA);
+	if (!SFR_DATA_U16)
+		PCON |= 1;
+	if (sec_counter >= SYS_TICK_HZ) {
+		sec_counter -= SYS_TICK_HZ;
+		reg_read_m(RTL837X_REG_SEC_COUNTER);
+		uint8_t v = sfr_data[3];
+#ifdef DEBUG
+		print_string("  Tick counter: "); print_long(ticks); write_char('\n');
+#endif
+		v++;
+		sfr_data[3] = v;
+		if (!v) {
+			v = sfr_data[2];
+			v++;
+			sfr_data[2] = v;
+			if (!v) {
+				v = sfr_data[1];
+				v++;
+				sfr_data[1] = v;
+				if (!v) {
+					v = sfr_data[0];
+					v++;
+					sfr_data[0] = v;
+				}
+			}
+		}
+		reg_write_m(RTL837X_REG_SEC_COUNTER);
+		reg_read_m(RTL837X_REG_SEC_COUNTER);
+
+		// Check for button presses once a second
+		handle_button();
+		// Age the ARP cache: uip_arp_timer() expects a 10 s cadence
+		if (++arp_age_secs >= 10) {
+			arp_age_secs = 0;
+			uip_arp_timer();
+		}
+
+#ifdef DEBUG
+		print_sfr_data();
+		write_char('\n');
+#endif
+	}
+
+	// Check for Link changes
+	reg_read_m(RTL837X_REG_LINKS_89);
+	__xdata uint8_t linkbits_p89 = sfr_data[3];
+
+	reg_read_m(RTL837X_REG_LINKS);
+	if (cmp_4(sfr_data, linkbits_last) || (linkbits_p89 != linkbits_last_p89)) {
+		print_string("\n<new link: ");
+		print_byte(linkbits_p89); print_byte(sfr_data[0]); print_byte(sfr_data[1]);
+		print_byte(sfr_data[2]); print_byte(sfr_data[3]);
+		print_string(", was ");
+		print_byte(linkbits_last_p89); print_byte(linkbits_last[0]); print_byte(linkbits_last[1]);
+		print_byte(linkbits_last[2]); print_byte(linkbits_last[3]);
+		print_string(">\n");
+		linkbits_last_p89 = linkbits_p89;
+		if (!machine_detected.isRTL8373 && machine.n_sfp != 2) {
+			uint8_t p5 = sfr_data[2] >> 4;
+			uint8_t p5_last = linkbits_last[2] >> 4;
+			cpy_4(linkbits_last, sfr_data);
+			// Handle link change of the RTL8221 PHY, adjust SDS mode, RTL8261BE always uses SDS_QXGMII
+			if (!machine.n_10g && p5_last != p5) {
+				if (p5 == 0x5)	// 2.5GBit Mode
+					sds_config(0, SDS_HISGMII);
+				else		// 1GBit and 100Mbit
+					sds_config(0, SDS_SGMII);
+			}
+			if (machine.n_10g)
+				sds_config(0, SDS_QXGMII);
+			if (machine.n_10g == 2)
+				sds_config(1, SDS_QXGMII);
+		} else {
+			cpy_4(linkbits_last, sfr_data);
+		}
+	}
+
+	// Check for changes with SFP modules
+	handle_sfp();
+	// LACP runs at 10 Hz while any port uses it
+	if (lacp_ports && (uint16_t)((uint16_t)ticks - lacp_last_tick) >= SYS_TICK_HZ / LACP_TICK_HZ) {
+		lacp_last_tick = (uint16_t)ticks;
+		lacp_tick();
+	}
+
+	// Check new Packets RX
+	handle_rx();
+	// Check UIP for packets to transmit
+	handle_tx();
+	// If STP protocol enabled, decrease STP timers to trigger actions
+	if (stp_enabled) {
+		if (!stp_clock) {
+			stp_clock = STP_TICK_DIVIDER;
+			stp_timers();
+		} else {
+			stp_clock--;
+		}
+	}
+	// Check whether a command is waiting in the cmd_buffer and execute
+	if (cmd_available) {
+		cmd_available = 0;
+		cmd_history_add((__xdata char *)cmd_buffer);
+		cli_use(CLI_CONSOLE);
+		cli_exec_line((__xdata char *)cmd_buffer);
+		print_cmd_prompt();
+	}
+}
+
+
+
+void reset_chip(void)
+{
+	REG_SET(RTL837X_REG_RESET, 1);
+	while(1);
+}
+
+
+void setup_external_irqs(void)
+{
+	REG_SET(0x5f84, 0x42);
+	REG_SET(0x5f34, 0x3ff);
+
+//	EX0 = 1;	// Enable external IRQ 0 (Link-change)
+	EX0 = 0;
+	IT0 = 1;	// External IRQ on falling edge
+
+	EX1 = 1;	// External IRQ 1 enable
+	EX2 = 1;	// External IRQ 2 enable: bit EIE.0
+	EX3 = 1;	// External IRQ 3 enable: bit EIE.1
+	PX3 = 1;	// Set EIP.1 = 1: External IRQ 3 set to high priority
+}
+
+
+/*
+ * Set dividers for a chosen CPU frequency
+ */
+void setup_clock(void)
+{
+	reg_read_m(RTL837X_REG_HW_CONF);
+	sfr_mask_data(0, 0x30, 0);
+#if CLOCK_DIV != 0
+	 // Divider in bits 4 & 5
+	sfr_mask_data(0, 0, CLOCK_DIV << 4);
+#endif
+	// Bit 8 is set in managed mode 125MHz to use fast SPI mode
+	sfr_mask_data(1, 0, 0x01);
+	reg_write_m(RTL837X_REG_HW_CONF);
+
+	// Enable serial interface, set bit 0
+	reg_read_m(RTL837X_PIN_MUX_1);
+	sfr_mask_data(0, 0x1, 0x1);
+	reg_write_m(RTL837X_PIN_MUX_1);
+}
+
+
+/*
+ * Write a register reg of multipule phys, using a mask to select them, in page page
+ * Data to be written is in v
+ */
+void phy_write_mask(uint16_t phy_mask, uint8_t dev_id, uint16_t reg, uint16_t v)
+{
+#ifdef REGDBG
+	print_string("P"); print_byte(phy_mask>>8); print_byte(phy_mask); print_byte(dev_id); write_char('.'); print_byte(reg>>8); print_byte(reg); write_char(':');
+	print_byte(v>>8); print_byte(v); write_char(' ');
+#endif
+	SFR_DATA_U16 = v;			    // SFR_A6, SFR_A7
+	SFR_SMI_PHYMASK = phy_mask;		// SFR_C5
+	SFR_SMI_REG_U16 = reg;			// SFR_C2, SFR_C3
+	SFR_SMI_DEV = (phy_mask >> 8) | dev_id  << 3 | 2; // SFR_C4: bit 2 can also be set for some option
+	SFR_EXEC_GO = SFR_EXEC_WRITE_SMI;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+}
+
+/*
+ * Write a register reg of phy, using a mask to select them, in page page
+ * Data to be written is in v
+ */
+void phy_write(uint8_t phy_id, uint8_t dev_id, uint16_t reg, uint16_t v)
+{
+	uint16_t phy_mask =  bit_mask[phy_id];
+#ifdef REGDBG
+	print_string("P"); print_byte(phy_mask>>8); print_byte(phy_mask); print_byte(dev_id); write_char('.'); print_byte(reg>>8); print_byte(reg); write_char(':');
+	print_byte(v>>8); print_byte(v); write_char(' ');
+#endif
+	SFR_DATA_U16 = v;			    // SFR_A6, SFR_A7
+	SFR_SMI_PHYMASK = phy_mask;		// SFR_C5
+	SFR_SMI_REG_U16 = reg;			// SFR_C2, SFR_C3
+	SFR_SMI_DEV = (phy_mask >> 8) | dev_id  << 3 | 2; // SFR_C4: bit 2 can also be set for some option
+	SFR_EXEC_GO = SFR_EXEC_WRITE_SMI;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+}
+
+
+/*
+ * Read a phy register via MDIO clause 45
+ * Input must be: phy_id < 64,  device_id < 32,  reg < 0x10000)
+ * The result is in SFR A6 and A7 (SFR_DATA_8, SFR_DATA_0)
+ */
+void phy_read(uint8_t phy_id, uint8_t dev_id, uint16_t reg)
+{
+#ifdef REGDBG
+	print_string("p"); print_byte(phy_id); print_byte(dev_id); write_char('.'); print_byte(reg>>8); print_byte(reg); write_char(':');
+#endif
+	SFR_SMI_REG_U16 = reg;		// c2, c2
+
+	SFR_SMI_PHY = phy_id;		// a5
+	SFR_SMI_DEV = dev_id << 3 | 2;	// c4
+
+	SFR_EXEC_GO = SFR_EXEC_READ_SMI;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+#ifdef REGDBG
+	print_byte(SFR_DATA_8); print_byte(SFR_DATA_0); write_char(' ');
+#endif
+}
+
+/*
+ * Modify a register reg of phy phy_id, in page page
+ * Set: bit mask of bits to set.
+ * Mask: bit mask of bits to clear.
+
+ * Note: We assume that the registers `SFR_SMI_REG_U16`, `SFR_SMI_PHY` and `SFR_SMI_DEV` 
+ * keep there value, and dont have to be rewritten everytime.
+ */
+void phy_modify(uint8_t phy_id, uint8_t dev_id, uint16_t reg, uint16_t mask, uint16_t set)
+{
+	uint8_t smi_phy = dev_id << 3 | 2;
+
+	// Read the data
+	SFR_SMI_REG_U16 = reg;		// c2, c2
+	SFR_SMI_PHY = phy_id;		// a5
+	SFR_SMI_DEV = smi_phy;		// c4
+	SFR_EXEC_GO = SFR_EXEC_READ_SMI;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+
+	// Modify the reed data.
+	// TODO: Check if we directly can modify SFR register directly.
+	uint16_t data = SFR_DATA_U16 & ~(mask);
+	data |= set;
+
+	uint16_t phy_mask = bit_mask[phy_id];
+
+	// Write it back
+	SFR_SMI_REG_U16 = reg;
+	SFR_DATA_U16 = data;
+	SFR_SMI_PHYMASK = phy_mask;		// SFR_C5
+	SFR_SMI_DEV = smi_phy | (phy_mask >> 8);
+	SFR_EXEC_GO = SFR_EXEC_WRITE_SMI;
+	do {
+	} while (SFR_EXEC_STATUS != 0);
+}
+
+
+void set_sys_led_state(uint8_t state)
+{
+	reg_read_m(RTL837X_REG_LED_MODE);
+	sfr_mask_data(2, 0x03, state);
+	reg_write_m(RTL837X_REG_LED_MODE);
+}
+
+
+
+
+/* Set up serial port 0 using Timer 1 as baudrate generator.
+ * For x Bd these settings are needed, see table below.
+ * NOTE: Settings only valid for F_SYS = 125 MHz!
+ * |   Wanted |       | TMR | F_SYS |      |   Actual |        |
+ * | baudrate | SMOD0 | DIV |   DIV |  TH1 | baudrate |  Error |
+ * | -------- | ----- | --- | ----- | ---- | -------- | ------ |
+ * |     1200 |   0   |  12 |   255 | 0x01 |   1276.6 |  6.00% |
+ * |     2400 |   0   |  12 |   136 | 0x78 |   2393.5 | −0.27% |
+ * |     4800 |   0   |   4 |   203 | 0x35 |   4810.7 |  0.22% |
+ * |     9600 |   1   |   4 |   203 | 0x35 |   9621.3 |  0.22% |
+ * |    14400 |   1   |   4 |   136 | 0x78 |  14361.2 | −0.27% |
+ * |    19200 |   1   |   4 |   102 | 0x9a |  19148.3 | −0.27% |
+ * |    38400 |   1   |   4 |    51 | 0xcd |  38296.6 | −0.27% |
+ * |    57600 |   1   |   4 |    34 | 0xde |  57444.9 | −0.27% |
+ * |   115200 |   1   |   4 |    17 | 0xef | 114889.7 | −0.27% |
+ */
+#if CLOCK_HZ != 125000000
+#warning "SERIAL 0 baudrate setting may only valid for F_CPU = 125 MHz!"
+#endif
+void setup_serial_timer1(void)
+{
+	// Timer 1: Mode 2: automatic reload
+	TMOD &= 0x0F;
+	TMOD |= 0x20; // Timer1: Mode2: Timer, 8-bit with auto-reload
+	CKCON |= 0x10; // Timer1 clock divider: F_SYS / 4: T2M = 1, Timer 1 uses clk/4
+
+	PCON |= 0x80; // SMOD0 = 1; Double the Baud Rate, don't divide Timer 1 Overflag signal.
+
+	SCON  = 0x50;  // Mode = 1: ASYNC 8N1 with Timer 2 as baud-rate generator, REN_0 Receive enable
+
+	/* The TH1 register contain the reload value, timer1 when T1 overflows to 0x100.
+	 * NOTE: compiler computs the wrong value. 0xF0 is calculated but 0xEF is the right value for 115200.
+	 * Also https://www.keil.com/products/c51/baudrate.asp confirms this.
+	 * Added 32 before div by 64 to make sure rounding is correct so that the results are right.
+	 *
+	 * TH1 = 0x100 - (2^SMOD0 * F_SYS) / ( TMR1_DIV / BAUDRATE * 32)
+	 */
+	TH1 = (0x100 - (((CLOCK_HZ / SERIAL_BAUD_RATE) + 32) / (4 * 16))) & 0xff;
+
+	TCON |= 0x40;	// Start timer 1
+
+	ET1 = 0; // Timer1 Interrupt is NOT wanted!
+	TI = 0; // Clear TI-interrupt flag
+	RI = 0; // Clear RI-interrupt flag
+
+	tx_buf_empty = 1; // Set tx `serial buffer is empty`-software flag.
+
+	ES = 1; // Enable serial IRQ
+}
+
+
+void check_and_flash_update_image(void)
+{
+	flash_read_jedecid(); // This initializes also __xdata flash_size variable
+
+	print_string(get_flash_size_str()); print_string(" flash size detected. (1 MB is needed for image updating)\n");
+	if (flash_size < FIRMWARE_UPLOAD_START*2) {
+		print_string("Flash too small for updating; skipping update check\n");
+		return;
+	}
+
+	print_string("Checking for update image in flash... ");
+	// Check if an update image is in flash
+	flash_region.addr = FIRMWARE_UPLOAD_START;
+	flash_region.len = 0x100;
+	flash_read_bulk(flash_buf);
+	if (flash_buf[0] == 0x00 && flash_buf[1] == 0x40)
+	{
+		// Yes, flash the new image to the start of flash and reset
+		__xdata uint32_t dest = 0x0;
+		__xdata uint32_t source = FIRMWARE_UPLOAD_START;
+		__xdata uint16_t i = 0;
+		__xdata uint16_t j = 0;
+		__xdata uint8_t * __xdata bptr;
+		print_string("found update image!\nChecking integrity");
+		flash_init(0); // Re-initialize flash for non-DIO operation, otherwise flashing will fail
+		set_sys_led_state(SYS_LED_FAST);
+		crc_value = 0x0000;
+		for (i = 0; i < 1024; i++) {
+			flash_region.addr = source;
+			flash_region.len = FLASH_BUF_SIZE;
+			flash_read_bulk(flash_buf);
+			bptr = flash_buf;
+			for (j = 0; j < FLASH_BUF_SIZE; j++) {
+				crc16_bank1(bptr++);
+			}
+			source += FLASH_BUF_SIZE;
+			if (i%16 == 0) write_char('.');
+		}
+		if (crc_value == 0xb001) {
+			print_string("Checksum OK.\nUpdate in progress, moving firmware to start of flash");
+			source = FIRMWARE_UPLOAD_START;
+			// Don't copy the config area at the end of flash
+			for (i = 0; i < CONFIG_START/FLASH_BUF_SIZE; i++) {
+				flash_region.addr = source;
+				flash_region.len = FLASH_BUF_SIZE;
+				flash_read_bulk(flash_buf);
+				if (i%8 == 0) {
+					flash_region.addr = dest;
+					flash_sector_erase();
+					if (i%16 == 0) write_char('.');
+				}
+				flash_region.addr = dest;
+				flash_region.len = FLASH_BUF_SIZE;
+				flash_write_bytes(flash_buf);
+				dest += FLASH_BUF_SIZE;
+				source += FLASH_BUF_SIZE;
+			}
+			print_string("Done.\nDeleting uploaded flash image");
+			dest = FIRMWARE_UPLOAD_START;
+			for (register uint8_t i=0; i < 128; i++) // TODO: Erasing the entire 512kByte upload area is probably not necessary
+			{
+				flash_region.addr = dest;
+				flash_sector_erase();
+				dest += 0x1000;
+				if (i%4 == 0) write_char('.');
+			}
+			print_string("Done.\nResetting now");
+			delay(200);
+			reset_chip();
+		}
+		print_string("Checksum incorrect, please upload the image again\n");
+		print_string("Erasing bad uploaded flash image\n");
+		dest = FIRMWARE_UPLOAD_START;
+		for (register uint8_t i=0; i < 128; i++) {
+			flash_region.addr = dest;
+			flash_sector_erase();
+			dest += 0x1000;
+		}
+	}
+	else
+	{
+		print_string("no update image found.\n");
+	}
+}
+
+
+
+void main(void)
+{
+	ticks = 0;
+	stp_clock = STP_TICK_DIVIDER;
+	dhcp_state.state = DHCP_OFF;
+	sbuf_ptr = 0;
+
+	CKCON = 0;	// Initial Clock configuration
+	SFR_97 = 0;	// HADDR?
+
+	// Set in managed mode:
+	SFR_b9 = 0x00;
+	SFR_ba = 0x80;
+
+	// Disable all interrupts (global and individually) by setting IE register (SFR A8) to 0
+	IE = 0;
+	EIE = 0;  // SFR e8: EIE. Disable all external IRQs
+
+	idle_ready = 0;
+	// HW setup, serial, timer, external IRQs
+	setup_clock();
+	setup_timer2();
+	setup_serial_timer1();
+	setup_external_irqs();
+
+	EA = 1; // Enable global interrupt
+
+	// Flash controller should be initialized before any code in other banks is being fetched
+	// See this issue: https://github.com/logicog/RTLPlayground/issues/70
+	print_string("\nInitializing Flash controller\n");
+	flash_init(1);
+
+	// Set default for SFP pins so we can start up a module already inserted
+	sfp_pins_last = 0x33; // signal LOS and no module inserted (for both slots, even if only 1 present)
+	// We have not detected any link
+	linkbits_last[0] = linkbits_last[1] = linkbits_last[2] = linkbits_last[3] = linkbits_last_p89 = 0;
+
+	button_last = 0;
+	button_sec_counter_last = 0;
+
+	machine_detected.isRTL8373 = 0;
+	machine_detected.isN = 0;
+	print_string("Detecting CPU: RTL837");
+	reg_read_m(RTL837X_REG_CHIP_ID);
+	if (sfr_data[1] == 0x73) { // Register was 0x8373xx00
+		machine_detected.isRTL8373 = 1;
+		write_char('3');
+	} else {
+		write_char('2');
+	}
+	// Detect non-N/N chip, 0xxxxx70xx
+	if (sfr_data[2] == 0x70) {
+		machine_detected.isN = 1;
+		write_char('N');
+	}
+	write_char('\n');
+	if (machine.isRTL8373 != machine_detected.isRTL8373) {
+		print_string("INCORRECT MACHINE!");
+	}
+	if (machine_detected.isRTL8373) {
+		rtl8224_enable();  // Power on the RTL8224
+	}
+
+	// Print SW version
+	show_version();
+
+	// Set AUTONEG for SFP ports
+	sfp_speed[0] = sfp_speed[1] = SFP_SPEED_AUTO;
+	// Reset NIC
+	reg_bit_set(RTL837X_REG_RESET, RESET_NIC_BIT);
+	do {
+		reg_read(RTL837X_REG_RESET);
+	} while (SFR_DATA_0 & (1 << RESET_NIC_BIT));
+	print_string("NIC reset\n");
+
+	uip_ipaddr(&uip_hostaddr, ownIP[0], ownIP[1], ownIP[2], ownIP[3]);
+	uip_ipaddr(&uip_draddr, gatewayIP[0], gatewayIP[1], gatewayIP[2], gatewayIP[3]);
+	uip_ipaddr(&uip_netmask, netmask[0], netmask[1], netmask[2], netmask[3]);
+	uip_ethaddr.addr[0] = 0xff;
+	if (machine.mac_flash_offset) {
+		flash_region.addr = machine.mac_flash_offset;
+		flash_region.len = FLASH_BUF_SIZE;
+		flash_read_bulk(flash_buf);
+		// accept only a real unicast, globally-administered address (reject blank/LAA/multicast/all-zero OUI)
+		if (flash_buf[0] != 0xff && !(flash_buf[0] & 0x03) && (flash_buf[0] | flash_buf[1] | flash_buf[2])) {
+			uip_ethaddr.addr[0] = flash_buf[0]; uip_ethaddr.addr[1] = flash_buf[1];
+			uip_ethaddr.addr[2] = flash_buf[2]; uip_ethaddr.addr[3] = flash_buf[3];
+			uip_ethaddr.addr[4] = flash_buf[4]; uip_ethaddr.addr[5] = flash_buf[5];
+		}
+	}
+	if (uip_ethaddr.addr[0] == 0xff) {  // no valid flash MAC -> generate locally-administered
+		reg_read_m(RTL837X_REG_CHIP_UUID);
+		uip_ethaddr.addr[0] = 0x06;  // LAA prefix
+		uip_ethaddr.addr[3] = sfr_data[0] ^ sfr_data[3];
+		uip_ethaddr.addr[4] = sfr_data[1] ^ sfr_data[3];
+		uip_ethaddr.addr[5] = sfr_data[2] ^ sfr_data[3];
+		reg_read_m(RTL837X_REG_CHIP_LOT_NO);
+		uip_ethaddr.addr[1] = sfr_data[0] ^ sfr_data[2];
+		uip_ethaddr.addr[2] = sfr_data[1] ^ sfr_data[3];
+	}
+	print_string("Setting MAC to: ");
+	print_byte(uip_ethaddr.addr[0]); write_char(':'); print_byte(uip_ethaddr.addr[1]); write_char(':');
+	print_byte(uip_ethaddr.addr[2]); write_char(':'); print_byte(uip_ethaddr.addr[3]); write_char(':');
+	print_byte(uip_ethaddr.addr[4]); write_char(':'); print_byte(uip_ethaddr.addr[5]); write_char('\n');
+
+	REG_SET(RTL837X_PIN_MUX_2, 0x0); // Disable pins for ACL
+	init_smi();
+
+	rtl8373_revision();
+
+	leds_setup();
+	machine_custom_init();
+
+	leds_dump();
+
+	set_sys_led_state(SYS_LED_SLOW);
+
+	if (machine_detected.isRTL8373)
+		rtl8373_init();
+	else
+		rtl8372_init();
+	delay(1000);
+
+	check_and_flash_update_image();
+
+	syslog_init();
+
+#ifdef DEBUG
+	// This register seems to work on the RTL8373 only if also the SDS
+	// Is correctly configured. Therefore, we can test it, here...
+	// Reset seconds counter
+	print_string("\nTIMER-TEST: \n");
+	REG_SET(RTL837X_REG_SEC_COUNTER, 0x0);
+	delay(100);
+	print_reg(RTL837X_REG_SEC_COUNTER); write_char(' ');
+	REG_SET(RTL837X_REG_SEC_COUNTER, 0x1);
+	delay(100);
+	print_reg(RTL837X_REG_SEC_COUNTER);
+	REG_SET(RTL837X_REG_SEC_COUNTER, 0x2); write_char(' ');
+	delay(100);
+	print_reg(RTL837X_REG_SEC_COUNTER);
+	REG_SET(RTL837X_REG_SEC_COUNTER, 0x3); write_char(' ');
+	print_reg(RTL837X_REG_SEC_COUNTER);
+#endif
+	stp_enabled = 0;
+	stp_defaults();		/* 802.1D/w default config before any "stp ..." replay */
+	nic_setup();
+	vlan_setup();
+	sw_init();	/* state model mirrors vlan_setup(): VLAN 1, all ports access */
+	port_l2_setup();
+	igmp_setup();
+	bandwidth_setup();
+	uip_init();
+	uip_arp_init();
+	telnetd_init();
+	cli_init();
+
+	management_vlan = 1; // Default management VLAN is 1
+
+	setup_i2c();
+	setup_sfp_gpio();
+	print_string(greeting);
+
+	print_string("\nClock register: ");
+	print_reg(0x6040);
+	print_string("\nRegister 0x7b20/RTL837X_REG_SDS_MODES: ");
+	print_reg(0x7b20);
+
+	print_string("\nVerifying PHY settings:\n");
+//	p031f.a610:2058 p041f.a610:2058  p051f.a610:2058  r4f3c:00000000 p061f.a610:2058 p071f.a610:2058 
+	port_stats_print();
+
+	early_boot_handle_button();
+
+	execute_config();
+	// After the config so the entry lands in the final management VLAN
+	port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);
+	/* After the config: a name from it wins, otherwise derive one. */
+	set_hostname_default();
+	print_cmd_prompt();
+	idle_ready = 1;
+
+	set_sys_led_state(SYS_LED_ON);
+
+	cmd_editor_init();
+	tftp_init();	/* last: nothing after this may leave it stale */
+
+	while (1) {
+		cmd_edit();
+		idle(); // Enter Idle mode until interrupt occurs
+	}
+}

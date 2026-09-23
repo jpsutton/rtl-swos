@@ -1,6 +1,6 @@
 #include "machine.h"
 #include "syslog.h"
-#include "cmd_parser.h"
+#include "console.h"
 #include "uip/uip.h"
 #include "rtl837x_common.h"
 

@@ -262,11 +262,12 @@ void phy_set_speed(void) __banked
 {
 	uint16_t v;
 
-	print_string("Setting port "); print_phys_port(phy_settings.port);
 	if (machine.n_10g && phy_settings.port == 3)
 		phy_settings.is10g_port = 1;
 	if (machine.n_10g == 2 && phy_settings.port == 8)
 		phy_settings.is10g_port = 1;
+#ifdef DEBUG
+	print_string("Setting port "); print_phys_port(phy_settings.port);
 	if (phy_settings.speed == PHY_OFF) {
 		print_string(" to disabled");
 	} else {
@@ -303,6 +304,7 @@ void phy_set_speed(void) __banked
 		}
 	}
 	write_char('\n');
+#endif
 
 	phy_read(phy_settings.port, PHY_MMD31, 0xa610);
 	v = SFR_DATA_U16;
@@ -381,190 +383,6 @@ void phy_set_speed(void) __banked
 }
 
 
-void phy_set_duplex(void) __banked
-{
-	uint16_t v;
-
-	print_string("Setting port "); print_phys_port(phy_settings.port);
-	if (phy_settings.duplex)
-		print_string(" to full duplex");
-	else
-		print_string(" to half duplex");
-	write_char('\n');
-
-	phy_read(phy_settings.port, PHY_MMD_AN, PHY_ANEG_CTRL);
-	v = SFR_DATA_U16;	
-	if (!(v & 0x1000)) { // AN disabled, we are in forced mode
-		phy_read(phy_settings.port, PHY_MMD31, PHY_MMD31_FEDCR);
-		v = SFR_DATA_U16;
-		if (phy_settings.duplex)
-			v |= 0x0100;
-		else
-			v &= 0xfeff;
-		phy_write(phy_settings.port, PHY_MMD31, PHY_MMD31_FEDCR, v);
-		return;
-	}
-	// Disable AN
-	phy_write(phy_settings.port, PHY_MMD_AN, PHY_ANEG_CTRL, 0x2000);
-	phy_read(phy_settings.port, PHY_MMD_AN, PHY_ANEG_ADV);
-	v = SFR_DATA_U16;
-	if (v & 0x0060) {
-		if (phy_settings.duplex)
-			phy_modify(phy_settings.port, PHY_MMD_AN, PHY_ANEG_ADV, 0xffbf, 0x0040);
-		else
-			phy_modify(phy_settings.port, PHY_MMD_AN, PHY_ANEG_ADV, 0xffdf, 0x0020);
-	}
-	if (v & 0x0180) {
-		if (phy_settings.duplex)
-			phy_modify(phy_settings.port, PHY_MMD_AN, PHY_ANEG_ADV, 0xfeff, 0x0100);
-		else
-			phy_modify(phy_settings.port, PHY_MMD_AN, PHY_ANEG_ADV, 0xff7f, 0x0080);
-	}
-	// Restart AN
-	phy_write(phy_settings.port, PHY_MMD_AN, PHY_ANEG_CTRL, 0x3000);
-}
-
-
-void phy_show(uint8_t port) __banked
-{
-	uint16_t v;
-
-	// The actual PHY speed is in a Realtek propriatary register
-	print_string("\nLink speed: ");
-	phy_read(port, PHY_MMD31, PHY_MMD31_PHYSR);
-	v = SFR_DATA_U16;
-	switch(((v & 0x0600) >> 7) | ((v & 0x0030) >> 4)) {
-	case 0:
-		print_string("10M");
-		break;
-	case 1:
-		print_string("100M");
-		break;
-	case 2:
-		print_string("1000M");
-		break;
-	case 3:
-		print_string("500M");
-		break;
-	case 4:
-		print_string("10G");
-		break;
-	case 5:
-		print_string("2500M");
-		break;
-	case 6:
-		print_string("5G");
-		break;
-	default:
-		print_string("Down");
-	}
-
-	if ( (((v & 0x0600) >> 7) | ((v & 0x0030) >> 4)) <= 6) { // Link is up
-		if (v & 0x8)
-			print_string(" full duplex");
-		else
-			print_string(" half duplex");
-	}
-
-	phy_read(port,  PHY_MMD_AN, PHY_ANEG_CTRL);
-	v = SFR_DATA_U16;
-	if (!(v & 0x1000)) { // AN disabled, we are in forced mode
-		phy_read(port, PHY_MMD_PMAPMD, 0);
-		v = SFR_DATA_U16;
-		print_string("\nForced speed: "); print_short(v); write_char('\n');
-		uint8_t s1 = 0x00;
-		if ((uint8_t)v & 0x40)
-			s1 = 0x2;
-		if (v & 0x2000)
-			s1 |= 0x1;
-		uint8_t s2 = ((uint8_t)v >> 2) & 0xf;
-		switch(s1 & 0x3) {
-		case 0:
-			print_string("10M\n");
-			break;
-		case 1:
-			print_string("100M\n");
-			break;
-		case 2:
-			print_string("1000M\n");
-			break;
-		case 3:
-			switch (s2) {
-			case 0:
-				print_string("10G\n");
-				break;
-			case 6:
-				print_string("2500M\n");
-				break;
-			case 7:
-				print_string("5G\n");
-				break;
-			default:
-				print_string("Unknown\n");
-			}
-			break;
-		}
-		phy_read(port, PHY_MMD31, PHY_MMD31_FEDCR);
-		v = SFR_DATA_U16;
-		print_string("Duplex: "); print_short(v); print_string(" enabled: ");
-		if (v & 0x100)
-			print_string("yes");
-		else
-			print_string("no");
-		write_char('\n');
-
-	} else {
-		print_string("\nAN enabled, advertising:");
-		phy_read(port, PHY_MMD_AN, PHY_ANEG_ADV);
-		v = SFR_DATA_U16;
-		if (v & 0x0020)
-			print_string(" 10Base-Half");
-		if (v & 0x0040)
-			print_string(" 10Base-Full");
-		if (v & 0x0080)
-			print_string(" 100Base-Half");
-		if (v & 0x0100)
-			print_string(" 100Base-Full");
-		phy_read(port, PHY_MMD31, PHY_MMD31_GBCR);
-		v = SFR_DATA_U16;
-		if (v & 0x0200)
-			print_string(" 1000Base-Full");
-		phy_read(port, PHY_MMD_AN, PHY_ANEG_MGBASE_CTRL);
-		v = SFR_DATA_U16;
-		if (v & 0x0080)
-			print_string(" 2500BaseN-Full");
-		if (v & 0x0100)
-			print_string(" 5000BaseN-Full");
-		if (v & 0x1000)
-			print_string(" 10GBaseN-Full");
-	}
-	phy_read(port, PHY_MMD_AN, PHY_ANEG_LP_ABILITY);
-	v = SFR_DATA_U16;
-	print_string("\nLink Partner advertises:");
-	if (v & 0x0020)
-		print_string(" 10Base-Half");
-	if (v & 0x0040)
-		print_string(" 10Base-Full");
-	if (v & 0x0080)
-		print_string(" 100Base-Half");
-	if (v & 0x0100)
-		print_string(" 100Base-Full");
-	phy_read(port, PHY_MMD31, PHY_MMD31_GANLPAR);
-	v = SFR_DATA_U16;
-	if (v & 0x0400)
-		print_string(" 1000Base-Half");
-	if (v & 0x0800)
-		print_string(" 1000Base-Full");
-	phy_read(port, PHY_MMD_AN, PHY_ANEG_MGBASE_ADV);
-	v = SFR_DATA_U16;
-	if (v & 0x0020)
-		print_string(" 2500Base-Full");
-	if (v & 0x0040)
-		print_string(" 5000Base-Full");
-	if (v & 0x0800)
-		print_string(" 10GBase-Full");
-	write_char('\n');
-}
 
 
 void phy_reset(uint8_t port) __banked

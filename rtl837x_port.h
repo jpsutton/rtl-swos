@@ -49,6 +49,17 @@ extern __xdata struct vlan_settings vlan_settings;
 uint8_t port_l2_forget(void) __banked;
 void port_l2_learned(void) __banked;
 void port_stats_print(void) __banked;
+/* Link speed code of a logical port, as the MAC reports it */
+#define PORT_LINK_10M	0
+#define PORT_LINK_100M	1
+#define PORT_LINK_1G	2
+#define PORT_LINK_10G	4
+#define PORT_LINK_2G5	5
+#define PORT_LINK_5G	6
+#define PORT_LINK_DOWN	99
+uint8_t port_link_code(uint8_t port) __banked;
+/* c[0] tx good, c[1] tx errors, c[2] rx good, c[3] rx errors */
+void port_counters_get(uint8_t port, __xdata uint32_t * __xdata c) __banked;
 int8_t vlan_get(uint16_t vlan) __banked;
 __xdata uint16_t vlan_name(uint16_t vlan) __banked;
 void vlan_name_remove(uint16_t vlan) __banked;
@@ -59,7 +70,6 @@ void port_l2mc_set(uint8_t mac_last, __xdata uint16_t vid, __xdata uint16_t pmas
 void port_l2_forget_port(uint8_t port) __banked;
 void vlan_create(void) __banked;
 void vlan_delete(uint16_t vlan) __banked;
-void vlan_dump(void) __banked;
 void port_mirror_set(uint8_t port, __xdata uint16_t rx_pmask, __xdata uint16_t tx_pmask) __banked;
 void port_mirror_del(void) __banked;
 bool port_ingress_filter(__xdata uint8_t port, __xdata vlan_ingress_mode_t type) __banked;
@@ -69,15 +79,11 @@ uint16_t port_lag_members_get(uint8_t lag) __banked;
 uint8_t port_lag_of(uint8_t port) __banked;
 void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banked;
 void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash) __banked;
+uint8_t port_lag_hash_get(uint8_t lag) __banked;
 void port_eee_enable_all(__xdata uint8_t speed) __banked;
-void port_eee_disable_all(void) __banked;
-void port_eee_status_all(void) __banked;
 void port_eee_enable(__xdata uint8_t port, __xdata uint8_t speed) __banked;
 void port_eee_disable(uint8_t port) __banked;
-void port_eee_status(uint8_t port) __banked;
-void print_port_ingress_filter_mode(vlan_ingress_mode_t mode) __banked;
 bool port_ingress_vlan_filter_set(uint8_t port, __xdata bool enabled) __banked;
-bool port_ingress_vlan_filter_get(uint8_t port) __banked;
 vlan_ingress_mode_t port_ingress_filter_get(__xdata uint8_t port) __banked;
 void port_isolate(uint8_t port, __xdata uint16_t pmask) __banked;
 uint16_t port_isolation_get(uint8_t port) __banked;

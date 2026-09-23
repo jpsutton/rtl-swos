@@ -40,10 +40,12 @@ static void wait_table_ready(void)
 
 void port_mirror_set(uint8_t port, __xdata uint16_t rx_pmask, __xdata uint16_t tx_pmask) __banked
 {
+#ifdef DEBUG
 	print_string("\nport_mirror_set called \n");
 	print_string("Mirroring port: "); print_byte(port); print_string(" with rx-mask: ");
 	print_short(rx_pmask); print_string(", tx mask: "); print_short(tx_pmask);
 	write_char('\n');
+#endif
 
 	REG_WRITE(RTL837x_MIRROR_CONF, rx_pmask >> 8, rx_pmask, tx_pmask >> 8, tx_pmask);
 	REG_WRITE(RTL837x_MIRROR_CTRL, 0, 0, 0, (port << 1) | 0x1);
@@ -52,7 +54,9 @@ void port_mirror_set(uint8_t port, __xdata uint16_t rx_pmask, __xdata uint16_t t
 
 void port_mirror_del(void) __banked
 {
+#ifdef DEBUG
 	print_string("\nport_mirror_del called \n");
+#endif
 	REG_SET(RTL837x_MIRROR_CTRL, 0);
 }
 
@@ -112,7 +116,6 @@ void port_pvid_set(uint8_t port, __xdata uint16_t pvid) __banked
 {
 	uint8_t lag = port_lag_of(port);
 
-	print_string("\nport_pvid_set called \n");
 	if (lag == PORT_LAG_NONE) {
 		port_pvid_write(port, pvid);
 		return;
@@ -141,7 +144,6 @@ void vlan_delete(uint16_t vlan) __banked
 	if (!vlan || vlan >= 0xfff)
 		return;
 
-	print_string("\nvlan_delete called \n"); print_short(vlan);
 	vlan_name_remove(vlan);
 	REG_WRITE(RTL837x_TBL_DATA_IN_A, 0, 0, 0, 0);
 	REG_WRITE(RTL837X_TBL_CTRL, vlan >> 8, vlan, TBL_VLAN, TBL_WRITE | TBL_EXECUTE);
@@ -232,10 +234,6 @@ void vlan_create(void) __banked
 	vlan_settings.members |= 0x0200; // Set 10th bit
 	vlan_settings.tagged |= 0x0200;
 
-	print_string("\nvlan_create called\nvlan: "); print_short(vlan_settings.vlan);
-	print_string(", members: "); print_short(vlan_settings.members);
-	print_string(", tagged: "); print_short(vlan_settings.tagged); write_char('\n');
-
 	uint16_t a = (~vlan_settings.members) ^ vlan_settings.tagged ^ vlan_settings.members;
 
 	// On RTL8372, port-bits 0-2 must be 0, although they are not members
@@ -250,7 +248,6 @@ void vlan_create(void) __banked
 
 	wait_table_ready();
 
-	print_string("vlan_create done \n");
 }
 
 
@@ -375,12 +372,28 @@ uint8_t port_l2_forget(void) __banked
 }
 
 
+/* decimal, right-aligned in 5 columns */
+static void l2_pad_dec(__xdata uint16_t v)
+{
+	static __xdata uint8_t n;
+	static __xdata uint16_t t;
+
+	n = 1;
+	for (t = v; t >= 10; t /= 10)
+		n++;
+	while (n++ < 5)
+		write_char(' ');
+	itoa_short(v);
+}
+
+
 void port_l2_learned(void) __banked
 {
 	// Whait for any table action to be finished
 	wait_table_ready();
 
-	print_string("\n\tMAC\t\tVLAN\ttype\tport\n");
+	print_string(" VLAN  MAC Address     Type     Port\n"
+		     " ----  --------------  -------  ------\n");
 	__xdata uint16_t entry = 0x0000;
 	__xdata uint16_t first_entry = 0xffff; // Table does not have that many entries
 
@@ -406,38 +419,41 @@ void port_l2_learned(void) __banked
 		// MAC
 		reg_read_m(RTL837x_L2_DATA_OUT_B);
 		if ((sfr_data[0] & 0x20)) {	// Check entry is valid
-			print_byte(sfr_data[2]); write_char(':');
-			print_byte(sfr_data[3]); write_char(':');
+			static __xdata uint8_t mac01[2];
+			static __xdata uint16_t vid;
+			mac01[0] = sfr_data[2];
+			mac01[1] = sfr_data[3];
 			port = (sfr_data[0] >> 6) & 0x3;
+			vid = (((uint16_t)(sfr_data[0] & 0x0f)) << 8) | sfr_data[1];
+			l2_pad_dec(vid);
+			print_string("  ");
+			print_byte(mac01[0]); print_byte(mac01[1]); write_char('.');
 			reg_read_m(RTL837x_L2_DATA_OUT_A);
-			print_byte(sfr_data[0]); write_char(':');
-			print_byte(sfr_data[1]); write_char(':');
-			print_byte(sfr_data[2]); write_char(':');
-			print_byte(sfr_data[3]); write_char('\t');
-
-			// VLAN
-			reg_read_m(RTL837x_L2_DATA_OUT_B);
-			print_short( (((uint16_t) (sfr_data[0] & 0x0f)) << 8) | sfr_data[1]); // VLAN
+			print_byte(sfr_data[0]); print_byte(sfr_data[1]); write_char('.');
+			print_byte(sfr_data[2]); print_byte(sfr_data[3]);
 
 			// type
 			reg_read_m(RTL837x_L2_DATA_OUT_C);
 			if (sfr_data[1] & 0x1)
-				print_string("\tstatic\t");
+				print_string("  static   ");
 			else
-				print_string("\tlearned\t");
+				print_string("  dynamic  ");
 
 			port |= (sfr_data[3] & 0x3) << 2;
 			lag = port_lag_of(port);
-			if (lag == PORT_LAG_NONE) {
+			if (port == CPU_PORT) {
+				print_string("CPU");
+			} else if (lag == PORT_LAG_NONE) {
+				print_string("Eth1/");
 				print_phys_port(port);
 			} else {
-				print_string("LAG");
+				print_string("Po");
 				itoa(lag + 1);
 			}
+			write_char('\n');
 		}
 
 		entry++;
-		print_string("\n");
 	}
 }
 
@@ -487,6 +503,49 @@ void port_l2_setup(void) __banked
 }
 
 
+uint8_t port_link_code(uint8_t port) __banked
+{
+	static __xdata uint8_t i, b;
+
+	i = port;
+	reg_read_m(RTL837X_REG_LINKS_STS);
+	if (!((sfr_data[(i / 8) + 1] >> (i % 8)) & 1))
+		return PORT_LINK_DOWN;
+	if (i < 8)
+		reg_read_m(RTL837X_REG_LINKS);
+	else
+		reg_read_m(RTL837X_REG_LINKS_89);
+	b = sfr_data[3 - ((i & 7) >> 1)];
+	return (i & 1) ? b >> 4 : b & 0xf;
+}
+
+
+static uint32_t sfr_u32(void)
+{
+	return ((uint32_t)sfr_data[0] << 24) | ((uint32_t)sfr_data[1] << 16)
+	       | ((uint16_t)sfr_data[2] << 8) | sfr_data[3];
+}
+
+
+void port_counters_get(uint8_t port, __xdata uint32_t * __xdata c) __banked
+{
+	static __xdata uint8_t p;
+
+	p = port;
+	STAT_GET(STAT_COUNTER_TX_PKTS, p);
+	reg_read_m(RTL837X_STAT_V_LOW);
+	c[0] = sfr_u32();
+	STAT_GET(STAT_COUNTER_ERR_PKTS, p);
+	reg_read_m(RTL837X_STAT_V_LOW);
+	c[1] = sfr_u32();
+	reg_read_m(RTL837X_STAT_V_HIGH);
+	c[3] = sfr_u32();
+	STAT_GET(STAT_COUNTER_RX_PKTS, p);
+	reg_read_m(RTL837X_STAT_V_LOW);
+	c[2] = sfr_u32();
+}
+
+
 void port_stats_print(void) __banked
 {
 	print_string("\nPort\tState\tLink\tTxGood\t\tTxBad\t\tRxGood\t\tRxBad\n");
@@ -507,24 +566,7 @@ void port_stats_print(void) __banked
 			}
 		}
 
-		uint8_t b = 0;
-
-		// Determine link state
-		reg_read_m(RTL837X_REG_LINKS_STS);
-		if(!((sfr_data[(i / 8) + 1] >> ( i % 8  ) & 1)))
-		{
-			b = 99;
-		}
-		else
-		{
-			if (i < 8)
-				reg_read_m(RTL837X_REG_LINKS);
-			else
-				reg_read_m(RTL837X_REG_LINKS_89);
-
-			b = sfr_data[3 - ((i & 7) >> 1)];	
-			b = (i & 1) ? b >> 4 : b & 0xf;
-		}
+		uint8_t b = port_link_code(i);
 
 		switch (b) {
 		case 0:
@@ -664,90 +706,6 @@ void port_eee_disable(uint8_t port) __banked
 }
 
 
-void port_eee_status(uint8_t port) __banked
-{
-	print_string("Port: "); print_phys_port(port);
-	print_string(": ");
-	if (machine.is_sfp[port]) {
-		print_string("SFP\n");
-		return;
-	}
-
-	uint16_t v;
-	print_string("Advertising: ");
-
-	if (machine.n_10g) {
-		phy_read(port, PHY_MMD_AN, PHY_EEE_ADV);
-		v = SFR_DATA_U16;
-		if (v & PHY_EEE_BIT_10G)
-			print_string(" 10G");
-		else
-			print_string("    ");
-	}
-	phy_read(port, PHY_MMD_AN, PHY_EEE_ADV2);
-	v = SFR_DATA_U16;
-	if (machine.n_10g) {
-		if (v & PHY_EEE_BIT_5G)
-			print_string(" 5G");
-		else
-			print_string("   ");
-	}
-	v = SFR_DATA_U16;
-	if (v & PHY_EEE_BIT_2G5)
-		print_string(" 2.5G");
-	else
-		print_string("     ");
-	phy_read(port, PHY_MMD_AN, PHY_EEE_ADV);
-	v = SFR_DATA_U16;
-	if (v & PHY_EEE_BIT_1G)
-		print_string("  1G ");
-	else
-		print_string("     ");
-	if (v & PHY_EEE_BIT_100M)
-		print_string(" 100M");
-	else
-		print_string("     ");
-
-	print_string("   Link Partner: ");
-	if (machine.n_10g) {
-		phy_read(port, PHY_MMD_AN, PHY_EEE_LP_ABILITY);
-		v = SFR_DATA_U16;
-		if (v & PHY_EEE_BIT_10G)
-			print_string(" 10G");
-		else
-			print_string("    ");
-	}
-	phy_read(port, PHY_MMD_AN, PHY_EEE_LP_ABILITY2);
-	v = SFR_DATA_U16;
-	if (machine.n_10g) {
-		if (v & PHY_EEE_BIT_5G)
-			print_string(" 5G");
-		else
-			print_string("   ");
-	}
-	if (v & PHY_EEE_BIT_2G5)
-		print_string(" 2.5G");
-	else
-		print_string("     ");
-	phy_read(port, PHY_MMD_AN, PHY_EEE_LP_ABILITY);
-	v = SFR_DATA_U16;
-	if (v & PHY_EEE_BIT_1G)
-		print_string("  1G ");
-	else
-		print_string("     ");
-	if (v & PHY_EEE_BIT_100M)
-		print_string(" 100M");
-	else
-		print_string("     ");
-
-	reg_read_m(RTL8373_PHY_EEE_ABLTY);
-	if (sfr_data[3] & (1 << port))
-		print_string(" ACTIVE   ");
-	else
-		print_string(" INACTIVE ");
-	write_char('\n');
-}
-
 
 void port_eee_enable_all(__xdata uint8_t speed) __banked
 {
@@ -766,31 +724,7 @@ void port_eee_enable_all(__xdata uint8_t speed) __banked
 }
 
 
-void port_eee_disable_all(void) __banked
-{
-	for (uint8_t i = machine.min_port; i <= machine.max_port; i++) {
-		port_eee_disable(i);
-	}
-}
 
-
-void port_eee_status_all(void) __banked
-{
-	for (uint8_t i = machine.min_port; i <= machine.max_port; i++) {
-		port_eee_status(i);
-	}
-}
-
-/*
- * Enable RLDP, Realtek's version of LLDP
- */
-void port_rldp_on(__xdata uint16_t p_ms)
-{
-	REG_WRITE(RTL8373_RLDP_TIMER, p_ms >> 8, p_ms, p_ms >> 8, p_ms);
-
-	REG_SET(RTL837X_RMA0_CONF, 0x00000000); // R4ecc
-	REG_SET(RTL837X_RMA_CONF, 0x00000000); // R4ecc
-}
 
 
 /*
@@ -823,8 +757,10 @@ uint8_t port_lag_of(uint8_t port) __banked
  */
 void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banked
 {
+#ifdef DEBUG
 	print_string("port_lag_members_set, lag: "); print_byte(lag); print_string(", members: "); print_short(members);
 	write_char('\n');
+#endif
 	if (lag > 3) {
 		print_string("Link aggregation group out of range\n");
 		return;
@@ -838,61 +774,34 @@ void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banke
 
 
 /*
+ * The hash a LAG uses. A pristine group (reset value, or 0) reads as the
+ * default, which port_lag_members_set() installs when a member joins.
+ */
+uint8_t port_lag_hash_get(uint8_t lag) __banked
+{
+	reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (lag << 2));
+	if (!(sfr_data[0] | sfr_data[1] | sfr_data[2])
+	    && (sfr_data[3] == LAG_HASH_RESET || sfr_data[3] == 0))
+		return LAG_HASH_DEFAULT;
+	return sfr_data[3];
+}
+
+
+/*
  * Configures the hash algorithm used for a LAG
  * lag is the Group to configure and hash is a bitmask
  */
 void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash_bits) __banked
 {
+#ifdef DEBUG
 	print_string("port_lag_hash_set, lag: "); print_byte(lag); print_string(", hash: "); print_byte(hash_bits);
 	write_char('\n');
+#endif
 	if (lag > 3) {
 		print_string("Link aggregation group out of range\n");
 		return;
 	}
 	REG_WRITE(RTL837X_TRK_HASH_CTRL_BASE + (lag << 2), 0, 0, 0, hash_bits);
-}
-
-void print_port_ingress_filter_mode(vlan_ingress_mode_t mode) __banked
-{
-	switch (mode) {
-	case VLAN_UNTAGGED:
-		print_string("Untag.");
-		break;
-	case VLAN_TAGGED:
-		print_string("Tagged");
-		break;
-	case VLAN_ALL:
-		print_string("Any");
-		break;
-	default:
-		print_string("!!err!!");
-	}
-}
-
-void print_vlan_ingress_port(uint8_t log_port) __banked
-{
-	print_phys_port(log_port);write_char('\t');
-	print_short(port_pvid_get(log_port));write_char('\t');
-	print_port_ingress_filter_mode(port_ingress_filter_get(log_port));write_char('\t');
-	port_ingress_vlan_filter_get(log_port) ? print_string("Enabled") : print_string("Disabled");
-	write_char('\n');
-}
-/*
- * Dumps the VLAN ingress configuration
- */
-void vlan_dump(void) __banked
-{
-	print_string("Ingress VLAN configuration:\n");
-	print_string("Port\tPVID\tType\tFiltering\n");
-	for (uint8_t port = machine.min_port; port <= machine.max_port; port++) {
-		print_vlan_ingress_port(port);
-	}
-	print_vlan_ingress_port(9);
-
-	write_char('\n');
-	print_string("Type - Which frame types are allowed: untagged, tagged or any\n");
-	print_string("Filtering - Whether packets not belonging to member VLANs on that port are dropped\n");
-	print_string("PVID - Assumed VLAN for untagged packets\n");
 }
 
 
@@ -910,15 +819,6 @@ bool port_ingress_vlan_filter_set(uint8_t port, __xdata bool enabled) __banked
 	return true;
 }
 
-/** Get the ingress VLAN filtering status */
-bool port_ingress_vlan_filter_get(uint8_t port) __banked
-{
-	if (port < machine.min_port || (port > machine.max_port && port != CPU_PORT)) {
-		return false;
-	}
-
-	return reg_bit_test(RTL837X_VLAN_PORT_IGR_FLTR, port);
-}
 
 // C1 bit 0: static (no aging); age at C3[4:2] must be non-zero or the
 // entry is invisible to lookup

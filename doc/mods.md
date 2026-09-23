@@ -2,7 +2,7 @@
 
 ## SPI-Flash Memory
 
-SPI-Flash memory can be replaced with an other type. Because the chip is defect, like #69 & #70 or you have an unmanaged-switch with a small flash size, and want to convert it to a managed-variant to run `RTLPlayground` software on it. Currently `RTLPlayground`-firmware expects `8 MBit / 1 MiB`.
+SPI-Flash memory can be replaced with an other type. Because the chip is defect, like #69 & #70 or you have an unmanaged-switch with a small flash size, and want to convert it to a managed-variant to run `rtl-swos` software on it. Currently `rtl-swos`-firmware expects `8 MBit / 1 MiB`: a firmware update with `copy tftp flash` stages the new 512 KiB image at `0x80000` before applying it, and is refused on a smaller flash.
 
 ### Size
 

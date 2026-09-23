@@ -1,9 +1,9 @@
 /*
- * env_tables.c - what rtl837x_port.c and httpd/page_impl.c link against
- * besides the register mock: the console, the buffers page_impl writes into,
- * the machine description and leaf calls into subsystems not under test.
- * Buffers keep their firmware sizes so AddressSanitizer sees the same bounds
- * the 8051 has.
+ * env_tables.c - what rtl837x_port.c links against besides the register
+ * mock: the console, the machine description and leaf calls into
+ * subsystems not under test. The cli.c / swcfg.c edges live in env_cli.c;
+ * every test binary links both. Buffers keep their firmware sizes so
+ * AddressSanitizer sees the same bounds the 8051 has.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -27,18 +27,12 @@ void print_byte(uint8_t v)
 void print_short(uint16_t v) { print_byte(v >> 8); print_byte(v); }
 void print_long(uint32_t v)  { print_short(v >> 16); print_short(v); }
 void print_reg(uint16_t v)   { print_short(v); }
-void itoa_short(uint16_t v)
-{
-	char b[6]; int n = 0;
-	do { b[n++] = '0' + v % 10; v /= 10; } while (v);
-	while (n) write_char(b[--n]);
-}
 void dbg_string(char *p) { (void)p; }
 void dbg_short(uint16_t v) { (void)v; }
 void dbg_char(char c) { (void)c; }
 void dbg_byte(uint8_t v) { (void)v; }
 
-/* ---- copied verbatim from rtlplayground.c ---- */
+/* ---- copied verbatim from main.c ---- */
 uint16_t strtox(uint8_t *dst, const char *s)
 {
 	uint8_t *b = dst;
@@ -67,11 +61,7 @@ const struct machine machine = {
 struct machine_runtime machine_detected = { .isRTL8373 = 1 };
 
 /* ---- firmware state the modules read or write ---- */
-uint8_t  outbuf[TCP_OUTBUF_SIZE];
-uint16_t slen;
 uint16_t management_vlan = 1;
-uint16_t cont_len;
-uint32_t cont_addr;
 uint8_t  vlan_names[VLAN_NAMES_SIZE];
 uint16_t vlan_ptr;
 uint8_t  sfp_pins_last = 0xff;
@@ -79,8 +69,6 @@ uint8_t  sfp_options[2];
 char     sfp_module_vendor[2][17];
 char     sfp_module_model[2][17];
 char     sfp_module_serial[2][17];
-char     hostname[24] = "hosttest";
-char     port_names[9][PORT_NAME_SIZE];
 struct flash_region_t flash_region;
 struct syslog_state syslog_state;
 bool     stp_enabled;
@@ -89,7 +77,6 @@ uip_ipaddr_t uip_hostaddr, uip_draddr, uip_netmask;
 struct uip_eth_addr uip_ethaddr = { .addr = { 0x02, 0x11, 0x22, 0x33, 0x44, 0x55 } };
 
 /* ---- leaf calls into subsystems not under test ---- */
-void     flash_read_bulk(uint8_t *dst) { (void)dst; }
 const char *get_flash_size_str(void) { return "2M"; }
 uint8_t  sfp_read_reg(uint8_t slot, uint8_t reg) { (void)slot; (void)reg; return 0; }
 bool     gpio_pin_test(uint8_t pin) { (void)pin; return false; }

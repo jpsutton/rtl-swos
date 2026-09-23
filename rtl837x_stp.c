@@ -15,7 +15,6 @@
 #include "uip.h"
 #include "machine.h"
 
-extern __xdata uint8_t err_status;
 
 // All entry points are __banked and nothing here runs from an interrupt,
 // so the module does not need to stay in the resident bank
@@ -31,13 +30,6 @@ extern __xdata struct uip_eth_addr uip_ethaddr;
 
 extern __xdata uint8_t uip_buf[UIP_CONF_BUFFER_SIZE + 2];
 
-extern __xdata uint8_t cmd_buffer[CMD_BUF_SIZE];
-extern __xdata uint8_t cmd_words_len;
-extern __xdata uint8_t cmd_words_b[15];
-extern __xdata char save_cmd;		/* 0 while execute_config() replays the saved config */
-uint8_t cmd_compare(uint8_t start, __code const uint8_t * cmd);
-uint8_t atoi_byte(uint8_t idx);
-uint8_t cmd_parse_port_separator(uint8_t idx);
 extern __xdata uint8_t atoi_results_u8;
 
 /* ---- Configuration ---- */
@@ -200,7 +192,7 @@ static void print_bridge_id(uint8_t prio, uint8_t ext, __xdata uint8_t *mac) __r
  * formatter. The state indices are the ASIC's own two bits, in the order
  * stp_state_set() writes them. */
 static __code const char stp_state_txt[] = "off  blocklearnfwd  ";
-static __code const char stp_role_txt[]  = "desgroot";
+static __code const char stp_role_txt[]  = "desgrootoff ";
 static __code const char stp_edge_txt[]  = "no  yes ";
 
 static uint8_t stp_ent_active(uint8_t e) __reentrant;
@@ -213,7 +205,7 @@ static void print_field(__code const char *txt, uint8_t idx, uint8_t width) __re
 }
 
 
-static void stp_status(void)
+void stp_status(void) __banked
 {
 	if (!stp_enabled) {
 		print_string("STP off\n");
@@ -264,7 +256,7 @@ static void stp_status(void)
 		}
 		print_field(stp_state_txt, (sfr_data[3 - (stp_st_of >> 2)] >> ((stp_st_of << 1) & 0x7)) & 0x3, 5);
 		write_char(' ');
-		print_field(stp_role_txt, stp_i == stp_root_port ? 1 : 0, 4);
+		print_field(stp_role_txt, STP_PF_OUT(stp_pflags[stp_i]) ? 2 : stp_i == stp_root_port ? 1 : 0, 4);
 		write_char(' ');
 		print_field(stp_edge_txt, stp_pflags[stp_i] & STP_PF_OPEREDGE ? 1 : 0, 4);
 		write_char(' ');
@@ -376,7 +368,7 @@ static void stp_state_set(uint8_t port, uint8_t state) __reentrant
 
 static void stp_ent_apply(uint8_t e) __reentrant
 {
-	if (!(stp_pflags[e] & STP_PF_ENABLED)) {
+	if (STP_PF_OUT(stp_pflags[e])) {
 		stp_state_set(e, STP_ST_FORWARDING);
 		return;
 	}
@@ -422,7 +414,7 @@ static void stp_loop_hold_peer(uint8_t port) __reentrant
 {
 	if (port >= STP_ENTITIES || !stp_ent_active(port))
 		return;
-	if (!(stp_pflags[port] & STP_PF_ENABLED))
+	if (STP_PF_OUT(stp_pflags[port]))
 		return;
 	if (stp_pflags[port] & STP_PF_TRIPPED)
 		return;
@@ -454,7 +446,7 @@ void stp_cnf_send(uint8_t port) __reentrant
 {
 	/* A one-shot flag (TCA) belongs to the BPDU we were asked to send: drop
 	 * it with the frame, or it would surface on an unrelated port later. */
-	if (!(stp_pflags[port] & STP_PF_ENABLED) || (stp_pflags[port] & (STP_PF_FILTER | STP_PF_TRIPPED))) {
+	if (stp_pflags[port] & (STP_PF_FILTER | STP_PF_TRIPPED)) {
 		stp_tx_flags_extra = 0;
 		return;
 	}
@@ -573,7 +565,7 @@ void stp_in(void) __banked
 	              || STP_I->bpdu_type == BPDU_TYPE_TCN))))
 		return;
 
-	if (!(stp_pflags[port] & STP_PF_ENABLED) || (stp_pflags[port] & STP_PF_FILTER))
+	if (STP_PF_OUT(stp_pflags[port]))
 		return;
 
 	/* BPDU guard: an edge-facing port must never see a BPDU - shut it down. */
@@ -653,7 +645,7 @@ void stp_in(void) __banked
 			stp_tc_count++;
 			for (i = machine.min_port; i <= machine.max_port; i++)
 				if (!stp_ent_has(port, i)
-				    && (stp_pflags[stp_ent_of[i]] & STP_PF_ENABLED)
+				    && !STP_PF_OUT(stp_pflags[stp_ent_of[i]])
 				    && !(stp_pflags[stp_ent_of[i]] & STP_PF_OPEREDGE))
 					port_l2_forget_port(i);
 		}
@@ -751,7 +743,7 @@ void stp_timers(void) __banked
 					continue;
 				if (stp_i < STP_PORTS && stp_ent_of[stp_i] != stp_i)
 					continue;
-				if (!(stp_pflags[stp_i] & STP_PF_ENABLED))
+				if (STP_PF_OUT(stp_pflags[stp_i]))
 					continue;
 				if (!((stp_link_now ^ stp_link_prev) >> stp_i & 1))
 					continue;
@@ -776,7 +768,7 @@ void stp_timers(void) __banked
 	}
 
 	for (stp_i = 0; stp_i < STP_ENTITIES; stp_i++) {
-		if (!stp_ent_active(stp_i) || !(stp_pflags[stp_i] & STP_PF_ENABLED))
+		if (!stp_ent_active(stp_i) || STP_PF_OUT(stp_pflags[stp_i]))
 			continue;
 
 		if (stp_bpdu_age[stp_i] < 0xffff)
@@ -893,7 +885,6 @@ static void stp_fdb_update(__xdata uint16_t pmask)
 
 void stp_setup(void) __banked
 {
-	print_string("Enabling STP: ");
 	stp_lag_map();
 	sfr_data[0] = sfr_data[1] = sfr_data[2] = sfr_data[3] = 0;
 	for (stp_i = 0; stp_i < STP_ENTITIES; stp_i++) {
@@ -910,7 +901,7 @@ void stp_setup(void) __banked
 			continue;
 		if (stp_i < STP_PORTS && stp_ent_of[stp_i] != stp_i)
 			continue;
-		if (!(stp_pflags[stp_i] & STP_PF_ENABLED)
+		if (STP_PF_OUT(stp_pflags[stp_i])
 		    || (stp_pflags[stp_i] & STP_PF_ADMEDGE)) {
 			/* not participating, or admin edge: forwarding immediately */
 			if (stp_pflags[stp_i] & STP_PF_ADMEDGE)
@@ -926,10 +917,13 @@ void stp_setup(void) __banked
 	sfr_data[1] |= 0x0c; // Do not block the CPU port (bits 3:2 of byte 1 = port 9)
 	reg_write_m(RTL837X_MSTP_STATES);
 
+#ifdef DEBUG
+	print_string("Enabling STP: ");
 	print_reg(RTL837X_MSTP_STATES); write_char('\n');
+#endif
 
 	for (stp_i = machine.min_port; stp_i <= machine.max_port; stp_i++) {
-		if (!(stp_pflags[stp_i] & STP_PF_ENABLED))
+		if (STP_PF_OUT(stp_pflags[stp_i]))
 			continue;
 		if (port_ingress_filter_get(stp_i) != VLAN_TAGGED)
 			continue;
@@ -975,167 +969,54 @@ void stp_off(void) __banked
 }
 
 
-void stp_parse(void) __banked __reentrant
-{
-	uint8_t ent;
+/* ---- configuration API for the modal CLI ---- */
 
-	if (cmd_compare(1, "on")) {
-		print_string("STP enabled\n");
+/* The STP entity a logical port answers to: itself, or its LAG's */
+uint8_t stp_cfg_entity(uint8_t port) __banked
+{
+	stp_lag_map();
+	return stp_ent_of[port];
+}
+
+
+void stp_cfg_enable(uint8_t on) __banked
+{
+	if (on) {
 		stp_enabled = 1;
 		stp_setup();
-		return;
-	}
-	if (cmd_compare(1, "off")) {
-		print_string("STP disabled\n");
+	} else {
 		stp_off();
 		stp_enabled = 0;
-		return;
 	}
-	if (cmd_compare(1, "status")) {
-		stp_status();
-		return;
-	}
-	if (cmd_words_len < 3)
-		goto err;
-
-	if (cmd_compare(1, "port") || cmd_compare(1, "lag")) {
-		stp_lag_map();
-		if (cmd_words_len < 4)
-			goto err;
-		if (cmd_compare(1, "lag")) {
-			if (!atoi_byte(cmd_words_b[2]))
-				goto err;
-			if (!atoi_results_u8 || atoi_results_u8 > STP_LAG_COUNT)
-				goto err;
-			ent = STP_LAG_BASE + atoi_results_u8 - 1;
-		} else {
-			if (!cmd_parse_port_separator(cmd_words_b[2]))
-				goto err;
-			ent = atoi_results_u8;
-			if (stp_ent_of[ent] != ent) {
-				print_string("Port belongs to a LAG, configure it as lag ");
-				print_byte(stp_ent_of[ent] - STP_LAG_BASE + 1);
-				write_char('\n');
-				return;
-			}
-		}
-		if (cmd_words_len < 5 && !cmd_compare(3, "on") && !cmd_compare(3, "off"))
-			goto err;
-		if (cmd_compare(3, "on")) {
-			stp_pflags[ent] |= STP_PF_ENABLED;
-			stp_pflags[ent] &= ~STP_PF_TRIPPED;
-			if (stp_enabled) {	/* (re)join: listen first */
-				stp_state_set(ent, STP_ST_BLOCKING);
-				port_timers[ent] = (uint16_t)stp_fwddelay_s * STP_HZ;
-			}
-		} else if (cmd_compare(3, "off")) {
-			stp_pflags[ent] &= ~STP_PF_ENABLED;
-			if (stp_enabled)
-				stp_state_set(ent, STP_ST_FORWARDING);	/* plain forwarding */
-		} else if (cmd_compare(3, "edge")) {
-			/* Also drop the *operational* edge flag: it is what exempts the
-			 * ent from topology changes and lets it skip the listen period,
-			 * so leaving it set would keep the old behaviour until the next
-			 * "stp off"/"stp on". An admin edge is operational immediately. */
-			stp_pflags[ent] &= ~(STP_PF_ADMEDGE | STP_PF_AUTOEDGE | STP_PF_OPEREDGE);
-			if (cmd_compare(4, "on"))
-				stp_pflags[ent] |= STP_PF_ADMEDGE | STP_PF_OPEREDGE;
-			else if (cmd_compare(4, "auto"))
-				stp_pflags[ent] |= STP_PF_AUTOEDGE;
-			else if (!cmd_compare(4, "off"))
-				goto err;
-		} else if (cmd_compare(3, "cost")) {
-			/* raw 802.1D value, 0..200000000; 0 = auto (speed-based) */
-			stp_cost_scratch = 0;
-			{
-			__xdata uint8_t *cp = &cmd_buffer[cmd_words_b[4]];
-			if (*cp < '0' || *cp > '9')
-				goto err;
-			while (*cp >= '0' && *cp <= '9') {
-				stp_cost_scratch = stp_cost_scratch * 10 + (*cp - '0');
-				cp++;
-			}
-			}
-			if (stp_cost_scratch > 200000000UL)
-				goto err;
-			stp_pcost[ent] = stp_cost_scratch;
-		} else if (cmd_compare(3, "p2p")) {
-			if (cmd_compare(4, "auto"))
-				stp_pp2p[ent] = 0;
-			else if (cmd_compare(4, "on"))
-				stp_pp2p[ent] = 1;
-			else if (cmd_compare(4, "off"))
-				stp_pp2p[ent] = 2;
-			else
-				goto err;
-		} else if (cmd_compare(3, "prio")) {
-			if (!atoi_byte(cmd_words_b[4]))
-				goto err;
-			if (atoi_results_u8 > 240 || (atoi_results_u8 & 0x0f))
-				goto err;
-			stp_pprio[ent] = atoi_results_u8;
-		} else if (cmd_compare(3, "guard")) {
-			stp_pflags[ent] &= ~(STP_PF_BPDUGUARD | STP_PF_ROOTGUARD);
-			if (cmd_compare(4, "bpdu"))
-				stp_pflags[ent] |= STP_PF_BPDUGUARD;
-			else if (cmd_compare(4, "root"))
-				stp_pflags[ent] |= STP_PF_ROOTGUARD;
-			else if (!cmd_compare(4, "none"))
-				goto err;
-		} else if (cmd_compare(3, "filter")) {
-			if (cmd_compare(4, "on"))
-				stp_pflags[ent] |= STP_PF_FILTER;
-			else if (cmd_compare(4, "off"))
-				stp_pflags[ent] &= ~STP_PF_FILTER;
-			else
-				goto err;
-		} else {
-			goto err;
-		}
-		return;
-	}
-
-	if (!atoi_byte(cmd_words_b[2])) {
-		if (cmd_compare(1, "version")) {
-			if (cmd_compare(2, "rstp"))
-				stp_rstp = 1;
-			else if (cmd_compare(2, "stp"))
-				stp_rstp = 0;
-			else
-				goto err;
-			return;
-		}
-		goto err;
-	}
-	stp_scratch = atoi_results_u8;
-
-	if (cmd_compare(1, "prio")) {
-		if (stp_scratch > 15)
-			goto err;
-		stp_prio = stp_scratch << 4;	/* n * 4096, as the BPDU's high byte */
-		if (stp_root_port == 0xff)
-			stp_claim_root();	/* re-announce with the new priority */
-	} else if (cmd_compare(1, "hello")) {
-		if (stp_scratch < 1 || stp_scratch > 10)
-			goto err;
-		stp_hello_s = stp_scratch;
-	} else if (cmd_compare(1, "maxage")) {
-		if (stp_scratch < 6 || stp_scratch > 40)
-			goto err;
-		stp_maxage_s = stp_scratch;
-	} else if (cmd_compare(1, "fwd")) {
-		if (stp_scratch < 4 || stp_scratch > 30)
-			goto err;
-		stp_fwddelay_s = stp_scratch;
-	} else if (cmd_compare(1, "txhold")) {
-		if (stp_scratch < 1 || stp_scratch > 10)
-			goto err;
-		stp_txhold = stp_scratch;
-	} else {
-		goto err;
-	}
-	return;
-err:
-	err_status = ERR_INVALID_ARGUMENT;
-	print_string("Error: stp on|off|status | prio <0-15> | hello <1-10> | maxage <6-40> | fwd <4-30> | txhold <1-10> | version rstp|stp | port <1-9>|lag <1-4> on|off|edge|cost|prio|guard|filter ...\n");
 }
+
+
+/* Move an entity out of spanning tree, where it forwards unconditionally,
+ * or back in, where it listens first (or forwards at once as an admin
+ * edge), when a per-port setting changed whether it takes part. */
+void stp_cfg_sync(uint8_t ent, __xdata uint8_t was_out) __banked
+{
+	static __xdata uint8_t e, out;
+
+	e = ent;
+	out = STP_PF_OUT(stp_pflags[e]) ? 1 : 0;
+	if (out == was_out)
+		return;
+	if (!out) {
+		stp_pflags[e] &= ~STP_PF_TRIPPED;
+		port_timers[e] = (uint16_t)stp_fwddelay_s * STP_HZ;
+	}
+	if (stp_enabled)
+		stp_ent_apply(e);
+}
+
+
+/* prio: the high byte of the bridge priority (priority / 256) */
+void stp_cfg_prio(uint8_t prio) __banked
+{
+	stp_prio = prio;
+	if (stp_root_port == 0xff)
+		stp_claim_root();	/* re-announce with the new priority */
+}
+
+

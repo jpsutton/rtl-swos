@@ -1,8 +1,10 @@
-#include "cmd_parser.h"
+#include "console.h"
 #include "machine.h"
+#include "cli.h"
 
 #pragma codeseg BANK2
 #pragma constseg BANK2
+
 
 // Position in the serial buffer
 __xdata uint8_t l;
@@ -38,8 +40,30 @@ void cmd_editor_init(void) __banked
  */
 void cmd_edit(void) __banked
 {
+	if (l != sbuf_ptr)
+		cli_use(CLI_CONSOLE);	/* help, completion and redraws below */
 	while (l != sbuf_ptr) {
-		if (sbuf[l] >= ' ' && sbuf[l] < 127) { // A printable character, copy to command line
+		if (sbuf[l] == '?') { // Context help: list candidates, reprint the line
+			write_char('?');
+			write_char('\n');
+			cmd_buffer[cmd_line_len] = NUL;
+			cli_help((__xdata char *)cmd_buffer);
+			cli_prompt();
+			for (uint8_t i = 0; i < cmd_line_len; i++)
+				write_char(cmd_buffer[i]);
+			for (uint8_t i = cursor; i < cmd_line_len; i++)
+				write_char('\010');
+		} else if (sbuf[l] == '\t') { // Complete a unique prefix (cursor at end only)
+			if (cursor == cmd_line_len) {
+				cmd_buffer[cmd_line_len] = NUL;
+				uint8_t n = cli_complete((__xdata char *)cmd_buffer, CMD_BUF_SIZE);
+				while (n--) {
+					write_char(cmd_buffer[cmd_line_len]);
+					cmd_line_len++;
+					cursor++;
+				}
+			}
+		} else if (sbuf[l] >= ' ' && sbuf[l] < 127) { // A printable character, copy to command line
 			// Reserve one byte for the terminating NUL written on Enter. When the
 			// line is full, drop the character but still fall through to advance the
 			// serial-ring read pointer below; a 'continue' here would spin forever.
@@ -103,7 +127,7 @@ void cmd_edit(void) __banked
 				else
 					p = history_editptr;
 				// Move cursor to beginning of line
-				write_char('\033'); write_char('['); itoa(cursor + 2); write_char('D');
+				write_char('\033'); write_char('['); itoa(cursor + cli.plen); write_char('D');
 				cursor = 0;
 				while (cmd_history[p] && cmd_history[p] != '\n') {
 					cursor++;
@@ -113,7 +137,8 @@ void cmd_edit(void) __banked
 				history_editptr = (p - 1) & CMD_HISTORY_MASK;
 				p = (p + 1) & CMD_HISTORY_MASK;
 				if (cursor) {
-					print_string("\033[2K> "); // Clear entire line: ^[[2K and print new prompt
+					print_string("\033[2K"); // Clear entire line and print new prompt
+					cli_prompt();
 					for (uint8_t i = 0; i < cursor; i++) {
 						cmd_buffer[i] = cmd_history[p];
 						write_char(cmd_buffer[i]);
@@ -121,7 +146,8 @@ void cmd_edit(void) __banked
 					}
 					cmd_line_len = cursor;
 				} else {
-					print_string("\033[2C"); // Move 2 right to start of editing space
+					// Move right to the start of the editing space
+					write_char('\033'); write_char('['); itoa(cli.plen); write_char('C');
 				}
 				l += 3;
 				l &= SBUF_MASK;
@@ -130,8 +156,9 @@ void cmd_edit(void) __banked
 				if (history_editptr != 0xffff) {
 					__xdata uint16_t p = (history_editptr + 2) & CMD_HISTORY_MASK;
 					// Move cursor to beginning of line
-					write_char('\033'); write_char('['); itoa(cursor + 2); write_char('D');
-					print_string("\033[2K> "); // Clear entire line: ^[[2K and print new prompt
+					write_char('\033'); write_char('['); itoa(cursor + cli.plen); write_char('D');
+					print_string("\033[2K"); // Clear entire line and print new prompt
+					cli_prompt();
 					uint8_t i = 0;
 					while (cmd_history[p] && cmd_history[p] != '\n') {
 						p = (p + 1) & CMD_HISTORY_MASK;

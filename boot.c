@@ -467,12 +467,12 @@ void set_hostname_default(void) __banked
 	if (hostname[0] != NUL)
 		return;
 
-	strcpy((__xdata uint8_t *)hostname, "RTLPlayground-");
-	hostname[14] = hex[uip_ethaddr.addr[3] >> 4];
-	hostname[15] = hex[uip_ethaddr.addr[3] & 0xf];
-	hostname[16] = hex[uip_ethaddr.addr[4] >> 4];
-	hostname[17] = hex[uip_ethaddr.addr[4] & 0xf];
-	hostname[18] = hex[uip_ethaddr.addr[5] >> 4];
-	hostname[19] = hex[uip_ethaddr.addr[5] & 0xf];
-	hostname[20] = NUL;
+	strcpy((__xdata uint8_t *)hostname, "rtl-swos-");
+	hostname[9]  = hex[uip_ethaddr.addr[3] >> 4];
+	hostname[10] = hex[uip_ethaddr.addr[3] & 0xf];
+	hostname[11] = hex[uip_ethaddr.addr[4] >> 4];
+	hostname[12] = hex[uip_ethaddr.addr[4] & 0xf];
+	hostname[13] = hex[uip_ethaddr.addr[5] >> 4];
+	hostname[14] = hex[uip_ethaddr.addr[5] & 0xf];
+	hostname[15] = NUL;
 }

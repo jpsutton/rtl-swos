@@ -50,8 +50,10 @@ __xdata uip_ipaddr_t server;
 #define DHCP_PARAM_DNS		6
 #define DHCP_END		255
 
+#include "debug.h"
+
 #pragma codeseg BANK3
-#pragma constseg BANK2
+#pragma constseg BANK3
 
 struct dhcp_pkt {
 	uint8_t type;
@@ -157,7 +159,7 @@ void dhcp_addopt_server_id(void)
 
 void dhcp_send_discover(void)
 {
-	print_string("dhcp_send_discover called\n");
+	dbg_string("dhcp_send_discover called\n");
 	dhcp_prepare_request();
 
 	dhcp_state.opt_ptr = 0;
@@ -193,7 +195,7 @@ void dhcp_send_discover(void)
 
 void dhcp_send_request(void)
 {
-	print_string("dhcp_send_request called\n");
+	dbg_string("dhcp_send_request called\n");
 	dhcp_prepare_request();
 
 	dhcp_state.opt_ptr = 0;
@@ -289,7 +291,7 @@ void parse_opts(void)
 		case DHCP_END:
 			break;
 		default:
-			print_string("Unknown DHCP option: "); print_byte(DHCP_OPT[dhcp_state.opt_ptr]); write_char('\n');
+			dbg_string("Unknown DHCP option: "); dbg_byte(DHCP_OPT[dhcp_state.opt_ptr]); dbg_char('\n');
 			dhcp_state.opt_ptr++;
 			dhcp_state.opt_ptr += DHCP_OPT[dhcp_state.opt_ptr];
 			dhcp_state.opt_ptr++;
@@ -315,8 +317,10 @@ void parse_dhcp(void)
 		dhcp_state.current_ip[2] = DHCP_P->your_ip[2];
 		dhcp_state.current_ip[3] = DHCP_P->your_ip[3];
 		parse_opts();
+#ifdef DEBUG
 		print_string("DHCP offer received for IP "); dhcp_print_ip(dhcp_state.current_ip);
 		write_char('\n');
+#endif
 		dhcp_send_request();
 	} else if (DHCP_OPT[dhcp_state.opt_ptr++] == DHCP_MESSAGE_ACK) {
 		parse_opts();
@@ -376,13 +380,13 @@ void dhcp_start(void) __banked
 	*tid++ = SFR_DATA_8;
 	*tid = SFR_DATA_0;
 	dhcp_state.state = DHCP_START;
-	print_string("dhcp_start done\n");
+	dbg_string("dhcp_start done\n");
 }
 
 
 void dhcp_stop(void) __banked
 {
-	print_string("dhcp_stop called\n");
+	dbg_string("dhcp_stop called\n");
 	uip_udp_remove(dhcp_state.conn);
 	dhcp_state.state = DHCP_OFF;
 }
@@ -395,7 +399,7 @@ void dhcp_callback(uint16_t lport) __banked
 	if (!dhcp_state.state)
 		return;
 	if (uip_closed()) {
-		print_string("Closed\n");
+		dbg_string("Closed\n");
 		return;
 	} else if (uip_newdata()) {
 		parse_dhcp();

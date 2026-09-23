@@ -6,7 +6,7 @@ Original software is running UART on 9600 baud rate. Output is very minimal.
 
 Using SPI clamp in-board is the only method for initial installation and update.
 
-Stock flash chip is 512KB in size. Consider replacing for update through Web UI.
+Stock flash chip is 512KB in size, too small for in-band updates (`copy tftp flash` needs at least 1 MB). Consider replacing it.
 
 - Header for uart is clearly identified.
 - The red LED act as a powered-on LED.

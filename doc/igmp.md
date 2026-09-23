@@ -71,7 +71,7 @@ void igmp_enable(void) __banked;
 void igmp_router_port_set(uint16_t pmask) __banked;
 void igmp_packet_handler(void) __banked;
 void igmp_show(void) __banked;
-```c
+```
 `igmp_setup()` is called at boot-time and configures flooding of all IP-MC packets by
 default, as otherwise no IP-MC would be possible in the network.
 
@@ -82,21 +82,26 @@ of IP-MC packets to be limited to only subscribed ports.
 
 `igmp_packet_handler()` implements handling of trapped IGMP packets by the CPU.
 
-`igmp_show()` prints out the IGMP configuration on the CLI.
+`igmp_show()` prints out the IGMP configuration of each port (`RTL837X_IGMP_PORT_CFG`)
+on the CLI.
 
 
-## IGMP configuration on the Serial Console
-For testing the following commands are provided on the serial console:
+## IGMP configuration on the CLI
+IGMP snooping is a global setting:
 ```
-> igmp [on/off]
-  Enables or disables IGMP
-
-> igmp show
-  Shows information on IGMP
+switch(config)# ip igmp snooping        # enable
+switch(config)# no ip igmp snooping     # disable, flood IP-MC again
+switch# show ip igmp snooping           # state, router ports, per-port registers
 ```
-
-## LAG configuration via the Web Interface
-Not implemented, yet!
+Static multicast router ports are set per interface:
+```
+switch(config)# interface ethernet 1/1
+switch(config-if)# ip igmp snooping mrouter
+```
+A router port is written to `RTL837X_IGMP_ROUTER_PORT` (`igmp_router_port_set()`)
+and added to every group the snooping code learns, without keeping a group
+alive by itself. The chip has one router port mask for the whole switch, so,
+unlike the established CLIs, the setting is not per VLAN.
 
 ## A Test with IP-MC streaming using vlc
 The following is a simple test verifying the IGMP and IP-MC switching capabilities.
@@ -119,7 +124,7 @@ you can force the output interface of vlc by using `--miface=<ifname>`
 
 Enable IGMP on the switch-CLI:
 ```
-> igmp on
+switch(config)# ip igmp snooping
 ```
 The flickering should now stop on all ports except the port where the streaming device is connected:
 the switch drops all IP-MC packets as there are no listeners.

@@ -122,7 +122,7 @@ pip3 install smbus2
 
 ## Common Use Cases
 
-Both `i2c_read_rtl_gpio.py` and `i2c_dump_rtl_regs.py` shall run with the **original** firmware, not RTLPlayground firmware.
+Both `i2c_read_rtl_gpio.py` and `i2c_dump_rtl_regs.py` shall run with the **original** firmware, not rtl-swos firmware.
 
 
 ### Monitoring GPIO Changes

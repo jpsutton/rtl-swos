@@ -1,3 +1,11 @@
-ip 192.168.10.247
-gw 192.168.10.1
-netmask 255.255.255.0
+! rtl-swos default configuration: an unmanaged-style switch (all ports
+! in VLAN 1) that manages itself over DHCP on VLAN 1. Until a lease
+! arrives it answers on 192.168.2.2/24. Telnet is on with the default
+! password 1234; change it under `line vty`.
+!
+interface vlan 1
+ ip address dhcp
+!
+feature telnet
+!
+end

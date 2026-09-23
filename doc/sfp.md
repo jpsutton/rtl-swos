@@ -26,7 +26,7 @@ in the RTL837X_REG_I2C_CTRL register. Then set the EEPROM-register's addresss to
 read in RTL837X_REG_I2C_IN (least-significant byte). The I2C transfer is started
 by setting the 0-bit of RTL837X_REG_I2C_CTRL. When this bit is cleared by the
 ASIC-side of the SoC, the resulting value can be read in the LSB of RTL837X_REG_I2C_OUT.
-This is the code:
+This is the principle, as an illustration (the driver reads blocks with `sfp_read_block()`):
 ```
 uint8_t sfp_read_reg(uint8_t slot, uint8_t reg)
 {
@@ -105,3 +105,19 @@ apart, solder wires to the pins of the on-board PCB which are then routed back t
 the end of the module. By pulling e.g. TX-Fault low while printing out the GPIOs, the
 correct GPIO can be identified.
 
+
+## SFP ports on the CLI
+`show interfaces transceiver` prints, for every SFP port, the module
+information read from the EEPROM and, when the module supports diagnostics,
+its temperature, voltage and RX/TX power; an empty slot shows `no module`.
+
+The bit-rate normally comes from byte 12 of the EEPROM. `speed` in interface
+configuration mode overrides it for modules that report a wrong rate (the
+SFP+ slot of an 8+1 board is port 9):
+```
+switch(config)# interface ethernet 1/9
+switch(config-if)# speed 2500
+```
+The SFP ports accept `speed 100`, `1000`, `2500`, `10000` and `auto` (use the
+EEPROM rate, the default); the module setup is re-run with the forced rate.
+`shutdown` and `duplex` are not supported on SFP ports.

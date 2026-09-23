@@ -7,10 +7,16 @@ void stp_in(void) __banked;
 void stp_setup(void) __banked;
 void stp_timers(void) __banked;
 void stp_off(void) __banked;
-void stp_parse(void) __banked __reentrant;
 void stp_defaults(void) __banked;
+void stp_status(void) __banked;
+uint8_t stp_cfg_entity(uint8_t port) __banked;
+void stp_cfg_enable(uint8_t on) __banked;
+void stp_cfg_prio(uint8_t prio) __banked;
+/* After a per-port flag change: move the entity in or out of STP if
+ * STP_PF_OUT() changed from was_out */
+void stp_cfg_sync(uint8_t ent, __xdata uint8_t was_out) __banked;
 
-/* Tick rate of stp_timers(), also used by the web UI. */
+/* Tick rate of stp_timers() */
 #define STP_HZ 50
 
 #define STP_PORTS	(CPU_PORT + 1)
@@ -33,14 +39,19 @@ extern __xdata uint8_t  stp_rstp;
 extern __xdata uint8_t  stp_txhold;
 
 /* Per-port config/status flags (stp_pflags[]) */
-#define STP_PF_ENABLED	0x01	/* port participates in STP (default on)     */
+#define STP_PF_ENABLED	0x01	/* always set; leaving STP is STP_PF_FILTER   */
 #define STP_PF_ADMEDGE	0x02	/* admin edge: forwarding immediately        */
 #define STP_PF_AUTOEDGE	0x04	/* auto edge: forward after 3 s without BPDU */
 #define STP_PF_BPDUGUARD 0x08	/* disable port if a BPDU arrives            */
 #define STP_PF_ROOTGUARD 0x10	/* never accept a better root on this port   */
-#define STP_PF_FILTER	0x20	/* neither send nor accept BPDUs             */
+#define STP_PF_FILTER	0x20	/* out of STP: no BPDUs, always forwarding   */
 #define STP_PF_OPEREDGE	0x40	/* runtime: port went forwarding as an edge  */
 #define STP_PF_TRIPPED	0x80	/* runtime: disabled by BPDU guard           */
+
+/* The entity does not take part in STP and forwards unconditionally:
+ * `spanning-tree bpdufilter enable`, or its alias `spanning-tree disable`.
+ * Portfast makes no difference to that. */
+#define STP_PF_OUT(f)	((f) & STP_PF_FILTER)
 
 extern __xdata uint8_t  stp_pflags[STP_ENTITIES];
 extern __xdata uint32_t stp_pcost[STP_ENTITIES];	/* path cost; 0 = auto (20000)      */

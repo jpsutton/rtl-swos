@@ -6,27 +6,28 @@ implementation elects a root bridge from the BPDUs it receives, promotes ports
 to forwarding once their listen period expires, ages the root out when it goes
 silent, and blocks a port on which it sees its own BPDU.
 
-STP can be enabled and controlled via the web interface or the command line,
-as follows:
+STP is enabled and controlled from the CLI (serial console or telnet), as
+follows:
 
 ## Quick start
 
 ```
-stp on                  # start participating
-stp off                 # stop, all ports back to forwarding
+switch(config)# feature spanning-tree        # start participating
+switch(config)# no feature spanning-tree     # stop, all ports back to forwarding
 ```
 
-Live status is on the Spanning Tree page of the web UI (or `/stp.json`),
-and on the serial console via `stp status`.
+Live status is shown by `show spanning-tree`.
 
 With no other bridge around, the switch elects itself root and every port ends
-up forwarding — you can leave it on safely. Put the settings in the startup
-config to make them survive a reboot:
+up forwarding — you can leave it on safely. `write memory` saves the settings
+to the startup config so that they survive a reboot; there they appear as:
 
 ```
-stp prio 15
-stp port 1 edge on
-stp on
+interface ethernet 1/1
+ spanning-tree portfast
+!
+spanning-tree priority 61440
+feature spanning-tree
 ```
 
 ## Hardware background
@@ -54,9 +55,10 @@ by a static L2 multicast entry (`port_l2mc_set()`), one per VLAN in use:
 
 A BPDU delivered this way is an ordinary frame to the port's ingress logic
 and passes through its acceptable-frame-type filter. BPDUs are untagged, so a
-port set to admit tagged frames only (`ingress <port>t`) never delivers one
-to the CPU. `stp_setup()` prints a warning for every STP-enabled port in that
-state.
+port set to admit tagged frames only never delivers one to the CPU.
+`stp_setup()` prints a warning for every STP-enabled port in that state. A
+trunk whose native VLAN is not in its allowed list is such a port; give it
+`spanning-tree bpdufilter enable`, or allow its native VLAN.
 
 ## Link aggregation
 
@@ -64,18 +66,20 @@ A LAG (Link Aggregation Group) is handled like an additional port by the STP
 protocol, with its own timers and states. The switch devices support up to 4
 LAGs, which are shown alongside the physical ports in the STP status. A group
 carries its own path cost, priority, edge and guard settings, and gets its own
-row on the Spanning Tree page.
+row in `show spanning-tree`.
 
 ```
-stp lag 1 cost 10000    # the group decides, not its members
-stp lag 1 edge off
+switch(config)# interface port-channel 1
+switch(config-if)# spanning-tree cost 10000          # the group decides, not its members
+switch(config-if)# spanning-tree portfast disable
 ```
 
-LAGs are configured via the `lag` command. Once a port is a member of a LAG it
-can no longer be configured individually for STP, so `stp port <n>` on a member
-tells you which group to configure instead. Membership is re-read from the
-aggregation registers once a second, so a group changing under LACP is picked
-up without any coordination between the two.
+LAGs are configured with `channel-group`, see [Link Aggregation](link_aggregation.md).
+Once a port is a member of a LAG it can no longer be configured individually
+for STP: a `spanning-tree` command under a member's `interface ethernet` is
+refused with a message naming the port-channel to configure instead.
+Membership is re-read from the aggregation registers once a second, so a
+change of membership is picked up without any coordination between the two.
 
 The switch hardware does not handle STP state for a LAG as a whole. State
 changes for the members have to be done by the firmware, updating every member
@@ -98,20 +102,21 @@ encodes. All configured values are in seconds:
 
 | setting | default | range |
 |---|---|---|
-| `stp hello <n>` | 2 | 1–10 |
-| `stp maxage <n>` | 20 | 6–40 |
-| `stp fwd <n>` | 15 | 4–30 |
-| `stp txhold <n>` | 6 | 1–10 |
+| `spanning-tree hello-time <n>` | 2 | 1–10 |
+| `spanning-tree max-age <n>` | 20 | 6–40 |
+| `spanning-tree forward-time <n>` | 15 | 4–30 |
+| `spanning-tree transmit hold-count <n>` | 6 | 1–10 |
 
-A port entering the tree spends `fwd` seconds in blocking before it forwards
-(an edge port skips the wait). Root information is discarded after `maxage`
-seconds without a BPDU, and the switch then reclaims the root role.
+These are global configuration commands; the `no` form restores the default.
+A port entering the tree spends `forward-time` seconds in blocking before it
+forwards (an edge port skips the wait). Root information is discarded after
+`max-age` seconds without a BPDU, and the switch then reclaims the root role.
 
 ## Topology changes
 
 A change on a local non-edge port (the link coming or going, a port promoted
 to forwarding) flushes the addresses learned on it and sets the TC flag in
-our BPDUs for `maxage + fwd` seconds. A TC flag received in a BPDU is passed
+our BPDUs for `max-age + forward-time` seconds. A TC flag received in a BPDU is passed
 on: the switch flushes the other non-edge ports once and keeps the flag in
 its own BPDUs until one hello after the last flagged frame, so the
 notification crosses the switch instead of dying at it. A legacy TCN is
@@ -119,55 +124,65 @@ acknowledged with TCA and then treated like a local change.
 
 ## Bridge settings
 
+In global configuration mode:
+
 ```
-stp prio <0-15>         # bridge priority = n * 4096, default 8 (32768)
-stp version rstp|stp    # RST BPDUs (default) or legacy Config BPDUs
-stp hello|maxage|fwd|txhold <seconds>
+spanning-tree priority <0-61440>    # a multiple of 4096, default 32768
+spanning-tree mode rstp|stp         # RST BPDUs (default) or legacy Config BPDUs
+spanning-tree hello-time|max-age|forward-time <seconds>
+spanning-tree transmit hold-count <n>
 ```
 
 The bridge with the lowest priority wins the root election; ties are broken by
 the MAC address. If you do not want this switch to become the root of an
-existing network, give it a worse priority than the current root — `stp prio 15`
-(61440) is the usual "never me" value.
+existing network, give it a worse priority than the current root —
+`spanning-tree priority 61440` is the usual "never me" value.
 
 ## Per-port settings
 
+Under `interface ethernet 1/<N>` (or `interface port-channel <N>` for a LAG):
+
 ```
-stp port <1-9> on|off              # take part in STP, or stay plain forwarding
-stp port <1-9> edge on|off|auto    # host-facing port handling (default: auto)
-stp port <1-9> cost <0-200000000>  # path cost, 0 = automatic (20000)
-stp port <1-9> prio <0-240>        # port priority, steps of 16
-stp port <1-9> guard none|bpdu|root
-stp port <1-9> filter on|off       # neither send nor accept BPDUs
-stp port <1-9> p2p auto|on|off
+spanning-tree portfast                 # edge port
+spanning-tree portfast disable         # never an edge port
+no spanning-tree portfast              # automatic edge detection (default)
+spanning-tree cost <1-200000000>       # path cost; no form = automatic (by speed)
+spanning-tree port-priority <0-240>    # port priority, steps of 16, default 128
+spanning-tree bpduguard enable
+spanning-tree guard root
+spanning-tree bpdufilter enable        # leave STP: no BPDUs, always forward
+spanning-tree disable                  # the same, easier to find with `?`
+spanning-tree link-type point-to-point|shared   # no form = automatic
 ```
 
-**edge** — an edge port forwards immediately and does not trigger a
-topology change when its link comes and goes; `auto` promotes a port to edge
-after three seconds without a BPDU, and demotes it as soon as one arrives. Use
-`edge on` for ports where only hosts are attached.
+**portfast** — an edge port forwards immediately and does not trigger a
+topology change when its link comes and goes; by default a port is promoted to
+edge after three seconds without a BPDU, and demoted as soon as one arrives. Use
+`spanning-tree portfast` for ports where only hosts are attached.
 
-**guard** — `bpdu` disables a port as soon as a BPDU arrives on it (a host port
-should never see one); `root` keeps a port from ever becoming the path to the
-root, which protects an existing topology from a newly attached bridge that
-claims a better priority.
+**bpduguard / guard root** — BPDU guard disables a port as soon as a BPDU
+arrives on it (a host port should never see one); root guard keeps a port from
+ever becoming the path to the root, which protects an existing topology from a
+newly attached bridge that claims a better priority.
 
-**filter** — the port neither sends nor accepts BPDUs. Useful when the device
-on the far side reacts badly to them (some unmanaged switches with loop
-prevention cut the link) but you still want STP on the rest of the ports.
+**bpdufilter** (alias **disable**) — the port does not take part in spanning
+tree: it forwards unconditionally, sends no BPDUs and ignores received ones,
+BPDU guard included; `show spanning-tree` lists its role as `off`. This is
+what IOS documents interface-level BPDU filtering to be, and what the old
+`stp port <n> off` did. Useful when the device on the far side reacts badly to
+BPDUs (some unmanaged switches with loop prevention cut the link) but you
+still want STP on the rest of the ports. The running configuration shows
+`spanning-tree bpdufilter enable` whichever spelling was used; `no spanning-tree
+bpdufilter` or `no spanning-tree disable` puts the port back, starting in the
+listening period. Portfast makes no difference on such a port, and setting
+one on top of the other prints a warning.
 
 ## Status
 
-The Spanning Tree page shows the elected root (priority and MAC), the path cost
-to it, the root port, the topology-change counter and, per port, the live state
-read from the ASIC together with the configured options. The same data is
-available as JSON:
-
-```
-GET /stp.json
-```
-
-The `stp status` command prints the same view on the serial console.
+`show spanning-tree` shows the protocol version, the bridge, the elected root
+(priority and MAC), the path cost to it, the root port, the topology-change
+counter and, per port and LAG, the live state read from the ASIC, the role and
+the edge status.
 
 ## Limitations
 

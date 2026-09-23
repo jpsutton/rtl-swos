@@ -92,15 +92,19 @@ typedef unsigned short uip_stats_t;
 /**
  * Maximum number of TCP connections. TODO: Increase this, but also make the socket state/buffer per-connection.
  *
+ * Two slots so a lingering half-closed session (FIN_WAIT etc.) does not
+ * lock out a fresh telnet connection while it drains. The packet buffer
+ * stays shared (UIP_CONF_EXTERNAL_BUFFER), so the extra slot costs only
+ * one more uip_conn in xdata.
+ *
  * \hideinitializer
  */
-#define UIP_CONF_MAX_CONNECTIONS 1
+#define UIP_CONF_MAX_CONNECTIONS 2
 
 /**
- * This httpd closes after every response, so an ESTABLISHED connection
- * that stays idle is a peer that died or never sent its request. With a
- * single connection slot it would hold the web UI until the next power
- * cycle, so it is aged out instead.
+ * Age out ESTABLISHED connections that stay idle: a peer that died or
+ * never sent anything would otherwise hold a connection slot until the
+ * next power cycle.
  *
  * uip_periodic() runs from idle() once per system tick; interrupt
  * wake-ups only add sweeps, so the timeout can fire early but never
@@ -111,12 +115,23 @@ typedef unsigned short uip_stats_t;
 #define UIP_CONF_IDLE_PERIODS 200
 #define UIP_CONF_IDLE_TIMEOUT 30
 
+/*
+ * Exempt the telnet port from the idle reaper above: telnet is a
+ * long-lived interactive session and the telnet server enforces its
+ * own, longer idle timeout instead.
+ */
+#define UIP_IDLE_EXEMPT_LPORT 23
+
 /**
- * Maximum number of listening TCP ports. TODO: increase this!
+ * Maximum number of listening TCP ports.
+ *
+ * The telnet server (port 23) is the only TCP listener; one spare slot
+ * for a future service. uip_listen() fails silently when no listen slot
+ * is free.
  *
  * \hideinitializer
  */
-#define UIP_CONF_MAX_LISTENPORTS 1
+#define UIP_CONF_MAX_LISTENPORTS 2
 
 /**
  * uIP buffer size.
@@ -181,7 +196,7 @@ typedef unsigned short uip_stats_t;
 /* Here we include the header file for the application(s) we use in
    our project. */
 /*#include "smtp.h"*/
-#include "httpd.h"
+#include "tcp_app.h"
 #include "udp_apps.h"
 /*#include "telnetd.h"*/
 /*#include "webserver.h" */

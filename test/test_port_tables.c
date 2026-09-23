@@ -42,7 +42,7 @@ static void t_vlan_roundtrip(void)
 	CHECK(vlan_get(10) == 0, "vlan_get finds it");
 	CHECK(((uint32_t)sfr_data[0] << 24 | (uint32_t)sfr_data[1] << 16 | (uint32_t)sfr_data[2] << 8 | sfr_data[3]) == w,
 	      "and returns the word that was written");
-	CHECK(sfr_data[0] & 0x02, "with the valid bit the JSON generators test for");
+	CHECK(sfr_data[0] & 0x02, "with the valid bit the show commands test for");
 
 	unsigned long r = hw_reads;
 	CHECK(vlan_get(4095) == -1, "VLAN 4095 is refused");

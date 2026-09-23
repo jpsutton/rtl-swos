@@ -36,7 +36,7 @@
 #define __sbit        extern bool
 
 /* The firmware ships its own memcpy/memset/strlen/strcpy/sleep, and
- * rtl837x_common.h hides those prototypes under RTLP_HOST_TEST so host builds
+ * rtl837x_common.h hides those prototypes under SWOS_HOST_TEST so host builds
  * take the C library versions. Something has to declare them, and firmware
  * sources do call memset and memcpy; this header is force-included ahead of
  * everything, so pulling <string.h> in here puts the libc versions in scope

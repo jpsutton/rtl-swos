@@ -11,7 +11,7 @@ BUILDDIR = output
 SRCS = installer.c
 OBJS = ${SRCS:%.c=$(BUILDDIR)/%.rel}
 
-all: create_build_dir $(BUILDDIR)/updatebuilder $(BUILDDIR)/rtlplayground_oem_upgrade.bin
+all: create_build_dir $(BUILDDIR)/updatebuilder $(BUILDDIR)/rtl-swos_oem_upgrade.bin
 
 create_build_dir:
 	mkdir -p $(BUILDDIR)
@@ -34,8 +34,8 @@ $(BUILDDIR)/%.rel: %.c
 $(BUILDDIR)/rtlinstaller.ihx: $(BUILDDIR)/crtstart.rel $(OBJS)
 	$(CC) $(CC_FLAGS) -Wl-bHOME=${INSTALLER_ADDRESS} -Wl-r -o $@ $^
 
-$(BUILDDIR)/rtlplayground_oem_upgrade.bin: $(BUILDDIR)/rtlinstaller.ihx ../$(BUILDDIR)/rtlplayground.bin
-	./$(BUILDDIR)/updatebuilder -i $< -o $(BUILDDIR)/rtlplayground_oem_upgrade.bin ../$(BUILDDIR)/rtlplayground.bin
+$(BUILDDIR)/rtl-swos_oem_upgrade.bin: $(BUILDDIR)/rtlinstaller.ihx ../$(BUILDDIR)/rtl-swos.bin
+	./$(BUILDDIR)/updatebuilder -i $< -o $(BUILDDIR)/rtl-swos_oem_upgrade.bin ../$(BUILDDIR)/rtl-swos.bin
 
 clean:
 	rm -r $(BUILDDIR)

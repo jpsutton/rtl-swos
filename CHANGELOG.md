@@ -1,5 +1,43 @@
 # Change Log
 
+## [rtl-swos 0.1.0] - unreleased
+
+First release of the rtl-swos fork.
+
+## Added
+
+- Modal command line in the industry-standard style (user/privileged EXEC,
+  global configuration, interface, port-channel, VLAN, management interface
+  and line submodes) with `?` help, Tab completion, abbreviations, `no`
+  forms and `^` error markers; EXEC commands work in configuration modes.
+  See doc/cli.md.
+- Block-structured running configuration, `write memory`, `show
+  running-config` / `startup-config`, replayed at boot with per-line errors.
+- Show suite: interfaces status/counters/trunk/transceiver, vlan, mac
+  address-table, spanning-tree, port-channel, ip interface brief, ip igmp
+  snooping, monitor, logging, tftp, version, history.
+- Interface ranges: `interface ethernet 1/1-4,1/7`, `interface range ...`.
+- LACP: `channel-group N mode active|passive`, `lacp rate|port-priority|
+  system-priority|min-links`, `show lacp`; IOS `port-channel load-balance`.
+- `spanning-tree bpdufilter enable` (alias `spanning-tree disable`) takes a
+  port out of spanning tree; `ip igmp snooping mrouter`; trunks without their
+  native VLAN accept tagged frames only.
+- Default configuration: DHCP on VLAN 1, telnet on; `make CONFIG=file`.
+- In-band firmware update and configuration transfer over TFTP.
+- Separate CLI sessions for the serial console and telnet.
+- tools/convert-legacy-config.py converts RTLPlayground configurations.
+
+## Breaking changes
+
+- The web interface and its HTTP server are removed.
+- The flat console command language and its configuration syntax are
+  removed; convert old configurations with tools/convert-legacy-config.py.
+- Images are named rtl-swos-*.bin.
+
+# RTLPlayground history
+
+The entries below predate the fork and describe RTLPlayground.
+
 ## [0.x] - 2026-xx-XX
 
 ## Added

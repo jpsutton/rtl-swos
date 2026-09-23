@@ -34,13 +34,6 @@ extern __xdata uint8_t sbuf[SBUF_SIZE];
 // Define the command buffer size, Must be 2^x and <= 128
 #define CMD_BUF_SIZE 128
 
-// Size of the TCP Output buffer
-#define TCP_OUTBUF_SIZE 2500
-
-// Appended when a captured command wrote more than the output buffer holds,
-// so a clipped listing is visibly clipped instead of silently short.
-#define CMD_TRUNCATED "\n[output truncated]\n"
-
 // Size of the port name, including the terminating null byte
 #define PORT_NAME_SIZE 32
 
@@ -50,11 +43,6 @@ extern __xdata uint8_t sbuf[SBUF_SIZE];
 // Size of the flash buffer used for writing to flash, must be a multiple of the flash page size (0x100)
 #define FLASH_BUF_SIZE 512
 
-// Errors for commands
-#define ERR_OK			0
-#define ERR_TOO_MANY_ARGUMENTS	1
-#define ERR_CMD_TOO_LONG	2
-#define ERR_INVALID_ARGUMENT	3
 
 // For RX data, a propriatary RTL FRAME is inserted. Instead of 0x0800 for IPv4,
 // the RTL_FRAME_TAG_ID is used as part of an 8-byte tag. When VLAN is activated,
@@ -91,8 +79,22 @@ struct vlan_tag {
 #define DEFAULT_CONFIG_START 0x6f000
 #define CONFIG_START 0x70000
 #define CONFIG_LEN 0x1000
+// Factory admin (telnet login) password
+#define DEFAULT_PASSWORD "1234"
 #define CODE0_SIZE 0x4000
 #define CODE_BANK_SIZE 0xc000
+
+/* XRAM layout rule. The startup code's XRAM clear does not reach the
+ * part of XRAM at and above 0x4000: that region is not live yet when
+ * GSINIT runs, so anything placed there comes up with power-on garbage
+ * instead of zero (found on SWTGW218AS hardware). Every ordinary
+ * __xdata variable therefore stays below 0x4000 - the build fails
+ * otherwise, see the Makefile - and only large scratch buffers that
+ * never rely on their initial contents are pinned above it. See
+ * doc/xram.md for the measurements and the path to lifting the limit. */
+#define XRAM_LOW_LIMIT		0x4000
+#define XRAM_CFG_BUF		0x4000	/* cfg_buf, CONFIG_LEN bytes */
+#define XRAM_TELNET_OUTBUF	0x5000	/* telnet_outbuf, TELNET_OUTBUF bytes */
 
 // Store update image after running image
 #define FIRMWARE_UPLOAD_START 0x80000
@@ -168,30 +170,22 @@ void reg_bit_set(uint16_t reg_addr, char bit);
 void reg_bit_clear(uint16_t reg_addr, char bit);
 uint8_t reg_bit_test(uint16_t reg_addr, char bit);
 void sfr_mask_data(uint8_t n, uint8_t mask, uint8_t set);
-void sfr_set_zero(void);
 void reset_chip(void);
 /* Firmware implementations that shadow libc names. Host unit-test builds
- * (RTLP_HOST_TEST) hide these prototypes so they don't clash with glibc;
+ * (SWOS_HOST_TEST) hide these prototypes so they don't clash with glibc;
  * argument order matches libc, so on-host callers transparently use the
  * C library. See test/. */
-#ifndef RTLP_HOST_TEST
-void sleep(uint16_t t);
+#ifndef SWOS_HOST_TEST
 void memcpy(__xdata void * __xdata dst, __xdata const void * __xdata src, uint16_t len);
 void memset(__xdata uint8_t *dst, __xdata uint8_t v, uint8_t len);
-int memcmp(__xdata const void *a, __xdata const void *b, uint16_t len);
-uint16_t strlen(__code const char *s);
 uint16_t strcpy(__xdata uint8_t *dst, const char *s);
 char strcmp(__xdata const uint8_t *a, __code const uint8_t *b);
 #endif
 void memcpyc(__xdata uint8_t *dst, __code const uint8_t *src, uint16_t len);
 uint16_t strlen_x(__xdata const char *s);
 uint16_t strtox(__xdata uint8_t *dst, __code const char *s);
-bool strstart(__xdata const uint8_t *a, __code const uint8_t *b);
-bool strstart_x(__xdata const uint8_t *a, __xdata const uint8_t *b);
 void tcpip_output(void);
-uint8_t read_flash(uint8_t bank, __code const uint8_t *addr);
 void get_random_32(void);
-void read_reg_timer(__xdata uint32_t * tmr);
 bool gpio_pin_test(uint8_t pin);
 void set_sys_led_state(uint8_t state);
 void sds_read(uint8_t sds_id, uint8_t page, uint8_t reg);

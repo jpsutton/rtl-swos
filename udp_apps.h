@@ -3,6 +3,7 @@
 
 #include "dhcp.h"
 #include "syslog.h"
+#include "tftp.h"
 
 void udp_callbacks(void);
 

@@ -94,5 +94,9 @@ These functions should bevalid for `RTL8372`, `RTL8372N`, `RTL8373`, and `RTL837
 | PTP_SYNC |      | B10 | 130 |
 | INT      | OPU  | B6  | 132 |
 
+## Reading the GPIOs on the CLI
 
-
+The privileged command `debug gpio` prints the input registers of GPIO 0-31
+and GPIO 32-63 (`RTL837X_REG_GPIO_00_31_INPUT` and the next register) together
+with the bits that changed since the previous call. Toggling a signal between
+two calls identifies its GPIO.
