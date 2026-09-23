@@ -285,8 +285,30 @@ static __code const struct cli_node n_clr_mac = {
 static __code const struct cli_node n_clr_log = {
 	"logging", 0, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_CLEAR_LOG, "Empty the local log buffer"
 };
+/* clear counters [interface [ethernet] LIST] */
+static __code const struct cli_node n_clr_cnt_list = {
+	0, CLI_A_IFLIST, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_CLEAR_CNT, "Port or list"
+};
+static __code const struct cli_node * __code const ch_clr_cnt_eth[] = {
+	&n_clr_cnt_list, 0
+};
+static __code const struct cli_node n_clr_cnt_eth = {
+	"ethernet", 0, CLI_F_PRIV, 0, 0, ch_clr_cnt_eth, ACT_NONE, "Ethernet interfaces"
+};
+static __code const struct cli_node * __code const ch_clr_cnt_if[] = {
+	&n_clr_cnt_eth, &n_clr_cnt_list, 0
+};
+static __code const struct cli_node n_clr_cnt_if = {
+	"interface", 0, CLI_F_PRIV, 0, 0, ch_clr_cnt_if, ACT_NONE, "Only these interfaces"
+};
+static __code const struct cli_node * __code const ch_clr_cnt[] = {
+	&n_clr_cnt_if, 0
+};
+static __code const struct cli_node n_clr_cnt = {
+	"counters", 0, CLI_F_PRIV, 0, 0, ch_clr_cnt, ACT_CLEAR_CNT, "Interface counters"
+};
 static __code const struct cli_node * __code const ch_clear[] = {
-	&n_clr_log, &n_clr_mac, 0
+	&n_clr_cnt, &n_clr_log, &n_clr_mac, 0
 };
 static __code const struct cli_node n_clear = {
 	"clear", 0, CLI_F_PRIV, 0, 0, ch_clear, ACT_NONE, "Reset functions"

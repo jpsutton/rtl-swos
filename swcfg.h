@@ -75,6 +75,10 @@ extern __xdata uint8_t sw_igmp;		/* ip igmp snooping */
 extern __xdata uint8_t sw_mac_boot[6];	/* management MAC as read at boot */
 
 void sw_init(void) __banked;
+/* The port's counters (as port_counters_get()) since the last clear */
+void sw_counters_get(uint8_t lport, __xdata uint32_t * __xdata c) __banked;
+/* clear counters: ports is a logical port mask */
+void sw_counters_clear(__xdata uint16_t ports) __banked;
 uint8_t sw_vlan_exists(uint16_t vid) __banked;
 uint8_t sw_vlan_add(uint16_t vid) __banked;
 uint8_t sw_vlan_del(uint16_t vid) __banked;

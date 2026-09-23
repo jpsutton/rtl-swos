@@ -346,6 +346,18 @@ void cli_act(uint8_t action) __banked
 			break;
 		}
 		break;
+	case ACT_CLEAR_CNT:
+		/* user ports to logical ones */
+		d_mask = 0;
+		for (d_v = 1; d_v <= 9; d_v++) {
+			if (cli.nargs && !(cli.args[0] & ((uint32_t)1 << d_v)))
+				continue;
+			d_lp = up_to_lp(d_v);
+			if (d_lp != 0xff)
+				d_mask |= (uint16_t)1 << d_lp;
+		}
+		sw_counters_clear(d_mask);
+		break;
 	case ACT_CLEAR_LOG:
 		log_clear();
 		break;

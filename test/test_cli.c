@@ -1884,6 +1884,30 @@ static void test_lldp(void)
 	CHECK(!lldp_enabled, "no lldp run turns it off");
 }
 
+static void test_clear_counters(void)
+{
+	printf("[test] clear counters\n");
+	wipe_all();
+	run("enable");
+	hw_counter_set(2, STAT_COUNTER_RX_PKTS, 1000);
+	hw_counter_set(3, STAT_COUNTER_RX_PKTS, 500);
+	run("show int eth1/3");
+	CHECK(out_has("Input: 1000 packets"), "counters before");
+	run("clear counters interface ethernet 1/3");
+	hw_counter_set(2, STAT_COUNTER_RX_PKTS, 1007);
+	run("show int eth1/3");
+	CHECK(out_has("Input: 7 packets"), "counted from the clear");
+	run("show int eth1/4");
+	CHECK(out_has("Input: 500 packets"), "other ports untouched");
+	run("clear counters");
+	run("show int eth1/4");
+	CHECK(out_has("Input: 0 packets"), "clear counters clears all");
+	sw_counters_clear(0xffff);
+	hw_counter_set(2, STAT_COUNTER_RX_PKTS, 0);
+	hw_counter_set(3, STAT_COUNTER_RX_PKTS, 0);
+	sw_counters_clear(0xffff);
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1931,6 +1955,7 @@ int main(void)
 	test_ping_cli();
 	test_log();
 	test_lldp();
+	test_clear_counters();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

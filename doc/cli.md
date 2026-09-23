@@ -114,6 +114,7 @@ runs once for each port, in port order.
 | `copy tftp startup-config A.B.C.D FILE` | Replace the startup configuration (takes effect at reload) |
 | `copy startup-config tftp A.B.C.D FILE` | Upload the startup configuration |
 | `clear mac address-table dynamic` | Flush learned addresses |
+| `clear counters [interface [ethernet] LIST]` | Count interface counters from now on |
 | `reload` | Restart |
 | `debug ...` | Raw register, SerDes, PHY, XRAM, GPIO and flash access; see `debug ?` |
 

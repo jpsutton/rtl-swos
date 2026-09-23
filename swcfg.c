@@ -49,6 +49,32 @@ static __xdata uint8_t sw_bm[512];
 #define BM_GET(v) ((sw_bm[(v) >> 3] >> ((v) & 7)) & 1)
 
 
+/* clear counters: what the counters read then, subtracted from now on */
+static __xdata uint32_t sw_cnt_base[SW_NPORTS][4];
+
+void sw_counters_get(uint8_t lport, __xdata uint32_t * __xdata c) __banked
+{
+	static __xdata uint8_t lp, k;
+	static __xdata uint32_t * __xdata cp;
+
+	lp = lport;
+	cp = c;
+	port_counters_get(lp, cp);
+	for (k = 0; k < 4; k++)
+		cp[k] -= sw_cnt_base[lp][k];
+}
+
+
+void sw_counters_clear(__xdata uint16_t ports) __banked
+{
+	static __xdata uint8_t lp;
+
+	for (lp = 0; lp < SW_NPORTS; lp++)
+		if (ports & ((uint16_t)1 << lp))
+			port_counters_get(lp, sw_cnt_base[lp]);
+}
+
+
 void sw_init(void) __banked
 {
 	static __xdata uint8_t k;

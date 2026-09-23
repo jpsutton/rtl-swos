@@ -77,6 +77,7 @@
 #define ACT_PING	66	/* options in cli.acc: 1 repeat, 2 size */
 #define ACT_CLEAR_LOG	67
 #define ACT_LLDP	68	/* LLDPC_* in ->lo */
+#define ACT_CLEAR_CNT	69	/* args[0]: user-port mask, or all when absent */
 #define LLDPC_FEATURE	1
 #define LLDPC_TX	2
 #define LLDPC_RX	3

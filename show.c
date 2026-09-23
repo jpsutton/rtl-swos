@@ -351,7 +351,7 @@ void show_if_detail(uint16_t ports) __banked
 			sh_s("  IGMP: multicast router port");
 			sh_nl();
 		}
-		port_counters_get(lp, c);
+		sw_counters_get(lp, c);
 		sh_s("  Input: ");
 		sh_dec(c[2]);
 		sh_s(" packets, ");
@@ -377,7 +377,7 @@ void show_if_counters(void) __banked
 	sh_s("Port      InPkts       InErrors   OutPkts      OutErrors\n"
 	     "--------  -----------  ---------  -----------  ---------\n");
 	FOR_EACH_PORT(lp) {
-		port_counters_get(lp, c);
+		sw_counters_get(lp, c);
 		sh_ifname(lp);
 		sh_to(10);
 		sh_dec(c[2]);
