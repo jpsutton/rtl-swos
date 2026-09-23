@@ -1939,6 +1939,54 @@ static void test_errdisable(void)
 	CHECK(!stp_errdis_on && stp_errdis_int == 300, "no forms restore the defaults");
 }
 
+static void test_ios_compat(void)
+{
+	extern uint8_t last_tftp_op, last_tftp_srv[4];
+	extern char last_tftp_file[];
+	char cfg[CONFIG_LEN];
+
+	printf("[test] IOS compatibility: do, ignored lines, aliases\n");
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	run("do show clock");
+	CHECK(out_has("CLOCK"), "do COMMAND in config mode");
+	out_reset();
+	replay_text("Building configuration...\nCurrent configuration : 1234 bytes\n!\nversion 15.2\n"
+		    "service timestamps debug datetime msec\nno service pad\nboot-start-marker\nboot-end-marker\n"
+		    "no ip domain-lookup\nvtp mode transparent\nno cdp run\nspanning-tree extend system-id\n"
+		    "spanning-tree mode rapid-pvst\nspanning-tree vlan 1-4094 priority 8192\n"
+		    "ip route 0.0.0.0 0.0.0.0 10.0.0.254\n"
+		    "interface GigabitEthernet1/0/3\n switchport trunk encapsulation dot1q\n switchport mode trunk\n"
+		    " switchport nonegotiate\n description gi-port\n!\ninterface Te1/0/9\n description ten\n");
+	CHECK(!out_has("% "), "a pasted IOS configuration replays without errors");
+	CHECK(stp_rstp == 1 && stp_prio == 0x20, "rapid-pvst is rstp, the VLAN priority is the bridge priority");
+	CHECK(((uint8_t *)uip_draddr)[0] == 10 && ((uint8_t *)uip_draddr)[3] == 254, "the default route is the gateway");
+	CHECK(!strcmp(port_names[2], "gi-port") && sw_ports[2].mode == SW_MODE_TRUNK
+	      && !strcmp(port_names[8], "ten"), "GigabitEthernet1/0/3 and Te1/0/9 are ports 1/3 and 1/9");
+	render_into(cfg);
+	CHECK(!strstr(cfg, "version") && !strstr(cfg, "vtp") && !strstr(cfg, "nonegotiate"), "nothing ignored renders");
+	run("enable");
+	run("configure terminal");
+	run("ip route 10.0.0.0 255.0.0.0 10.0.0.1");
+	CHECK(out_has("Only the default route"), "other routes are refused");
+	run("spanning-tree mode pvst");
+	CHECK(stp_rstp == 0, "pvst is stp");
+	run("end");
+	run("terminal length 0");
+	CHECK(!out_has("% "), "terminal length 0");
+	run("show run int GigabitEthernet1/0/3");
+	CHECK(out_has("interface ethernet 1/3"), "IOS names in show commands too");
+	run("copy tftp://192.168.0.27/fw.bin flash:");
+	CHECK(last_tftp_op == TFTP_OP_GET_FW && last_tftp_srv[0] == 192 && last_tftp_srv[3] == 27
+	      && !strcmp(last_tftp_file, "fw.bin"), "copy tftp://host/file flash:");
+	run("copy startup-config tftp://10.1.2.3/sw.cfg");
+	CHECK(last_tftp_op == TFTP_OP_PUT_CONFIG && last_tftp_srv[3] == 3 && !strcmp(last_tftp_file, "sw.cfg"),
+	      "copy startup-config tftp://host/file");
+	run("copy http://x/y flash:");
+	CHECK(out_has("Only tftp://"), "other schemes refused");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1988,6 +2036,7 @@ int main(void)
 	test_lldp();
 	test_clear_counters();
 	test_errdisable();
+	test_ios_compat();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

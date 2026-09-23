@@ -376,8 +376,11 @@ static __code const struct cli_node n_cp_s_run = {
 	"running-config", 0, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_COPY_SR,
 	"Merge into the running configuration"
 };
+static __code const struct cli_node n_arg_cps_url = {
+	0, CLI_A_WORD, CLI_F_PRIV, TFTP_OP_PUT_CONFIG, 0, NO_CHILDREN, ACT_COPY_URL, "tftp://A.B.C.D/FILE"
+};
 static __code const struct cli_node * __code const ch_cp_start[] = {
-	&n_cp_s_run, &n_cp_s_tftp, 0
+	&n_cp_s_run, &n_cp_s_tftp, &n_arg_cps_url, 0
 };
 static __code const struct cli_node n_copy_start = {
 	"startup-config", 0, CLI_F_PRIV, 0, 0, ch_cp_start, ACT_NONE, "From the startup config"
@@ -385,8 +388,24 @@ static __code const struct cli_node n_copy_start = {
 static __code const struct cli_node n_copy_config = {
 	"config", 0, CLI_F_PRIV, 0, 0, ch_cp_start, ACT_NONE, "Same as startup-config"
 };
+/* copy tftp://A.B.C.D/FILE flash:|startup-config, and back */
+static __code const struct cli_node n_cpu_flash = {
+	"flash:", 0, CLI_F_PRIV, TFTP_OP_GET_FW, 0, NO_CHILDREN, ACT_COPY_URL, "Firmware image"
+};
+static __code const struct cli_node n_cpu_flash2 = {
+	"flash", 0, CLI_F_PRIV, TFTP_OP_GET_FW, 0, NO_CHILDREN, ACT_COPY_URL, "Firmware image"
+};
+static __code const struct cli_node n_cpu_start = {
+	"startup-config", 0, CLI_F_PRIV, TFTP_OP_GET_CONFIG, 0, NO_CHILDREN, ACT_COPY_URL, "Startup config"
+};
+static __code const struct cli_node * __code const ch_cpu_dst[] = {
+	&n_cpu_flash, &n_cpu_flash2, &n_cpu_start, 0
+};
+static __code const struct cli_node n_arg_cpu_url = {
+	0, CLI_A_WORD, CLI_F_PRIV, 0, 0, ch_cpu_dst, ACT_NONE, "tftp://A.B.C.D/FILE"
+};
 static __code const struct cli_node * __code const ch_copy[] = {
-	&n_copy_config, &n_copy_running, &n_copy_start, &n_copy_tftp, 0
+	&n_copy_config, &n_copy_running, &n_copy_start, &n_copy_tftp, &n_arg_cpu_url, 0
 };
 
 static __code const struct cli_node n_enable = {
@@ -560,8 +579,32 @@ static __code const struct cli_node n_debug = {
 	"debug", 0, CLI_F_PRIV, 0, 0, ch_debug, ACT_NONE, "Raw hardware access"
 };
 
+/* Lines of a pasted IOS configuration that have no meaning here: taken
+ * and ignored, so a paste or a replay reports only what matters */
+static __code const struct cli_node n_ign_rest = {
+	0, CLI_A_LINE, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_NOP, "Ignored"
+};
+static __code const struct cli_node * __code const ch_ign[] = {
+	&n_ign_rest, 0
+};
+#define IGNORED(nm, word) \
+static __code const struct cli_node nm = { \
+	word, 0, CLI_F_NO_OK, 0, 0, ch_ign, ACT_NOP, "Accepted and ignored (IOS)" \
+};
+IGNORED(n_ign_version, "version")
+IGNORED(n_ign_service, "service")
+IGNORED(n_ign_building, "building")
+IGNORED(n_ign_current, "current")
+IGNORED(n_ign_bootstart, "boot-start-marker")
+IGNORED(n_ign_bootend, "boot-end-marker")
+IGNORED(n_ign_vtp, "vtp")
+IGNORED(n_ign_cdp, "cdp")
+
+static __code const struct cli_node n_terminal = {
+	"terminal", 0, 0, 0, 0, ch_ign, ACT_NOP, "Accepted and ignored (length, width, monitor)"
+};
 static __code const struct cli_node * __code const cli_root_exec[] = {
-	&n_clear, &n_configure, &n_copy, &n_debug, &n_disable, &n_enable,
+	&n_clear, &n_configure, &n_copy, &n_terminal, &n_debug, &n_disable, &n_enable,
 	&n_exit_exec, &n_nslookup, &n_ping, &n_reload, &n_show, &n_write, 0
 };
 
@@ -682,8 +725,34 @@ static __code const struct cli_node n_ip_ns = {
 	"name-server", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_ns1, ACT_NAMESERVER,
 	"DNS servers (default: the one from DHCP)"
 };
+/* ip route 0.0.0.0 0.0.0.0 GW: the default gateway */
+static __code const struct cli_node n_arg_rt_gw = {
+	0, CLI_A_IP, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_IP_ROUTE, "Next hop"
+};
+static __code const struct cli_node * __code const ch_rt_gw[] = {
+	&n_arg_rt_gw, 0
+};
+static __code const struct cli_node n_arg_rt_mask = {
+	0, CLI_A_IP, CLI_F_NO_OK, 0, 0, ch_rt_gw, ACT_NONE, "Mask (only 0.0.0.0, the default route)"
+};
+static __code const struct cli_node * __code const ch_rt_mask[] = {
+	&n_arg_rt_mask, 0
+};
+static __code const struct cli_node n_arg_rt_net = {
+	0, CLI_A_IP, CLI_F_NO_OK, 0, 0, ch_rt_mask, ACT_NONE, "Destination (only 0.0.0.0)"
+};
+static __code const struct cli_node * __code const ch_rt[] = {
+	&n_arg_rt_net, 0
+};
+static __code const struct cli_node n_ip_route = {
+	"route", 0, CLI_F_NO_OK, 0, 0, ch_rt, ACT_NONE, "The default route, as ip default-gateway"
+};
+static __code const struct cli_node n_ip_dlookup = {
+	"domain-lookup", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_NOP, "Accepted and ignored"
+};
+
 static __code const struct cli_node * __code const ch_ip_cfg[] = {
-	&n_ip_defgw, &n_ip_igmp, &n_ip_ns, 0
+	&n_ip_defgw, &n_ip_dlookup, &n_ip_igmp, &n_ip_ns, &n_ip_route, 0
 };
 static __code const struct cli_node n_ip_cfg = {
 	"ip", 0, 0, 0, 0, ch_ip_cfg, ACT_NONE,
@@ -809,8 +878,15 @@ static __code const struct cli_node n_stpg_rstp = {
 static __code const struct cli_node n_stpg_stp = {
 	"stp", 0, 0, STPG_STP, 0, NO_CHILDREN, ACT_STP_G, "Classic spanning tree (802.1D)"
 };
+/* the IOS names: one spanning tree serves every VLAN here */
+static __code const struct cli_node n_stpg_rpvst = {
+	"rapid-pvst", 0, 0, STPG_RSTP, 0, NO_CHILDREN, ACT_STP_G, "Same as rstp (one tree for all VLANs)"
+};
+static __code const struct cli_node n_stpg_pvst = {
+	"pvst", 0, 0, STPG_STP, 0, NO_CHILDREN, ACT_STP_G, "Same as stp (one tree for all VLANs)"
+};
 static __code const struct cli_node * __code const ch_stpg_mode[] = {
-	&n_stpg_rstp, &n_stpg_stp, 0
+	&n_stpg_pvst, &n_stpg_rpvst, &n_stpg_rstp, &n_stpg_stp, 0
 };
 static __code const struct cli_node n_stpg_mode = {
 	"mode", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, STPG_RSTP, 0, ch_stpg_mode, ACT_STP_G,
@@ -852,9 +928,39 @@ static __code const struct cli_node * __code const ch_stpg_tx[] = {
 static __code const struct cli_node n_stpg_transmit = {
 	"transmit", 0, 0, 0, 0, ch_stpg_tx, ACT_NONE, "BPDU transmission"
 };
+static __code const struct cli_node n_arg_stvp = {
+	0, CLI_A_NUM32, 0, STPG_VPRIO, 0, NO_CHILDREN, ACT_STP_G, "0-61440, a multiple of 4096"
+};
+static __code const struct cli_node * __code const ch_stvp[] = {
+	&n_arg_stvp, 0
+};
+static __code const struct cli_node n_stv_prio = {
+	"priority", 0, 0, 0, 0, ch_stvp, ACT_NONE, "The bridge priority (one tree for all VLANs)"
+};
+static __code const struct cli_node * __code const ch_stv[] = {
+	&n_stv_prio, 0
+};
+static __code const struct cli_node n_arg_stv = {
+	0, CLI_A_WORD, 0, 0, 0, ch_stv, ACT_NONE, "VLAN list (IOS form; the setting is global)"
+};
+static __code const struct cli_node * __code const ch_stvl[] = {
+	&n_arg_stv, 0
+};
+static __code const struct cli_node n_stpg_vlan = {
+	"vlan", 0, 0, 0, 0, ch_stvl, ACT_NONE, "IOS per-VLAN form of the global settings"
+};
+static __code const struct cli_node n_stpg_extsid = {
+	"system-id", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_NOP, "Accepted and ignored"
+};
+static __code const struct cli_node * __code const ch_stpg_ext[] = {
+	&n_stpg_extsid, 0
+};
+static __code const struct cli_node n_stpg_extend = {
+	"extend", 0, CLI_F_NO_OK, 0, 0, ch_stpg_ext, ACT_NONE, "Accepted and ignored"
+};
 static __code const struct cli_node * __code const ch_stp_global[] = {
-	&n_stpg_fwdt, &n_stpg_hellot, &n_stpg_maxaget, &n_stpg_mode,
-	&n_stpg_priority, &n_stpg_transmit, 0
+	&n_stpg_extend, &n_stpg_fwdt, &n_stpg_hellot, &n_stpg_maxaget, &n_stpg_mode,
+	&n_stpg_priority, &n_stpg_transmit, &n_stpg_vlan, 0
 };
 static __code const struct cli_node n_stp_global = {
 	"spanning-tree", 0, 0, 0, 0, ch_stp_global, ACT_NONE, "Spanning tree bridge settings"
@@ -1073,6 +1179,8 @@ static __code const struct cli_node n_errdis = {
 };
 
 static __code const struct cli_node * __code const cli_root_config[] = {
+	&n_ign_bootend, &n_ign_bootstart, &n_ign_building, &n_ign_cdp, &n_ign_current, &n_ign_service,
+	&n_ign_version, &n_ign_vtp,
 	&n_clock, &n_end, &n_errdis, &n_exit_cfg, &n_feature, &n_hostname, &n_interface, &n_ip_cfg,
 	&n_g_lacp, &n_line, &n_g_lldp, &n_logging, &n_monitor, &n_ntp, &n_g_pc, &n_stp_global, &n_vlan, 0
 };
@@ -1239,8 +1347,11 @@ static __code const struct cli_node n_swt_allowed = {
 	"allowed", 0, 0, 0, 0, ch_swt_allowed, ACT_NONE,
 	"Allowed VLAN list"
 };
+static __code const struct cli_node n_swt_encap = {
+	"encapsulation", 0, CLI_F_NO_OK, 0, 0, ch_ign, ACT_NOP, "Accepted and ignored (dot1q only)"
+};
 static __code const struct cli_node * __code const ch_swtrunk[] = {
-	&n_swt_allowed, &n_swt_native, 0
+	&n_swt_allowed, &n_swt_encap, &n_swt_native, 0
 };
 static __code const struct cli_node n_sw_trunk = {
 	"trunk", 0, 0, 0, 0, ch_swtrunk, ACT_NONE,
@@ -1250,8 +1361,11 @@ static __code const struct cli_node n_sw_protected = {
 	"protected", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_PROT,
 	"No forwarding to other protected ports"
 };
+static __code const struct cli_node n_sw_noneg = {
+	"nonegotiate", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_NOP, "Accepted and ignored (no DTP)"
+};
 static __code const struct cli_node * __code const ch_switchport[] = {
-	&n_sw_access, &n_sw_mode, &n_sw_protected, &n_sw_trunk, 0
+	&n_sw_access, &n_sw_mode, &n_sw_noneg, &n_sw_protected, &n_sw_trunk, 0
 };
 static __code const struct cli_node n_if_switchport = {
 	"switchport", 0, 0, 0, 0, ch_switchport, ACT_NONE,
@@ -1730,6 +1844,15 @@ static void cli_tokenize(__xdata char *line)
 	}
 	if (!ntok)
 		trailing_space = 1;
+	/* `do COMMAND`, as IOS wants it in configuration modes: EXEC commands
+	 * work there anyway, so the prefix is dropped */
+	if (ntok >= 2 && tok_len[0] == 2 && lc(line[tok_off[0]]) == 'd' && lc(line[tok_off[0] + 1]) == 'o') {
+		for (i = 1; i < ntok; i++) {
+			tok_off[i - 1] = tok_off[i];
+			tok_len[i - 1] = tok_len[i];
+		}
+		ntok--;
+	}
 }
 
 
@@ -1842,9 +1965,42 @@ static uint8_t ap_hex(void)
  * the port is the number after the last '/'. With one set only a single
  * port is accepted and ap_v is N, else ap_v is the ports as a mask
  * (bit N). */
+/* Interface type words accepted in front of a port number: ours, and the
+ * IOS names a pasted configuration uses (GigabitEthernet1/0/3) */
+static __code const char * __code const if_words[] = {
+	"ethernet", "gigabitethernet", "fastethernet", "tengigabitethernet",
+	"twogigabitethernet", "fivegigabitethernet", 0
+};
+
+/* Take the letters at ap_p[ap_i]: none, or a prefix of one of if_words */
+static __xdata uint8_t ifw_n;
+static uint8_t if_word_take(void)
+{
+	static __xdata uint8_t k, j, c;
+	static __code const char * __xdata w;
+
+	for (ifw_n = 0; ap_i + ifw_n < ap_len; ifw_n++) {
+		c = ap_p[ap_i + ifw_n] | 0x20;
+		if (c < 'a' || c > 'z')
+			break;
+	}
+	if (!ifw_n)
+		return 1;
+	for (k = 0; if_words[k]; k++) {
+		w = if_words[k];
+		for (j = 0; j < ifw_n; j++)
+			if (!w[j] || (ap_p[ap_i + j] | 0x20) != w[j])
+				break;
+		if (j == ifw_n) {
+			ap_i += ifw_n;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static uint8_t ap_iface(uint8_t one)
 {
-	static __code const char * __xdata w;
 	static __xdata uint16_t num, first, mask;
 	static __xdata uint8_t have, dash, single;
 	static __xdata char c;
@@ -1855,18 +2011,10 @@ static uint8_t ap_iface(uint8_t one)
 	first = 0;
 	mask = 0;
 	for (;;) {
-		w = "ethernet";
 		num = 0;
 		have = 0;
-		while (ap_i < ap_len) {
-			c = ap_p[ap_i] | 0x20;
-			if (c < 'a' || c > 'z')
-				break;
-			if (!*w || c != *w)
-				return 0;
-			w++;
-			ap_i++;
-		}
+		if (!if_word_take())
+			return 0;
 		c = 0;
 		for (; ap_i < ap_len; ap_i++) {
 			c = ap_p[ap_i];

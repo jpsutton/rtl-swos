@@ -79,6 +79,9 @@
 #define ACT_LLDP	68	/* LLDPC_* in ->lo */
 #define ACT_CLEAR_CNT	69	/* args[0]: user-port mask, or all when absent */
 #define ACT_ERRDIS	70
+#define ACT_NOP		71	/* accepted, nothing to do */
+#define ACT_IP_ROUTE	72
+#define ACT_COPY_URL	73	/* TFTP_OP_* in ->lo */
 #define ERRDIS_CAUSE	1
 #define ERRDIS_INTERVAL	2
 #define LLDPC_FEATURE	1
@@ -120,6 +123,7 @@
 #define STPG_FWD	5
 #define STPG_MAXAGE	6
 #define STPG_TXHOLD	7
+#define STPG_VPRIO	8	/* spanning-tree vlan LIST priority N */
 /* ACT_STP_IF parameters */
 #define STPI_PORTFAST	1
 #define STPI_PF_DIS	2

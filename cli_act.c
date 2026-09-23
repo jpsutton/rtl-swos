@@ -349,6 +349,49 @@ void cli_act(uint8_t action) __banked
 			break;
 		}
 		break;
+	case ACT_NOP:
+		break;
+	case ACT_IP_ROUTE:
+		if (cli.args[0] || cli.args[1]) {
+			print_string("% Only the default route (0.0.0.0 0.0.0.0) is supported\n");
+			break;
+		}
+		sw_gateway_set(cli.no ? 0 : cli.args[2]);
+		break;
+	case ACT_COPY_URL:
+	{
+		/* tftp://A.B.C.D/FILE: the URL is the first argument */
+		static __xdata char * __xdata u;
+		static __xdata uint8_t ip[4], k;
+		static __xdata uint16_t o;
+		u = cli.line + cli.argoff[cli.lo == TFTP_OP_PUT_CONFIG ? 0 : 0];
+		if (u[0] != 't' || u[1] != 'f' || u[2] != 't' || u[3] != 'p' || u[4] != ':'
+		    || u[5] != '/' || u[6] != '/') {
+			print_string("% Only tftp://A.B.C.D/FILE URLs are supported\n");
+			break;
+		}
+		u += 7;
+		for (k = 0; k < 4; k++) {
+			o = 0;
+			d_lp = 0;
+			while (*u >= '0' && *u <= '9' && d_lp < 3) {
+				o = o * 10 + *u++ - '0';
+				d_lp++;
+			}
+			if (!d_lp || o > 255 || *u != (k < 3 ? '.' : '/')) {
+				k = 0xff;
+				break;
+			}
+			ip[k] = o;
+			u++;
+		}
+		if (k == 0xff || !*u || *u == ' ') {
+			print_string("% Expected tftp://A.B.C.D/FILE\n");
+			break;
+		}
+		tftp_begin(cli.lo, ip, u);
+		break;
+	}
 	case ACT_ERRDIS:
 		if (cli.lo == ERRDIS_CAUSE) {
 			stp_errdis_on = !cli.no;
@@ -1013,7 +1056,7 @@ void cli_act(uint8_t action) __banked
 	case ACT_STP_G:
 	{
 		static __xdata uint32_t sv;
-		sv = cli.args[0];
+		sv = cli.args[cli.lo == STPG_VPRIO ? 1 : 0];
 		switch (cli.lo) {
 		case STPG_RSTP:
 			stp_rstp = 1;	/* also `no spanning-tree mode` */
@@ -1021,6 +1064,7 @@ void cli_act(uint8_t action) __banked
 		case STPG_STP:
 			stp_rstp = cli.no;
 			break;
+		case STPG_VPRIO:
 		case STPG_PRIO:
 			if (cli.no)
 				sv = 32768;

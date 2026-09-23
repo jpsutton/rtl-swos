@@ -231,6 +231,27 @@ VLAN:
 
 See [Time, DNS and TOTP](time.md).
 
+## IOS compatibility
+
+So that an IOS configuration can be pasted, and IOS habits work:
+
+- `do COMMAND` is accepted in every mode (the prefix is dropped).
+- IOS interface names are accepted wherever a port is: `GigabitEthernet1/0/3`,
+  `Gi1/0/3`, `Te1/0/9`, `FastEthernet`, ...; the number after the last `/`
+  is the port.
+- `spanning-tree mode rapid-pvst` and `pvst` mean `rstp` and `stp`;
+  `spanning-tree vlan LIST priority N` sets the (single) bridge priority.
+- `ip route 0.0.0.0 0.0.0.0 GW` sets the default gateway; other routes are
+  refused.
+- `copy tftp://A.B.C.D/FILE flash:` or `startup-config`, and
+  `copy startup-config tftp://A.B.C.D/FILE`.
+- These lines are accepted and ignored: `version ...`, `service ...`,
+  `Building configuration...`, `Current configuration : ...`,
+  `boot-start-marker`, `boot-end-marker`, `vtp ...`, `cdp ...`,
+  `[no] ip domain-lookup`, `spanning-tree extend system-id`,
+  `switchport nonegotiate`, `switchport trunk encapsulation ...` and, in
+  EXEC mode, `terminal ...`.
+
 ## Startup configuration
 
 `write memory` stores the running configuration in the flash sector at

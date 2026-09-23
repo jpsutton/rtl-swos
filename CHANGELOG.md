@@ -30,6 +30,9 @@ First release of the rtl-swos fork.
 - `ping HOST [repeat N] [size N]`; `show interfaces ethernet LIST` detail.
 - LLDP (`feature lldp`, `show lldp neighbors [detail]`); local event log
   (`show logging`, `clear logging`); a fourth code bank.
+- `clear counters`; `errdisable recovery cause bpduguard`; IOS compatibility
+  (`do`, GigabitEthernet names, rapid-pvst, `ip route 0.0.0.0 ...`,
+  `copy tftp://...`, pasted-config lines ignored).
 - Telnet command history (arrow keys, ^P/^N); `copy startup-config
   running-config`; `show running-config interface ...|vlan ...`.
 - In-band firmware update and configuration transfer over TFTP.
