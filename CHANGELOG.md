@@ -23,6 +23,12 @@ First release of the rtl-swos fork.
   port out of spanning tree; `ip igmp snooping mrouter`; trunks without their
   native VLAN accept tagged frames only.
 - Default configuration: DHCP on VLAN 1, telnet on; `make CONFIG=file`.
+- DNS resolver (`ip name-server`, `show hosts`, `nslookup`) and SNTP client
+  (`ntp server`, `clock timezone`, `clock summer-time`, `show clock`,
+  `show ntp`), from RTLPlayground #446 and #447.
+- TOTP second factor for telnet logins (`totp secret`, `login totp`).
+- Telnet command history (arrow keys, ^P/^N); `copy startup-config
+  running-config`; `show running-config interface ...|vlan ...`.
 - In-band firmware update and configuration transfer over TFTP.
 - Separate CLI sessions for the serial console and telnet.
 - tools/convert-legacy-config.py converts RTLPlayground configurations.

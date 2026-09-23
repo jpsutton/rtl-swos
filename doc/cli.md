@@ -39,9 +39,9 @@ rtl-swos-94830a# write memory
 - A global configuration command typed in a submode runs in global
   configuration mode and leaves the submode, so a pasted configuration
   needs no `exit` lines.
-- On the serial console the arrow keys recall and edit earlier lines;
-  `show history` lists them. Telnet sessions get `?` help and Tab
-  completion, but no line history.
+- The up and down arrow keys (or ^P/^N on telnet) recall earlier lines;
+  `show history` lists them. The serial console and each telnet session
+  have their own history.
 - Lines starting with `!` are comments.
 
 ## Modes
@@ -80,6 +80,8 @@ runs once for each port, in port order.
 | Command | |
 |---|---|
 | `show running-config` | Current configuration (non-default settings) |
+| `show running-config interface [ethernet LIST\|port-channel N\|vlan N]` | Only those interface blocks, e.g. `show run int eth1/3` |
+| `show running-config vlan [N]` | Only the VLAN blocks |
 | `show startup-config` | The configuration replayed at boot |
 | `show version` | Software, build, board, flash size, MAC, uptime |
 | `show interfaces [status]` | Link, VLAN, speed and type per port |
@@ -96,8 +98,14 @@ runs once for each port, in port order.
 | `show monitor [session 1]` | Port mirroring |
 | `show logging` | Remote syslog |
 | `show tftp` | Progress or result of the last TFTP transfer |
-| `show history` | Serial console command history |
+| `show history` | Command history of this session |
+| `show clock` | Local date and time (from NTP) |
+| `show ntp [status]` | NTP server and synchronisation |
+| `show hosts` | Name servers and the last lookup |
+| `show totp` | TOTP login state and the current code (privileged) |
+| `nslookup NAME` | Resolve a name; the result appears in `show hosts` |
 | `write [memory]`, `copy running-config startup-config` | Save the configuration to flash |
+| `copy startup-config running-config` | Merge the startup configuration into the running one |
 | `copy tftp flash A.B.C.D FILE` | Download a firmware image; it is applied by reloading |
 | `copy tftp startup-config A.B.C.D FILE` | Replace the startup configuration (takes effect at reload) |
 | `copy startup-config tftp A.B.C.D FILE` | Upload the startup configuration |
@@ -116,6 +124,10 @@ Everything except `show`, `enable` and `exit` needs privileged EXEC.
 | `vlan N` (1-4094), `no vlan N` | VLAN 1 only; VLAN 1 cannot be deleted |
 | `interface ethernet 1/N`, `interface port-channel N` (1-4), `interface vlan N` | |
 | `ip default-gateway A.B.C.D` | none |
+| `ip name-server A.B.C.D [A.B.C.D]` | the DNS server from DHCP |
+| `ntp server HOST` | none (no time) |
+| `clock timezone NAME HOURS [MINUTES]` | UTC 0 0 |
+| `clock summer-time NAME recurring [eu\|us]` | none; plain `recurring` is the US rule |
 | `ip igmp snooping` | off |
 | `logging host A.B.C.D [port N]` | off, port 514 |
 | `monitor session 1 source interface ethernet 1/N [rx\|tx\|both]` | |
@@ -205,6 +217,10 @@ VLAN:
 |---|---|
 | `password WORD` | `1234` |
 | `exec-timeout MIN [SEC]` | 10 minutes; at least 30 seconds, `0 0` = never |
+| `totp secret BASE32` | none; the shared secret of an authenticator app |
+| `login totp` | off; ask for a TOTP code after the password |
+
+See [Time, DNS and TOTP](time.md).
 
 ## Startup configuration
 

@@ -49,7 +49,8 @@ everyone who built RTLPlayground; their work is in this repository's history.
 - Link aggregation, static or LACP, with a configurable hash
 - Spanning tree (RSTP/STP), port mirroring, IGMP snooping
 - SFP+ module information and diagnostics
-- Management on any VLAN, static or DHCP; telnet; remote syslog
+- Management on any VLAN, static or DHCP; telnet with an optional TOTP
+  second factor; remote syslog; DNS resolver; NTP client
 - In-band firmware and configuration transfer over TFTP
 - `show` commands for interfaces, counters, VLANs, MAC table, port-channels,
   LACP, spanning tree and transceivers
@@ -91,6 +92,7 @@ Using rtl-swos:
   in-band updates, factory reset
 - [Command line reference](doc/cli.md)
 - [Migrating from RTLPlayground](doc/migrating.md)
+- [Time, DNS and TOTP](doc/time.md)
 - [Automation](doc/automation.md): scripting over telnet and TFTP
 
 Features, and how the hardware does them:
