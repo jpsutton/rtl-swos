@@ -27,6 +27,7 @@ First release of the rtl-swos fork.
   (`ntp server`, `clock timezone`, `clock summer-time`, `show clock`,
   `show ntp`), from RTLPlayground #446 and #447.
 - TOTP second factor for telnet logins (`totp secret`, `login totp`).
+- `ping HOST [repeat N] [size N]`; `show interfaces ethernet LIST` detail.
 - Telnet command history (arrow keys, ^P/^N); `copy startup-config
   running-config`; `show running-config interface ...|vlan ...`.
 - In-band firmware update and configuration transfer over TFTP.

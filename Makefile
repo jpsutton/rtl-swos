@@ -80,6 +80,7 @@ SRCS = \
 	dns.c \
 	ntp.c \
 	totp.c \
+	ping.c \
 	udp_apps.c
 
 # RTL837x

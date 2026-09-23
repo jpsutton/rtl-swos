@@ -368,6 +368,40 @@ static __code const struct cli_node n_copy = {
 	"copy", 0, CLI_F_PRIV, 0, 0, ch_copy, ACT_NONE,
 	"Copy configuration or image data"
 };
+/* ping HOST [repeat N] [size N]: CLI_F_ACC marks which options are there */
+static __code const struct cli_node n_arg_psize = {
+	0, CLI_A_NUM, CLI_F_PRIV, 36, 1500, NO_CHILDREN, ACT_PING, "Datagram size in bytes (default 100)"
+};
+static __code const struct cli_node * __code const ch_psize[] = {
+	&n_arg_psize, 0
+};
+static __code const struct cli_node n_ping_size = {
+	"size", 0, CLI_F_PRIV | CLI_F_ACC, 2, 0, ch_psize, ACT_NONE, "Datagram size"
+};
+static __code const struct cli_node * __code const ch_prep_next[] = {
+	&n_ping_size, 0
+};
+static __code const struct cli_node n_arg_prep = {
+	0, CLI_A_NUM, CLI_F_PRIV, 1, 1000, ch_prep_next, ACT_PING, "Number of echos (default 5)"
+};
+static __code const struct cli_node * __code const ch_prep[] = {
+	&n_arg_prep, 0
+};
+static __code const struct cli_node n_ping_rep = {
+	"repeat", 0, CLI_F_PRIV | CLI_F_ACC, 1, 0, ch_prep, ACT_NONE, "Repeat count"
+};
+static __code const struct cli_node * __code const ch_ping_opt[] = {
+	&n_ping_rep, &n_ping_size, 0
+};
+static __code const struct cli_node n_arg_phost = {
+	0, CLI_A_WORD, CLI_F_PRIV, 0, 0, ch_ping_opt, ACT_PING, "Host name or address"
+};
+static __code const struct cli_node * __code const ch_ping[] = {
+	&n_arg_phost, 0
+};
+static __code const struct cli_node n_ping = {
+	"ping", 0, CLI_F_PRIV, 0, 0, ch_ping, ACT_NONE, "Send ICMP echo requests"
+};
 /* nslookup NAME: starts a lookup; the result is in show hosts */
 static __code const struct cli_node n_arg_nsl = {
 	0, CLI_A_WORD, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_NSLOOKUP, "Host name"
@@ -482,7 +516,7 @@ static __code const struct cli_node n_debug = {
 
 static __code const struct cli_node * __code const cli_root_exec[] = {
 	&n_clear, &n_configure, &n_copy, &n_debug, &n_disable, &n_enable,
-	&n_exit_exec, &n_nslookup, &n_reload, &n_show, &n_write, 0
+	&n_exit_exec, &n_nslookup, &n_ping, &n_reload, &n_show, &n_write, 0
 };
 
 /* ---- global configuration mode ---- */
@@ -2081,6 +2115,12 @@ void cli_use(uint8_t who) __banked
 		c[i] = cli_saved[w][i];
 	}
 	cli_who = w;
+}
+
+
+uint8_t cli_session(void) __banked
+{
+	return cli_who;
 }
 
 

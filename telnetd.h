@@ -45,5 +45,6 @@ void telnet_stop(void) __banked;
 void telnet_set_timeout(uint16_t secs) __banked;
 /* show history for the telnet session */
 void telnet_history_show(void) __banked;
+void telnet_prompt(void) __banked;
 
 #endif

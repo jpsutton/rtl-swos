@@ -91,6 +91,8 @@ struct cli_state_t {
 #define CLI_CONSOLE	0
 #define CLI_VTY		1
 void cli_use(uint8_t who) __banked;
+/* the session selected last: CLI_CONSOLE or CLI_VTY */
+uint8_t cli_session(void) __banked;
 
 extern __xdata struct cli_state_t cli;
 

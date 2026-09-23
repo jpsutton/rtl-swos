@@ -28,6 +28,7 @@
 #include "dns.h"
 #include "ntp.h"
 #include "totp.h"
+#include "ping.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -354,6 +355,19 @@ void cli_act(uint8_t action) __banked
 		else
 			igmp_router_port_set(igmp_mrouter | ((uint16_t)1 << cli.ctx_lport));
 		break;
+	case ACT_PING:
+	{
+		static __xdata uint16_t n, len;
+		n = 5;
+		len = 100;
+		d_lp = 1;
+		if (cli.acc & 1)
+			n = cli.args[d_lp++];
+		if (cli.acc & 2)
+			len = cli.args[d_lp];
+		ping_start(cli.line + cli.argoff[0], n, len);
+		break;
+	}
 	case ACT_COPY_SR:
 		if (cli_replaying) {	/* a startup config that copies itself */
 			print_string("% Not while a configuration is being replayed\n");

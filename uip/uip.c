@@ -85,6 +85,7 @@
 #include "uip.h"
 #include "uipopt.h"
 #include "uip_arch.h"
+#include "../ping.h"
 #include <stddef.h>
 
 #pragma codeseg BANK1
@@ -1018,6 +1019,10 @@ uip_process(u8_t flag) __banked
   /* ICMP echo (i.e., ping) processing. This is simple, we only change
      the ICMP type from ECHO to ECHO_REPLY and adjust the ICMP
      checksum before we return the packet. */
+  if(ICMPBUF->type == ICMP_ECHO_REPLY) {	/* for our own ping */
+    ping_reply();
+    goto drop;
+  }
   if(ICMPBUF->type != ICMP_ECHO) {
     UIP_STAT(++uip_stat.icmp.drop);
     UIP_STAT(++uip_stat.icmp.typeerr);

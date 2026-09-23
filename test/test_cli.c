@@ -1755,6 +1755,29 @@ static void test_show_if_detail(void)
 	CHECK(out_has("Port      Name"), "the table views are unchanged");
 }
 
+static void test_ping_cli(void)
+{
+	extern char ping_host[];
+	extern uint16_t ping_count, ping_size;
+
+	printf("[test] ping command line\n");
+	wipe_all();
+	run("enable");
+	run("ping 192.168.0.1");
+	CHECK(!strcmp(ping_host, "192.168.0.1") && ping_count == 5 && ping_size == 100, "defaults: 5 echos of 100 bytes");
+	run("ping pool.ntp.org repeat 3");
+	CHECK(!strcmp(ping_host, "pool.ntp.org") && ping_count == 3 && ping_size == 100, "repeat");
+	run("ping 10.0.0.1 size 1500");
+	CHECK(ping_count == 5 && ping_size == 1500, "size");
+	run("ping 10.0.0.1 repeat 2 size 64");
+	CHECK(ping_count == 2 && ping_size == 64, "both");
+	run("ping 10.0.0.1 size 20");
+	CHECK(out_has("% Invalid input"), "size below 36 refused");
+	run("disable");
+	run("ping 10.0.0.1");
+	CHECK(out_has("% Invalid input"), "ping needs privileged EXEC");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1799,6 +1822,7 @@ int main(void)
 	test_copy_forms();
 	test_show_run_filters();
 	test_show_if_detail();
+	test_ping_cli();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

@@ -36,6 +36,7 @@
 #include "dns.h"
 #include "ntp.h"
 #include "totp.h"
+#include "ping.h"
 
 extern __code const struct machine machine;
 extern __xdata uint32_t flash_size;
@@ -1187,12 +1188,19 @@ void idle(void)
 		}
 	}
 	// Check whether a command is waiting in the cmd_buffer and execute
+	if (ping_phase)
+		ping_tick();
 	if (cmd_available) {
 		cmd_available = 0;
-		cmd_history_add((__xdata char *)cmd_buffer);
-		cli_use(CLI_CONSOLE);
-		cli_exec_line((__xdata char *)cmd_buffer);
-		print_cmd_prompt();
+		if (ping_phase && ping_owner == CLI_CONSOLE) {
+			ping_abort();	/* a key ends the console's ping */
+		} else {
+			cmd_history_add((__xdata char *)cmd_buffer);
+			cli_use(CLI_CONSOLE);
+			cli_exec_line((__xdata char *)cmd_buffer);
+			if (!(ping_phase && ping_owner == CLI_CONSOLE))
+				print_cmd_prompt();	/* else ping prints it when done */
+		}
 	}
 }
 

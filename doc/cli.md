@@ -105,6 +105,7 @@ runs once for each port, in port order.
 | `show hosts` | Name servers and the last lookup |
 | `show totp` | TOTP login state and the current code (privileged) |
 | `nslookup NAME` | Resolve a name; the result appears in `show hosts` |
+| `ping HOST [repeat N] [size N]` | ICMP echo, IOS-style `!`/`.` per echo and a summary; defaults 5 echos of 100 bytes, 2 s timeout; any key aborts |
 | `write [memory]`, `copy running-config startup-config` | Save the configuration to flash |
 | `copy startup-config running-config` | Merge the startup configuration into the running one |
 | `copy tftp flash A.B.C.D FILE` | Download a firmware image; it is applied by reloading |

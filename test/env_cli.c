@@ -313,3 +313,18 @@ void config_merge(void)
 	}
 	cli_merge_end();
 }
+
+/* ---- ping.c is not linked: record the start ---- */
+#include "ping.h"
+uint8_t ping_phase, ping_owner;
+char ping_host[64];
+uint16_t ping_count, ping_size;
+void ping_start(char *host, uint16_t n, uint16_t len)
+{
+	int i;
+	for (i = 0; host[i] && host[i] != ' ' && i < 63; i++)
+		ping_host[i] = host[i];
+	ping_host[i] = 0;
+	ping_count = n;
+	ping_size = len;
+}

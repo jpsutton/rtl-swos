@@ -19,6 +19,7 @@
 #include "cli.h"
 #include "ntp.h"
 #include "totp.h"
+#include "ping.h"
 #include "uip.h"
 
 #pragma codeseg BANK3
@@ -320,6 +321,14 @@ static void tn_hist_key(uint8_t up)
 }
 
 
+/* the prompt, after output that ran asynchronously (ping) */
+void telnet_prompt(void) __banked
+{
+	if (tn.conn && tn.authed == 2)
+		tn_prompt();
+}
+
+
 void telnet_history_show(void) __banked
 {
 	for (tn_hi = tn_hn; tn_hi; tn_hi--) {
@@ -410,7 +419,8 @@ static void tn_line_done(void)
 	if (telnet_capture == 2)
 		tn_puts("\r\n[output truncated]\r\n");
 	telnet_capture = 0;
-	tn_prompt();
+	if (!(ping_phase && ping_owner == CLI_VTY))	/* ping prints it when done */
+		tn_prompt();
 }
 
 
@@ -448,6 +458,12 @@ static void tn_input(uint8_t c)
 		tn.crseen = 0;
 		if (c == '\n' || c == 0)
 			return;
+	}
+
+	/* a ping of this session runs: any key ends it */
+	if (ping_phase && ping_owner == CLI_VTY && tn.authed == 2) {
+		ping_abort();
+		return;
 	}
 
 	/* Cursor keys arrive as ESC [ A..D (or ESC O A..D); only up and
