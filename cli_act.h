@@ -75,6 +75,7 @@
 #define ACT_SRUN_SVI	64
 #define ACT_SRUN_VLAN	65
 #define ACT_PING	66	/* options in cli.acc: 1 repeat, 2 size */
+#define ACT_CLEAR_LOG	67
 #define TOTPC_SECRET	1
 #define TOTPC_LOGIN	2
 

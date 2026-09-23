@@ -97,7 +97,8 @@ runs once for each port, in port order.
 | `show ip interface brief` | Management address, mask, method, gateway |
 | `show ip igmp snooping` | IGMP snooping state |
 | `show monitor [session 1]` | Port mirroring |
-| `show logging` | Remote syslog |
+| `show logging` | Remote syslog and the local event log (links, logins, STP, LACP, NTP, DHCP, saves) |
+| `clear logging` | Empty the local event log |
 | `show tftp` | Progress or result of the last TFTP transfer |
 | `show history` | Command history of this session |
 | `show clock` | Local date and time (from NTP) |

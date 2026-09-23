@@ -19,6 +19,7 @@
 #include "uip.h"
 #include "lacp.h"
 #include "swcfg.h"
+#include "log.h"
 
 #pragma codeseg BANK2
 #pragma constseg BANK2
@@ -150,12 +151,24 @@ static void mask_set(uint8_t lp)
 	m = port_lag_members_get(g);
 	if (mask_on) {
 		lacp_bundled |= b;
-		if (!(m & b))
+		if (!(m & b)) {
 			port_lag_members_set(g, m | b);
+			log_begin("LACP-5-BUNDLE");
+			log_if(p);
+			log_s(" joined port-channel ");
+			log_dec(g + 1);
+			log_end();
+		}
 	} else {
 		lacp_bundled &= ~b;
-		if (m & b)
+		if (m & b) {
 			port_lag_members_set(g, m & ~b);
+			log_begin("LACP-5-UNBUNDLE");
+			log_if(p);
+			log_s(" left port-channel ");
+			log_dec(g + 1);
+			log_end();
+		}
 	}
 }
 

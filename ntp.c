@@ -14,6 +14,7 @@
 #include "uip.h"
 #include "dns.h"
 #include "ntp.h"
+#include "log.h"
 
 #pragma codeseg BANK2
 #pragma constseg BANK2
@@ -206,9 +207,12 @@ static void ntp_receive(void) __reentrant
 	ntp_state.stratum = p[1];
 	if (!ntp_state.synced) {
 		ntp_state.synced = 1;
-		print_string("NTP: time set from ");
-		print_ip(ntp_state.addr);
-		write_char('\n');
+		log_begin("NTP-5-SYNC");
+		log_s("Clock set from ");
+		log_ip(ntp_state.addr);
+		log_s(", stratum ");
+		log_dec(ntp_state.stratum);
+		log_end();
 	}
 	ntp_state.phase = NTP_IDLE;
 	ntp_state.next = ntp_state.at + (uint32_t)ntp_state.interval * 60;
@@ -257,6 +261,30 @@ static void ntp_print3(__code const char *t, uint8_t i) __reentrant
 	write_char(t[0]);
 	write_char(t[1]);
 	write_char(t[2]);
+}
+
+
+/* Local time into ntp_year .. ntp_sec; 0 while the clock is not set */
+uint8_t ntp_local_now(void) __banked __reentrant
+{
+	int16_t off = ntp_state.offset;
+	uint8_t dst = 0;
+	uint32_t t;
+
+	if (!ntp_state.synced)
+		return 0;
+	t = ntp_state.utc + (ntp_uptime() - ntp_state.at);
+	if (ntp_state.dst == NTP_DST_EU) {
+		ntp_split(t);
+		dst = ntp_in_dst(3, 0, 1, 10, 0, 1);
+	} else if (ntp_state.dst == NTP_DST_US) {
+		ntp_split(t + (int32_t)off * 60);
+		dst = ntp_in_dst(3, 2, 2, 11, 1, 1);
+	}
+	if (dst)
+		off += 60;
+	ntp_split(t + (int32_t)off * 60);
+	return dst ? 2 : 1;
 }
 
 

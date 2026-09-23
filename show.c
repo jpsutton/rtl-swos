@@ -15,6 +15,7 @@
 #include "uip/uip.h"
 #include "telnetd.h"
 #include "ntp.h"
+#include "log.h"
 
 extern __xdata struct machine_runtime machine_detected;
 #include "swcfg.h"
@@ -700,14 +701,36 @@ void show_history(void) __banked
 
 void show_logging(void) __banked
 {
+	static __xdata uint16_t p, n;
+
 	col = 0;
 	if (!syslog_state.enabled) {
 		sh_s("Remote syslog: off\n");
-		return;
+	} else {
+		sh_s("Remote syslog: ");
+		sh_ip(syslog_state.server_ip);
+		sh_c(':');
+		sh_dec(syslog_state.server_port);
+		sh_c('\n');
 	}
-	sh_s("Remote syslog: ");
-	sh_ip(syslog_state.server_ip);
-	sh_c(':');
-	sh_dec(syslog_state.server_port);
-	sh_c('\n');
+	sh_s("Log buffer (");
+	sh_dec(LOG_SIZE);
+	sh_s(" bytes):\n\n");
+	/* oldest first; after a wrap, from the first complete line */
+	p = log_wrapped ? log_head : 0;
+	n = log_wrapped ? LOG_SIZE : log_head;
+	if (log_wrapped) {
+		while (n && log_buf[p] != '\n') {
+			p = (p + 1) % LOG_SIZE;
+			n--;
+		}
+		if (n) {
+			p = (p + 1) % LOG_SIZE;
+			n--;
+		}
+	}
+	while (n--) {
+		write_char(log_buf[p]);
+		p = (p + 1) % LOG_SIZE;
+	}
 }

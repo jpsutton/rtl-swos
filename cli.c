@@ -268,8 +268,11 @@ static __code const struct cli_node * __code const ch_clr_mac[] = {
 static __code const struct cli_node n_clr_mac = {
 	"mac", 0, CLI_F_PRIV, 0, 0, ch_clr_mac, ACT_NONE, "MAC address table"
 };
+static __code const struct cli_node n_clr_log = {
+	"logging", 0, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_CLEAR_LOG, "Empty the local log buffer"
+};
 static __code const struct cli_node * __code const ch_clear[] = {
-	&n_clr_mac, 0
+	&n_clr_log, &n_clr_mac, 0
 };
 static __code const struct cli_node n_clear = {
 	"clear", 0, CLI_F_PRIV, 0, 0, ch_clear, ACT_NONE, "Reset functions"

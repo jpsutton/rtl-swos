@@ -37,6 +37,8 @@
 #include "ntp.h"
 #include "totp.h"
 #include "ping.h"
+#include "log.h"
+#include "version.h"
 
 extern __code const struct machine machine;
 extern __xdata uint32_t flash_size;
@@ -88,6 +90,7 @@ void crc16_bank1(__xdata uint8_t *v) __naked;
 
 __xdata uint8_t idle_ready;
 static __xdata uint16_t lacp_last_tick;
+static __xdata uint8_t log_links_due;
 
 __code const uint8_t ownIP[] = { 192, 168, 2, 2 };
 __code const uint8_t gatewayIP[] = { 192, 168, 2, 22};
@@ -1138,13 +1141,6 @@ void idle(void)
 
 	reg_read_m(RTL837X_REG_LINKS);
 	if (cmp_4(sfr_data, linkbits_last) || (linkbits_p89 != linkbits_last_p89)) {
-		print_string("\n<new link: ");
-		print_byte(linkbits_p89); print_byte(sfr_data[0]); print_byte(sfr_data[1]);
-		print_byte(sfr_data[2]); print_byte(sfr_data[3]);
-		print_string(", was ");
-		print_byte(linkbits_last_p89); print_byte(linkbits_last[0]); print_byte(linkbits_last[1]);
-		print_byte(linkbits_last[2]); print_byte(linkbits_last[3]);
-		print_string(">\n");
 		linkbits_last_p89 = linkbits_p89;
 		if (!machine_detected.isRTL8373 && machine.n_sfp != 2) {
 			uint8_t p5 = sfr_data[2] >> 4;
@@ -1164,10 +1160,15 @@ void idle(void)
 		} else {
 			cpy_4(linkbits_last, sfr_data);
 		}
+		log_links_due = 1;	/* after the register reads above: log_links() reads them again */
 	}
 
 	// Check for changes with SFP modules
 	handle_sfp();
+	if (log_links_due) {
+		log_links_due = 0;
+		log_links();
+	}
 	// LACP runs at 10 Hz while any port uses it
 	if (lacp_ports && (uint16_t)((uint16_t)ticks - lacp_last_tick) >= SYS_TICK_HZ / LACP_TICK_HZ) {
 		lacp_last_tick = (uint16_t)ticks;
@@ -1689,6 +1690,10 @@ void main(void)
 
 	cmd_editor_init();
 	tftp_init();	/* last: nothing after this may leave it stale */
+	log_links();	/* seed the link state */
+	log_begin("SYS-5-RESTART");
+	log_s("rtl-swos " VERSION_SW " started");
+	log_end();
 
 	while (1) {
 		cmd_edit();

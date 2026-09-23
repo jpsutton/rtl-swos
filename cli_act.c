@@ -29,6 +29,7 @@
 #include "ntp.h"
 #include "totp.h"
 #include "ping.h"
+#include "log.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -317,6 +318,9 @@ void cli_act(uint8_t action) __banked
 			totp_status_print();
 			break;
 		}
+		break;
+	case ACT_CLEAR_LOG:
+		log_clear();
 		break;
 	case ACT_CLEAR_MAC:
 		port_l2_forget();

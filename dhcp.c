@@ -51,6 +51,7 @@ __xdata uip_ipaddr_t server;
 #define DHCP_END		255
 
 #include "debug.h"
+#include "log.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -324,15 +325,14 @@ void parse_dhcp(void)
 		dhcp_send_request();
 	} else if (DHCP_OPT[dhcp_state.opt_ptr++] == DHCP_MESSAGE_ACK) {
 		parse_opts();
-		print_string("DHCP ACK, our IP is "); dhcp_print_ip(dhcp_state.current_ip);
-		write_char('\n');
-		print_string("DHCP netmask "); dhcp_print_ip(dhcp_state.subnet);
-		write_char('\n');
-		print_string("DHCP gateway "); dhcp_print_ip(dhcp_state.router);
-		write_char('\n');
-		print_string("DHCP lease-time ");
-		print_long(dhcp_state.lease);
-		write_char('\n');
+		log_begin("DHCP-5-ADDRESS");
+		log_s("Leased ");
+		log_ip(dhcp_state.current_ip);
+		log_s(" mask ");
+		log_ip(dhcp_state.subnet);
+		log_s(" gateway ");
+		log_ip(dhcp_state.router);
+		log_end();
 		uip_ipaddr(&uip_hostaddr, dhcp_state.current_ip[0], dhcp_state.current_ip[1], dhcp_state.current_ip[2], dhcp_state.current_ip[3]);
 		uip_ipaddr(&uip_draddr, dhcp_state.router[0], dhcp_state.router[1], dhcp_state.router[2], dhcp_state.router[3]);
 		uip_ipaddr(&uip_netmask, dhcp_state.subnet[0], dhcp_state.subnet[1], dhcp_state.subnet[2], dhcp_state.subnet[3]);

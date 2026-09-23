@@ -20,6 +20,7 @@
 #include "ntp.h"
 #include "totp.h"
 #include "ping.h"
+#include "log.h"
 #include "uip.h"
 
 #pragma codeseg BANK3
@@ -262,8 +263,21 @@ static void tn_pump(void)
 }
 
 
+static void tn_log_login(__code const char *what)
+{
+	static __code const char * __xdata w;
+
+	w = what;
+	log_begin(w);
+	log_s("telnet from ");
+	log_ip((__xdata uint8_t *)tn.conn->ripaddr);
+	log_end();
+}
+
+
 static void tn_denied(void)
 {
+	tn_log_login("SEC_LOGIN-4-LOGIN_FAILED");
 	tn.tries++;
 	if (tn.tries >= 3) {
 		tn_puts("Access denied.\r\n");
@@ -344,6 +358,7 @@ void telnet_history_show(void) __banked
 
 static void tn_welcome(void)
 {
+	tn_log_login("SEC_LOGIN-5-LOGIN_SUCCESS");
 	tn.authed = 2;
 	/* A new session must not inherit a privileged or config mode left
 	 * by an earlier one */

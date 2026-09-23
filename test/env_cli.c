@@ -328,3 +328,6 @@ void ping_start(char *host, uint16_t n, uint16_t len)
 	ping_count = n;
 	ping_size = len;
 }
+uint8_t ntp_local_now(void) { return 0; }
+uint16_t ntp_year;
+uint8_t ntp_mon, ntp_mday, ntp_hour, ntp_min, ntp_sec;

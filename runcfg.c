@@ -31,6 +31,7 @@
 #include "dns.h"
 #include "ntp.h"
 #include "totp.h"
+#include "log.h"
 #include "runcfg.h"
 
 #pragma codeseg BANK3
@@ -766,6 +767,9 @@ void runcfg_save(void) __banked
 	flash_region.len = n + 1;
 	flash_write_bytes(cfg_buf);
 	print_string("[OK]\n");
+	log_begin("SYS-5-CONFIG_I");
+	log_s("Configuration saved to startup-config");
+	log_end();
 }
 
 

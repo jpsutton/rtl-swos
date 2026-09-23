@@ -82,6 +82,8 @@ SRCS = \
 	totp.c \
 	ping.c \
 	bank4.c \
+	log.c \
+	log_links.c \
 	udp_apps.c
 
 # RTL837x

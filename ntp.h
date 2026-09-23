@@ -34,6 +34,11 @@ extern __xdata struct ntp_state ntp_state;
 
 void ntp_init(void) __banked;
 uint32_t ntp_unix_now(void) __banked __reentrant;
+/* local time into ntp_year, ntp_mon, ntp_mday, ntp_hour, ntp_min, ntp_sec;
+ * 0 while not synchronised, 2 in summer time */
+uint8_t ntp_local_now(void) __banked __reentrant;
+extern __xdata uint16_t ntp_year;
+extern __xdata uint8_t ntp_mon, ntp_mday, ntp_hour, ntp_min, ntp_sec;
 void ntp_start(void) __banked;
 void ntp_stop(void) __banked;
 void ntp_show(void) __banked __reentrant;		/* show ntp */

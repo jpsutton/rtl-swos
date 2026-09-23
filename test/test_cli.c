@@ -27,6 +27,7 @@
 #include "dns.h"
 #include "ntp.h"
 #include "totp.h"
+#include "log.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_stp.h"
 #include "tftp.h"
@@ -1778,6 +1779,33 @@ static void test_ping_cli(void)
 	CHECK(out_has("% Invalid input"), "ping needs privileged EXEC");
 }
 
+static void test_log(void)
+{
+	printf("[test] local log buffer\n");
+	wipe_all();
+	log_clear();
+	run("enable");
+	run("write memory");
+	run("show logging");
+	CHECK(out_has("Log buffer (2048 bytes):") && out_has("%SYS-5-CONFIG_I: Configuration saved to startup-config\n"),
+	      "write memory is logged and shown");
+	CHECK(out_has("*00:00:"), "uptime stamp while the clock is not set");
+	run("clear logging");
+	run("show logging");
+	CHECK(!out_has("CONFIG_I"), "clear logging empties it");
+	for (int i = 0; i < 120; i++) {
+		log_begin("TEST-5-FILL");
+		log_s("entry ");
+		log_dec(i);
+		log_end();
+	}
+	run("show logging");
+	CHECK(log_wrapped && out_has("entry 119\n") && !out_has("entry 0\n")
+	      && strstr(out_buf, "\n*") != NULL, "after a wrap: newest kept, oldest dropped, whole lines only");
+	CHECK(!strstr(out_buf, "bytes):\n\n%") && !strstr(out_buf, "bytes):\n\nTEST"), "no partial first line");
+	log_clear();
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1823,6 +1851,7 @@ int main(void)
 	test_show_run_filters();
 	test_show_if_detail();
 	test_ping_cli();
+	test_log();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

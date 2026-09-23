@@ -11,6 +11,7 @@
 #include "rtl837x_sfr.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_stp.h"
+#include "log.h"
 #include "rtl837x_port.h"
 #include "uip.h"
 #include "machine.h"
@@ -570,8 +571,16 @@ void stp_in(void) __banked
 
 	/* BPDU guard: an edge-facing port must never see a BPDU - shut it down. */
 	if (stp_pflags[port] & STP_PF_BPDUGUARD) {
-		print_string("STP: BPDU guard tripped, disabling port ");
-		print_port_nl(port);
+		log_begin("STP-2-BLOCK_BPDUGUARD");
+		log_s("BPDU received on ");
+		if (port < STP_LAG_BASE) {
+			log_if(port);
+		} else {
+			log_s("port-channel ");
+			log_dec(port - STP_LAG_BASE + 1);
+		}
+		log_s(" with BPDU guard enabled, disabling it");
+		log_end();
 		stp_pflags[port] |= STP_PF_TRIPPED;
 		stp_state_set(port, STP_ST_DISABLED);
 		stp_tc_count++;
