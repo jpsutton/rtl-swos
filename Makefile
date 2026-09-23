@@ -79,6 +79,7 @@ SRCS = \
 	syslog.c \
 	dns.c \
 	ntp.c \
+	totp.c \
 	udp_apps.c
 
 # RTL837x

@@ -273,3 +273,18 @@ void ntp_start(void) { n_ntp_start++; ntp_state.enabled = 1; }
 void ntp_stop(void) { n_ntp_stop++; ntp_state.enabled = 0; }
 void ntp_show(void) { print_string("NTP\n"); }
 void ntp_show_time(void) { print_string("CLOCK\n"); }
+
+/* ---- totp.c: the real one would need the clock; its state ---- */
+#include "totp.h"
+uint8_t totp_enabled, totp_keylen;
+char totp_b32[TOTP_B32_MAX + 1];
+uint32_t ntp_unix_now(void) { return 0; }
+uint8_t totp_set_secret(uint8_t *b32)
+{
+	size_t n = strlen((char *)b32);
+	if (n < 16 || n > 51)
+		return 0;
+	totp_keylen = n * 5 / 8;
+	return 1;
+}
+void totp_status_print(void) { print_string("TOTP\n"); }

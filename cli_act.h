@@ -68,6 +68,9 @@
 #define ACT_NTP_SERVER	57
 #define ACT_CLOCK_TZ	58	/* clock timezone NAME HOURS [MINUTES] */
 #define ACT_CLOCK_ST	59	/* clock summer-time NAME recurring [eu|us]; NTP_DST_* in ->lo */
+#define ACT_TOTP	60	/* TOTPC_* in ->lo */
+#define TOTPC_SECRET	1
+#define TOTPC_LOGIN	2
 
 #define SHOW_IF_STATUS	1
 #define SHOW_IF_COUNT	2
@@ -88,6 +91,7 @@
 #define SHOW_HOSTS	17
 #define SHOW_CLOCK	18
 #define SHOW_NTP	19
+#define SHOW_TOTP	20
 
 /* ACT_STP_G parameters */
 #define STPG_RSTP	1

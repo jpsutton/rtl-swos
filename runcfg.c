@@ -30,6 +30,7 @@
 #include "lacp.h"
 #include "dns.h"
 #include "ntp.h"
+#include "totp.h"
 #include "runcfg.h"
 
 #pragma codeseg BANK3
@@ -649,7 +650,7 @@ static void rc_emit(void)
 	if (telnet_state.enabled)
 		rc_s("feature telnet\n");
 
-	if (telnet_state.idle_secs != TELNET_IDLE_DEFAULT || !passwd_is_default()) {
+	if (telnet_state.idle_secs != TELNET_IDLE_DEFAULT || !passwd_is_default() || totp_keylen) {
 		rc_s("!\nline vty\n");
 		if (telnet_state.idle_secs == 0xffff) {
 			rc_s(" exec-timeout 0 0\n");
@@ -665,6 +666,13 @@ static void rc_emit(void)
 			rc_x(passwd, 0);
 			rc_c('\n');
 		}
+		if (totp_keylen) {
+			rc_s(" totp secret ");
+			rc_x(totp_b32, 0);
+			rc_c('\n');
+		}
+		if (totp_enabled)
+			rc_s(" login totp\n");
 	}
 	rc_s("!\nend\n");
 }

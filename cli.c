@@ -128,6 +128,9 @@ SHOW_LEAF(n_sh_tftp, "tftp", SHOW_TFTP, "State of the last TFTP transfer")
 SHOW_LEAF(n_sh_hist, "history", SHOW_HIST, "Command history of this session")
 SHOW_LEAF(n_sh_hosts, "hosts", SHOW_HOSTS, "Name servers and the last lookup")
 SHOW_LEAF(n_sh_clock, "clock", SHOW_CLOCK, "Local date and time")
+static __code const struct cli_node n_sh_totp = {
+	"totp", 0, CLI_F_PRIV, SHOW_TOTP, 0, NO_CHILDREN, ACT_SHOW, "TOTP login state and the current code"
+};
 SHOW_LEAF(n_sh_ntp_st, "status", SHOW_NTP, "Server and synchronisation")
 static __code const struct cli_node * __code const ch_sh_ntp[] = {
 	&n_sh_ntp_st, 0
@@ -189,7 +192,7 @@ static __code const struct cli_node n_sh_mon = {
 };
 static __code const struct cli_node * __code const ch_show[] = {
 	&n_sh_clock, &n_sh_hist, &n_sh_hosts, &n_sh_if, &n_sh_ip, &n_sh_lacp, &n_sh_log, &n_sh_mac, &n_sh_mon, &n_sh_ntp, &n_sh_po,
-	&n_show_run, &n_sh_stp, &n_show_start, &n_sh_tftp, &n_show_version, &n_sh_vlan, 0
+	&n_show_run, &n_sh_stp, &n_show_start, &n_sh_tftp, &n_sh_totp, &n_show_version, &n_sh_vlan, 0
 };
 
 /* clear mac address-table dynamic */
@@ -1442,8 +1445,35 @@ static __code const struct cli_node n_ln_password = {
 	"password", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_vty_pw, ACT_VTY_PW,
 	"Login password"
 };
+/* totp secret BASE32 | login totp: a TOTP second factor for telnet */
+static __code const struct cli_node n_arg_totp = {
+	0, CLI_A_WORD, 0, TOTPC_SECRET, 0, NO_CHILDREN, ACT_TOTP, "Base32 secret, 16-51 characters"
+};
+static __code const struct cli_node * __code const ch_totp_sec[] = {
+	&n_arg_totp, 0
+};
+static __code const struct cli_node n_totp_secret = {
+	"secret", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, TOTPC_SECRET, 0, ch_totp_sec, ACT_TOTP,
+	"Shared secret of the authenticator app"
+};
+static __code const struct cli_node * __code const ch_totp[] = {
+	&n_totp_secret, 0
+};
+static __code const struct cli_node n_ln_totp = {
+	"totp", 0, CLI_F_NO_OK, 0, 0, ch_totp, ACT_NONE, "TOTP second factor (RFC 6238)"
+};
+static __code const struct cli_node n_login_totp = {
+	"totp", 0, CLI_F_NO_OK, TOTPC_LOGIN, 0, NO_CHILDREN, ACT_TOTP,
+	"Ask for a TOTP code after the password"
+};
+static __code const struct cli_node * __code const ch_login[] = {
+	&n_login_totp, 0
+};
+static __code const struct cli_node n_ln_login = {
+	"login", 0, CLI_F_NO_OK, 0, 0, ch_login, ACT_NONE, "Login requirements"
+};
 static __code const struct cli_node * __code const cli_root_line[] = {
-	&n_end, &n_exit_cfg, &n_ln_exec_to, &n_ln_password, 0
+	&n_end, &n_exit_cfg, &n_ln_exec_to, &n_ln_login, &n_ln_password, &n_ln_totp, 0
 };
 
 

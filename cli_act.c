@@ -27,6 +27,7 @@
 #include "lacp.h"
 #include "dns.h"
 #include "ntp.h"
+#include "totp.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -295,6 +296,9 @@ void cli_act(uint8_t action) __banked
 			break;
 		case SHOW_NTP:
 			ntp_show();
+			break;
+		case SHOW_TOTP:
+			totp_status_print();
 			break;
 		}
 		break;
@@ -803,6 +807,47 @@ void cli_act(uint8_t action) __banked
 		}
 		ntp_state.dst = cli.lo;
 		break;
+	case ACT_TOTP:
+	{
+		static __xdata char sec[TOTP_B32_MAX + 1];
+		if (cli.lo == TOTPC_LOGIN) {
+			if (cli.no) {
+				totp_enabled = 0;
+				break;
+			}
+			if (!totp_keylen) {
+				print_string("% Set a secret first: totp secret BASE32\n");
+				break;
+			}
+			totp_enabled = 1;
+			if (!ntp_unix_now() && !cli_replaying)
+				print_string("% Warning: the clock is not synchronised; telnet logins "
+					     "are refused until NTP sets it (see show ntp)\n");
+			break;
+		}
+		if (cli.no) {
+			totp_enabled = 0;
+			totp_keylen = 0;
+			totp_b32[0] = 0;
+			break;
+		}
+		cw_dst = sec;
+		cw_size = sizeof(sec);
+		if (!copy_word(0) || !totp_set_secret((__xdata uint8_t *)sec)) {
+			print_string("% Invalid base32 secret (it must decode to 10-32 bytes)\n");
+			break;
+		}
+		for (d_lp = 0; (totp_b32[d_lp] = sec[d_lp]); d_lp++)
+			;
+		if (!cli_replaying) {
+			print_string("Authenticator URI: otpauth://totp/");
+			print_string_x(hostname);
+			print_string("?secret=");
+			print_string_x(sec);
+			print_string("&issuer=rtl-swos\n");
+		}
+		break;
+	}
 	case ACT_PC_LB:
 		for (d_lp = 0; d_lp < 4; d_lp++)
 			port_lag_hash_set(d_lp, cli.no ? LAG_HASH_DEFAULT : cli.lo);

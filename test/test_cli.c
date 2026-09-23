@@ -26,6 +26,7 @@
 #include "lacp.h"
 #include "dns.h"
 #include "ntp.h"
+#include "totp.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_stp.h"
 #include "tftp.h"
@@ -1610,6 +1611,49 @@ static void test_ntp(void)
 	CHECK(out_has("NTP"), "show ntp status");
 }
 
+static void test_totp_cfg(void)
+{
+	char cfg[CONFIG_LEN];
+
+	printf("[test] TOTP login settings\n");
+	wipe_all();
+	totp_enabled = totp_keylen = 0;
+	totp_b32[0] = 0;
+	run("enable");
+	run("configure terminal");
+	run("line vty");
+	run("login totp");
+	CHECK(out_has("Set a secret first") && !totp_enabled, "login totp needs a secret");
+	run("totp secret GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
+	CHECK(totp_keylen && !strcmp(totp_b32, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ") && out_has("otpauth://totp/"),
+	      "totp secret sets the key and prints the authenticator URI");
+	run("totp secret SHORT");
+	CHECK(out_has("Invalid base32 secret") && !strcmp(totp_b32, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"),
+	      "a bad secret is refused and the old one kept");
+	run("login totp");
+	CHECK(totp_enabled && out_has("not synchronised"), "login totp warns without a clock");
+	render_into(cfg);
+	CHECK(strstr(cfg, "line vty\n totp secret GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ\n login totp\n") != NULL,
+	      "secret and login totp render under line vty");
+	wipe_all();
+	totp_enabled = totp_keylen = 0;
+	totp_b32[0] = 0;
+	out_reset();
+	replay_text(cfg);
+	CHECK(!out_has("% ") && !out_has("otpauth") && totp_enabled && totp_keylen, "and replay quietly");
+	run("enable");
+	run("configure terminal");
+	run("line vty");
+	run("no totp secret");
+	CHECK(!totp_enabled && !totp_keylen && !totp_b32[0], "no totp secret turns the factor off");
+	run("end");
+	run("show totp");
+	CHECK(out_has("TOTP"), "show totp");
+	run("disable");
+	run("show totp");
+	CHECK(!out_has("TOTP"), "show totp needs privileged EXEC");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1650,6 +1694,7 @@ int main(void)
 	test_lacp();
 	test_dns();
 	test_ntp();
+	test_totp_cfg();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

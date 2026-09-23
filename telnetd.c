@@ -17,6 +17,8 @@
 #include "console.h"
 #include "rtl837x_common.h"
 #include "cli.h"
+#include "ntp.h"
+#include "totp.h"
 #include "uip.h"
 
 #pragma codeseg BANK3
@@ -348,11 +350,35 @@ static void tn_line_done(void)
 	if (tn.authed == 0) {
 		tn_puts("\r\n");
 		if (tn_pw_ok()) {
-			tn_welcome();
+			if (totp_enabled) {
+				/* Fail closed: a second factor that cannot be
+				 * checked must not fall back to password-only. */
+				if (!totp_keylen || !ntp_unix_now()) {
+					tn_puts("TOTP required but the clock is not set. Access denied.\r\n");
+					tn.close_pending = 1;
+					return;
+				}
+				tn.authed = 1;
+				tn_puts("Code: ");
+			} else {
+				tn_welcome();
+			}
 		} else {
 			tn_denied();
 			if (!tn.close_pending)
 				tn_puts("Password: ");
+		}
+		return;
+	}
+
+	if (tn.authed == 1) {
+		tn_puts("\r\n");
+		if (totp_verify(tline)) {
+			tn_welcome();
+		} else {
+			tn_denied();
+			if (!tn.close_pending)
+				tn_puts("Code: ");
 		}
 		return;
 	}

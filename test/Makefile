@@ -46,12 +46,16 @@ $(BUILDDIR):
 $(BUILDDIR)/%: %.c $(CORE_ENV) hw_mock.h support.h | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
+# totp.c on its own, against the RFC 6238 vectors
+$(BUILDDIR)/test_totp: test_totp.c support.c $(SRCROOT)/totp.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
 # The legacy-config converter's output must replay without a single error
 CONVERTED = $(BUILDDIR)/lab-converted.cfg
 $(CONVERTED): $(SRCROOT)/tools/convert-legacy-config.py $(SRCROOT)/doc/examples/legacy-lab.cfg | $(BUILDDIR)
 	python3 $^ > $@
 
-run: $(TESTS) $(BUILDDIR)/test_replay $(CONVERTED)
+run: $(TESTS) $(BUILDDIR)/test_replay $(BUILDDIR)/test_totp $(CONVERTED)
 	@echo "=== converter output replay ==="; \
 	$(BUILDDIR)/test_replay $(CONVERTED) \
 		"interface vlan 10" "ip address 192.168.0.25 255.255.254.0" \
@@ -60,6 +64,7 @@ run: $(TESTS) $(BUILDDIR)/test_replay $(CONVERTED)
 	@echo "=== default config.txt replay ==="; \
 	$(BUILDDIR)/test_replay $(SRCROOT)/config.txt \
 		"ip address dhcp" "feature telnet" || exit 1; echo
+	@echo "=== totp ==="; $(BUILDDIR)/test_totp || exit 1; echo
 	@fail=0; for t in $(TESTS); do \
 		echo "=== $$t ==="; \
 		$$t || fail=1; \
