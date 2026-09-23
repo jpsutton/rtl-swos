@@ -89,7 +89,8 @@ runs once for each port, in port order.
 | `show vlan [brief]` | VLAN database with member ports |
 | `show mac address-table` | Learned and static MAC addresses |
 | `show spanning-tree` | Bridge and port STP state |
-| `show port-channel [summary]` | Port-channels, members, hash fields |
+| `show port-channel [summary]` | Port-channels, protocol, members, hash fields |
+| `show lacp [neighbor]` | LACP ports: state, partner, counters |
 | `show ip interface brief` | Management address, mask, method, gateway |
 | `show ip igmp snooping` | IGMP snooping state |
 | `show monitor [session 1]` | Port mirroring |
@@ -121,6 +122,8 @@ Everything except `show`, `enable` and `exit` needs privileged EXEC.
 | `monitor session 1 destination interface ethernet 1/N` | |
 | `no monitor session 1` | |
 | `feature spanning-tree` | off |
+| `lacp system-priority N` | 32768 |
+| `port-channel load-balance src-mac\|dst-mac\|src-dst-mac\|src-ip\|dst-ip\|src-dst-ip\|src-port\|dst-port\|src-dst-port` | hash of every port-channel |
 | `spanning-tree mode rstp\|stp` | rstp |
 | `spanning-tree priority N` | 32768 |
 | `spanning-tree hello-time N`, `forward-time N`, `max-age N`, `transmit hold-count N` | 2, 15, 20, 6 |
@@ -146,7 +149,8 @@ one line at a time.
 | `switchport trunk allowed vlan LIST\|add LIST\|remove LIST\|all\|none` | all |
 | `switchport protected` | off |
 | `rate-limit input KBPS [drop]`, `rate-limit output KBPS` | none; input sends pause frames unless `drop` |
-| `channel-group N mode on` | none |
+| `channel-group N [mode on\|active\|passive]` | none; `on` is static, `active`/`passive` run LACP |
+| `lacp rate fast\|normal`, `lacp port-priority N` | normal, 32768 |
 | `spanning-tree portfast [disable]`, `bpduguard enable`, `bpdufilter enable`, `guard root`, `cost N`, `port-priority N`, `link-type point-to-point\|shared` | |
 | `spanning-tree bpdufilter enable`, alias `spanning-tree disable` | takes part in STP; the port leaves STP (no BPDUs) and always forwards |
 | `ip igmp snooping mrouter` | off; static multicast router port (one mask for all VLANs) |
@@ -165,11 +169,12 @@ port-channel.
 
 ## Port-channel
 
-`interface port-channel N` holds the settings of a static link aggregation
-group:
+`interface port-channel N` holds the settings of a link aggregation group,
+static or LACP (see [Link aggregation](link_aggregation.md)):
 
 | Command | Default |
 |---|---|
+| `lacp min-links N` | 1: bundle LACP ports only when at least N are ready |
 | `load-balance FIELD...` | `src-mac dst-mac src-ip dst-ip l4-src-port l4-dst-port` |
 | `spanning-tree ...` | as on an ethernet interface |
 

@@ -47,17 +47,76 @@ void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash_bits) __banked;
 
 ## LAG configuration on the CLI
 A LAG is a port-channel, numbered 1 to 4. Ports join it with `channel-group`
-in interface configuration mode. The aggregation is static: there is no LACP,
-and `mode on` is the only mode (it may be omitted).
+in interface configuration mode, statically or with LACP:
 ```
 switch(config)# interface ethernet 1/1-2
-switch(config-if-range)# channel-group 1 mode on
-switch(config-if-range)# exit
+switch(config-if-range)# channel-group 1 mode on         # static (mode on may be omitted)
+switch(config-if-range)# channel-group 1 mode active     # LACP, initiating
+switch(config-if-range)# channel-group 1 mode passive    # LACP, answering an active partner
 ```
-`channel-group` on a port that is already in another port-channel moves it;
-`no channel-group` removes the port from its port-channel. Removing the
-last member deletes the LAG. VLAN settings are not copied between members,
-so give all members the same `switchport` configuration.
+A port-channel is either static or LACP: joining a port with the other kind
+of mode is refused. `channel-group` on a port that is already in another
+port-channel moves it; `no channel-group` removes the port from its
+port-channel. Removing the last member deletes the LAG. VLAN settings are not
+copied between members, so give all members the same `switchport`
+configuration.
+
+### LACP
+The ASIC only aggregates statically. LACP (IEEE 802.1AX, formerly 802.3ad)
+runs on the 8051 and decides which of the port-channel's LACP ports are in the
+member mask. A port is added once both ends agree: the partner announces
+itself as aggregatable, echoes our information correctly, and reports sync.
+It is removed when the partner's information expires (3 LACPDUs missed), its
+link goes down, or its partner is not the system and key the port-channel's
+other members face. A port that is not bundled keeps forwarding as an
+individual port, like NX-OS with `no lacp suspend-individual`; suspending it
+instead is not implemented. This lets a switch or host without LACP still
+reach the network through one of the ports; the flip side is that a partner
+configured as a *static* LAG on the other end sees two separate ports here.
+
+```
+switch(config-if-range)# lacp rate fast              # ask for 1 s LACPDUs (3 s timeout)
+switch(config-if-range)# lacp port-priority 100      # default 32768
+switch(config)# lacp system-priority 100             # default 32768
+switch(config)# interface port-channel 1
+switch(config-if)# lacp min-links 2                  # bundle only with 2 ready ports
+```
+The actor key of a port is its port-channel number, the system identifier
+the switch's MAC. `show lacp` (or `show lacp neighbor`) lists each LACP port
+with its state and partner:
+```
+System: 32768,060f.0094.830a
+Port    Group  Mode     State         Partner system        Key    Port   Rx     Tx
+------  -----  -------  ------------  --------------------  -----  -----  -----  -----
+Eth1/2  Po1    active*  bundled       32768,0200.0000.0099  7      1      12     12
+* = lacp rate fast
+```
+The states are `bundled`, `waiting` (selected, the partner is not in sync
+yet), `min-links` (ready, but fewer than min-links ports are), `other
+system`, `no partner` and `down`.
+
+LACPDUs are sent to `01:80:C2:00:00:02`, which the ASIC discards by default:
+the reserved-multicast register for that address (`RTL837X_RMA_CTRL(2)`,
+0x4ed4) reads 0x20 at boot. While any port runs LACP the firmware sets it to
+forward, and a static L2 multicast entry in every VLAN of the database
+(`port_l2mc_set()`, as for BPDUs, see [STP](stp.md)) confines the frames
+to the CPU port, so LACPDUs are never passed on to other ports. Transmitted
+LACPDUs carry a CPU tag that selects the port. The marker protocol is not
+implemented; partners use it only to move a flow faster, and no reply is
+required.
+
+`tools/lacp-partner.py` is a minimal LACP partner for a raw interface, used to
+test the implementation from a Linux host without a second switch.
+
+### Hashing
+The IOS global form sets the hash of all four port-channels at once:
+```
+switch(config)# port-channel load-balance src-dst-ip
+```
+The methods are `src-mac`, `dst-mac`, `src-dst-mac`, `src-ip`, `dst-ip`,
+`src-dst-ip`, `src-port`, `dst-port` and `src-dst-port`, where the port is
+the TCP/UDP port, as in IOS. When all port-channels share one of these the
+running configuration shows the global line.
 
 The hash is configured on the port-channel:
 ```
@@ -76,11 +135,12 @@ otherwise packets will not be routed symmetrically.
 Spanning-tree settings of a LAG are also made under `interface port-channel`,
 see [STP](stp.md).
 
-`show port-channel summary` lists the members (a member whose link is down is
-marked `(D)`) and the hash of each port-channel; `show interfaces status`
-shows `Po<N>` in the VLAN column of a member port. In `show running-config`
-the port-channels come before the ethernet interfaces, and each member carries
-` channel-group <N> mode on`.
+`show port-channel summary` lists the protocol, the members and the hash of
+each port-channel. A member whose link is down is marked `(D)`; an LACP member
+is marked `(P)` when bundled and `(I)` when it forwards on its own.
+`show interfaces status` shows `Po<N>` in the VLAN column of a bundled
+member. In `show running-config` the port-channels come before the ethernet
+interfaces, and each member carries ` channel-group <N> mode on|active|passive`.
 
 ## A Test using a single Linux Desktop
 The following is a simple test using 2 RTL 2.5 GBit switches with at least 1 SFP+-port each. You

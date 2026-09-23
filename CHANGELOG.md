@@ -17,6 +17,12 @@ First release of the rtl-swos fork.
   address-table, spanning-tree, port-channel, ip interface brief, ip igmp
   snooping, monitor, logging, tftp, version, history.
 - Interface ranges: `interface ethernet 1/1-4,1/7`, `interface range ...`.
+- LACP: `channel-group N mode active|passive`, `lacp rate|port-priority|
+  system-priority|min-links`, `show lacp`; IOS `port-channel load-balance`.
+- `spanning-tree bpdufilter enable` (alias `spanning-tree disable`) takes a
+  port out of spanning tree; `ip igmp snooping mrouter`; trunks without their
+  native VLAN accept tagged frames only.
+- Default configuration: DHCP on VLAN 1, telnet on; `make CONFIG=file`.
 - In-band firmware update and configuration transfer over TFTP.
 - Separate CLI sessions for the serial console and telnet.
 - tools/convert-legacy-config.py converts RTLPlayground configurations.

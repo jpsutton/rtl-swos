@@ -36,7 +36,7 @@ Features, as far as the hardware supports them:
 - VLANs: access and trunk ports, native VLAN, allowed lists, protected ports
 - Per-port speed, duplex, MTU (jumbo frames), Energy Efficient Ethernet and
   shutdown, with link-partner information
-- Static link aggregation (port-channels) with a configurable hash
+- Link aggregation (port-channels), static or LACP, with a configurable hash
 - Port mirroring (one session, several sources)
 - Ingress and egress rate limiting
 - Spanning tree (RSTP/STP, simplified; read [doc/stp.md](doc/stp.md) first)
