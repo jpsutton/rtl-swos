@@ -756,7 +756,7 @@ uip_process(u8_t flag) __banked
 	 /* Long-lived services (e.g. the telnet console) run their own,
 	    longer idle timeout in the application, so exempt them from
 	    this short reaper - it exists to free slots held by abandoned
-	    httpd connections, not to cap interactive sessions. */
+	    connections, not to cap interactive sessions. */
 	 && uip_connr->lport != HTONS(UIP_IDLE_EXEMPT_LPORT)
 #endif
 	) {

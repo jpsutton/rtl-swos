@@ -213,8 +213,7 @@ static __code const struct cli_node * __code const ch_write[] = {
 	&n_write_memory, 0
 };
 
-/* copy running-config startup-config, plus the legacy TFTP forms
- * (copy tftp ... / copy config tftp ...) passed through verbatim */
+/* copy running-config startup-config, and the TFTP transfers */
 static __code const struct cli_node n_copy_run_start = {
 	"startup-config", 0, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_WRITE,
 	"Save to the startup configuration"
@@ -1891,7 +1890,6 @@ void cli_init(void) __banked
 	static __xdata uint8_t i;
 
 	cli.mode = CLI_MODE_EXEC;
-	cli.await = CLI_AWAIT_NONE;
 	cli.no = 0;
 	cli.ctx_if = cli.ctx_lport = cli.ctx_line = cli.ctx_po = 0;
 	cli.ctx_vlan = 0;
@@ -1905,11 +1903,6 @@ void cli_init(void) __banked
 	dedupe_root = 0;
 }
 
-
-uint8_t cli_hidden_input(void) __banked
-{
-	return cli.await != CLI_AWAIT_NONE;
-}
 
 
 /* A leading `no` in a configuration mode: set cli.no and drop the
@@ -1952,7 +1945,7 @@ static uint8_t walk_ok(void)
  *     its error wins only when step 1 did not even know the first word;
  *  3. EXEC commands from any config mode, without `do` (never under
  *     `no`), when nothing claimed the first word.
- * Returns 0 when no root claims the first word (-> legacy parser). */
+ * Returns 0 when no root claims the first word. */
 static uint8_t cli_walk_roots(uint8_t upto)
 {
 	static __xdata uint8_t r0;

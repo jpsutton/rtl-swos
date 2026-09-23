@@ -34,6 +34,10 @@ First release of the rtl-swos fork.
   removed; convert old configurations with tools/convert-legacy-config.py.
 - Images are named rtl-swos-*.bin.
 
+# RTLPlayground history
+
+The entries below predate the fork and describe RTLPlayground.
+
 ## [0.x] - 2026-xx-XX
 
 ## Added

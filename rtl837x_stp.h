@@ -16,7 +16,7 @@ void stp_cfg_prio(uint8_t prio) __banked;
  * STP_PF_OUT() changed from was_out */
 void stp_cfg_sync(uint8_t ent, __xdata uint8_t was_out) __banked;
 
-/* Tick rate of stp_timers(), also used by the web UI. */
+/* Tick rate of stp_timers() */
 #define STP_HZ 50
 
 #define STP_PORTS	(CPU_PORT + 1)

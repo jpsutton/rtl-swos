@@ -1,7 +1,6 @@
 /*
  * Console plumbing: the serial line buffer, the recall history, and the
- * boot-time replay of the startup config through the CLI. What remains of
- * the original flat command parser, which the modal CLI replaced.
+ * boot-time replay of the startup config through the CLI.
  */
 #include <stdint.h>
 #include "rtl837x_common.h"

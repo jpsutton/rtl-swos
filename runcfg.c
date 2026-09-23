@@ -2,10 +2,10 @@
  * Running configuration renderer. See runcfg.h.
  *
  * One emitter feeds two sinks: the console (show running-config) and
- * cfg_buf (write memory). Everything is read from the live state, so a
- * setting made by a legacy command that still runs through the old
- * parser is rendered as well; only settings without any readable state
- * (speed, shutdown, IGMP snooping) come from the swcfg shadows.
+ * cfg_buf (write memory). Everything is read from the live state where
+ * the hardware can report it; settings without any readable state
+ * (speed, shutdown, IGMP snooping, LACP) come from the swcfg and lacp
+ * shadows.
  *
  * IPv4 addresses are read byte-wise: uIP keeps them in network order in
  * memory. uIP's own uip_ipaddrN() accessors call htons(), which lives in

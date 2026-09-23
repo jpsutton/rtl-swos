@@ -43,11 +43,6 @@ extern __xdata uint8_t sbuf[SBUF_SIZE];
 // Size of the flash buffer used for writing to flash, must be a multiple of the flash page size (0x100)
 #define FLASH_BUF_SIZE 512
 
-// Errors for commands
-#define ERR_OK			0
-#define ERR_TOO_MANY_ARGUMENTS	1
-#define ERR_CMD_TOO_LONG	2
-#define ERR_INVALID_ARGUMENT	3
 
 // For RX data, a propriatary RTL FRAME is inserted. Instead of 0x0800 for IPv4,
 // the RTL_FRAME_TAG_ID is used as part of an 8-byte tag. When VLAN is activated,
@@ -175,30 +170,22 @@ void reg_bit_set(uint16_t reg_addr, char bit);
 void reg_bit_clear(uint16_t reg_addr, char bit);
 uint8_t reg_bit_test(uint16_t reg_addr, char bit);
 void sfr_mask_data(uint8_t n, uint8_t mask, uint8_t set);
-void sfr_set_zero(void);
 void reset_chip(void);
 /* Firmware implementations that shadow libc names. Host unit-test builds
  * (SWOS_HOST_TEST) hide these prototypes so they don't clash with glibc;
  * argument order matches libc, so on-host callers transparently use the
  * C library. See test/. */
 #ifndef SWOS_HOST_TEST
-void sleep(uint16_t t);
 void memcpy(__xdata void * __xdata dst, __xdata const void * __xdata src, uint16_t len);
 void memset(__xdata uint8_t *dst, __xdata uint8_t v, uint8_t len);
-int memcmp(__xdata const void *a, __xdata const void *b, uint16_t len);
-uint16_t strlen(__code const char *s);
 uint16_t strcpy(__xdata uint8_t *dst, const char *s);
 char strcmp(__xdata const uint8_t *a, __code const uint8_t *b);
 #endif
 void memcpyc(__xdata uint8_t *dst, __code const uint8_t *src, uint16_t len);
 uint16_t strlen_x(__xdata const char *s);
 uint16_t strtox(__xdata uint8_t *dst, __code const char *s);
-bool strstart(__xdata const uint8_t *a, __code const uint8_t *b);
-bool strstart_x(__xdata const uint8_t *a, __xdata const uint8_t *b);
 void tcpip_output(void);
-uint8_t read_flash(uint8_t bank, __code const uint8_t *addr);
 void get_random_32(void);
-void read_reg_timer(__xdata uint32_t * tmr);
 bool gpio_pin_test(uint8_t pin);
 void set_sys_led_state(uint8_t state);
 void sds_read(uint8_t sds_id, uint8_t page, uint8_t reg);

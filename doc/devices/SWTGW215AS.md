@@ -7,7 +7,7 @@
 | Lianguo | ZX-SWTGW215AS | Yes | PCB-SWTG115AS-V2.0 | FM25Q16A | 8372 |
 | sold as Lianguo, actual device unbranded | ZX-SWTGW215AS | Yes | PCB-SWTG115AS-V2.1 | W25Q16JVSIQ (2MiB) | 8372 |
 
-## RTLPlayground target
+## rtl-swos target
 
 Use machine target `MACHINE_LIANGUO_ZX_SWTGW215AS` for this device.
 
@@ -43,7 +43,7 @@ Port 5 RJ45 is interfaced through a RTL8221B IC.
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-| Type | RTLPlayground logical ports | Physical index | 
+| Type | rtl-swos logical ports | Physical index | 
 |---|---|---|
 | RJ45 | 3, 4, 5, 6, 7 | 1-5 | 
 | SFP | 8 | 6 |

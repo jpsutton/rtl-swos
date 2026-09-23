@@ -15,7 +15,7 @@ $(BUILDDIR)/injector: injector.c
 	gcc $^ $(CCFLAGS) $@
 
 $(BUILDDIR)/fileadder: fileadder.c
-	gcc $^ $(CCFLAGS) $@ -lz
+	gcc $^ $(CCFLAGS) $@
 
 $(BUILDDIR)/crc_calculator: crc_calculator.c
 	gcc $^ $(CCFLAGS) $@

@@ -9,9 +9,9 @@
  * L2_TBL_FLUSH_CTRL drops entries. Nothing here ever reports busy, so a
  * polling loop in the firmware runs exactly once.
  *
- * The VLAN and L2 entry layouts mirror what rtl837x_port.c writes and what
- * httpd/page_impl.c reads; the decoders below are an independent statement
- * of that layout, so a test can compare the firmware's two ends against it.
+ * The VLAN and L2 entry layouts mirror what rtl837x_port.c writes and
+ * reads; the decoders below are an independent statement of that layout,
+ * so a test can compare the firmware's two ends against it.
  */
 #ifndef TEST_HW_MOCK_H
 #define TEST_HW_MOCK_H

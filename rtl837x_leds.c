@@ -1,12 +1,10 @@
 /*
- * This is a driver implementation for the IGMP features for the RTL827x platform
+ * LED driver for the RTL837x platform
  * This code is in the Public Domain
  */
 
 // #define REGDBG
 // #define DEBUG
-
-#define IPMC_USES_L3MC
 
 #include <stdint.h>
 #include "rtl837x_common.h"

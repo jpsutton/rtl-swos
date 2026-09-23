@@ -32,7 +32,7 @@ The switch actually controls the HOLD line of each flash chip, and toggling the 
 
 If the programming clip keeps HOLD not connected, the flashing will commence on whatever the switch selected, regardless on which chip was clipped.
 
-For the initial flash (at least with flashrom), the bin file produced by the build is much smaller than the flash chip, it is suggested to pad the file to keep flashrom happy: `truncate -s 2097152 rtlplayground-*-PCB_K0402WS_V3.bin`. Note: do not then proceed to use this resulting padded file for the web flashing (as it bricks the device), use the original unpadded .bin.
+For the initial flash (at least with flashrom), the bin file produced by the build is much smaller than the flash chip, it is suggested to pad the file to keep flashrom happy: `truncate -s 2097152 rtl-swos-*-PCB_K0402WS_V3.bin`. Note: do not use this padded file for an in-band update (`copy tftp flash`), use the original unpadded .bin.
 
 ### What works (expected from label + similar devices)
 

@@ -16,12 +16,10 @@
 #define ACT_CONF_T	3
 #define ACT_EXIT	4
 #define ACT_END		5
-#define ACT_SHOW_VER	6
 #define ACT_WRITE	7
 #define ACT_RELOAD	8
 #define ACT_IF		9
 #define ACT_VLAN	10
-#define ACT_LEGACY	11	/* re-run the whole line in the legacy parser */
 #define ACT_SHUT	12	/* interface: shutdown / no shutdown */
 #define ACT_SPEED	13	/* interface: speed <val> (value in node->lo) */
 #define ACT_DESC	14	/* interface: description LINE / no description */

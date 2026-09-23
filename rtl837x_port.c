@@ -706,90 +706,6 @@ void port_eee_disable(uint8_t port) __banked
 }
 
 
-void port_eee_status(uint8_t port) __banked
-{
-	print_string("Port: "); print_phys_port(port);
-	print_string(": ");
-	if (machine.is_sfp[port]) {
-		print_string("SFP\n");
-		return;
-	}
-
-	uint16_t v;
-	print_string("Advertising: ");
-
-	if (machine.n_10g) {
-		phy_read(port, PHY_MMD_AN, PHY_EEE_ADV);
-		v = SFR_DATA_U16;
-		if (v & PHY_EEE_BIT_10G)
-			print_string(" 10G");
-		else
-			print_string("    ");
-	}
-	phy_read(port, PHY_MMD_AN, PHY_EEE_ADV2);
-	v = SFR_DATA_U16;
-	if (machine.n_10g) {
-		if (v & PHY_EEE_BIT_5G)
-			print_string(" 5G");
-		else
-			print_string("   ");
-	}
-	v = SFR_DATA_U16;
-	if (v & PHY_EEE_BIT_2G5)
-		print_string(" 2.5G");
-	else
-		print_string("     ");
-	phy_read(port, PHY_MMD_AN, PHY_EEE_ADV);
-	v = SFR_DATA_U16;
-	if (v & PHY_EEE_BIT_1G)
-		print_string("  1G ");
-	else
-		print_string("     ");
-	if (v & PHY_EEE_BIT_100M)
-		print_string(" 100M");
-	else
-		print_string("     ");
-
-	print_string("   Link Partner: ");
-	if (machine.n_10g) {
-		phy_read(port, PHY_MMD_AN, PHY_EEE_LP_ABILITY);
-		v = SFR_DATA_U16;
-		if (v & PHY_EEE_BIT_10G)
-			print_string(" 10G");
-		else
-			print_string("    ");
-	}
-	phy_read(port, PHY_MMD_AN, PHY_EEE_LP_ABILITY2);
-	v = SFR_DATA_U16;
-	if (machine.n_10g) {
-		if (v & PHY_EEE_BIT_5G)
-			print_string(" 5G");
-		else
-			print_string("   ");
-	}
-	if (v & PHY_EEE_BIT_2G5)
-		print_string(" 2.5G");
-	else
-		print_string("     ");
-	phy_read(port, PHY_MMD_AN, PHY_EEE_LP_ABILITY);
-	v = SFR_DATA_U16;
-	if (v & PHY_EEE_BIT_1G)
-		print_string("  1G ");
-	else
-		print_string("     ");
-	if (v & PHY_EEE_BIT_100M)
-		print_string(" 100M");
-	else
-		print_string("     ");
-
-	reg_read_m(RTL8373_PHY_EEE_ABLTY);
-	if (sfr_data[3] & (1 << port))
-		print_string(" ACTIVE   ");
-	else
-		print_string(" INACTIVE ");
-	write_char('\n');
-}
-
 
 void port_eee_enable_all(__xdata uint8_t speed) __banked
 {
@@ -808,31 +724,7 @@ void port_eee_enable_all(__xdata uint8_t speed) __banked
 }
 
 
-void port_eee_disable_all(void) __banked
-{
-	for (uint8_t i = machine.min_port; i <= machine.max_port; i++) {
-		port_eee_disable(i);
-	}
-}
 
-
-void port_eee_status_all(void) __banked
-{
-	for (uint8_t i = machine.min_port; i <= machine.max_port; i++) {
-		port_eee_status(i);
-	}
-}
-
-/*
- * Enable RLDP, Realtek's version of LLDP
- */
-void port_rldp_on(__xdata uint16_t p_ms)
-{
-	REG_WRITE(RTL8373_RLDP_TIMER, p_ms >> 8, p_ms, p_ms >> 8, p_ms);
-
-	REG_SET(RTL837X_RMA0_CONF, 0x00000000); // R4ecc
-	REG_SET(RTL837X_RMA_CONF, 0x00000000); // R4ecc
-}
 
 
 /*
@@ -898,49 +790,6 @@ void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash_bits) __banked
 	REG_WRITE(RTL837X_TRK_HASH_CTRL_BASE + (lag << 2), 0, 0, 0, hash_bits);
 }
 
-void print_port_ingress_filter_mode(vlan_ingress_mode_t mode) __banked
-{
-	switch (mode) {
-	case VLAN_UNTAGGED:
-		print_string("Untag.");
-		break;
-	case VLAN_TAGGED:
-		print_string("Tagged");
-		break;
-	case VLAN_ALL:
-		print_string("Any");
-		break;
-	default:
-		print_string("!!err!!");
-	}
-}
-
-void print_vlan_ingress_port(uint8_t log_port) __banked
-{
-	print_phys_port(log_port);write_char('\t');
-	print_short(port_pvid_get(log_port));write_char('\t');
-	print_port_ingress_filter_mode(port_ingress_filter_get(log_port));write_char('\t');
-	port_ingress_vlan_filter_get(log_port) ? print_string("Enabled") : print_string("Disabled");
-	write_char('\n');
-}
-/*
- * Dumps the VLAN ingress configuration
- */
-void vlan_dump(void) __banked
-{
-	print_string("Ingress VLAN configuration:\n");
-	print_string("Port\tPVID\tType\tFiltering\n");
-	for (uint8_t port = machine.min_port; port <= machine.max_port; port++) {
-		print_vlan_ingress_port(port);
-	}
-	print_vlan_ingress_port(9);
-
-	write_char('\n');
-	print_string("Type - Which frame types are allowed: untagged, tagged or any\n");
-	print_string("Filtering - Whether packets not belonging to member VLANs on that port are dropped\n");
-	print_string("PVID - Assumed VLAN for untagged packets\n");
-}
-
 
 /** Set the ingress VLAN filtering */
 bool port_ingress_vlan_filter_set(uint8_t port, __xdata bool enabled) __banked
@@ -956,15 +805,6 @@ bool port_ingress_vlan_filter_set(uint8_t port, __xdata bool enabled) __banked
 	return true;
 }
 
-/** Get the ingress VLAN filtering status */
-bool port_ingress_vlan_filter_get(uint8_t port) __banked
-{
-	if (port < machine.min_port || (port > machine.max_port && port != CPU_PORT)) {
-		return false;
-	}
-
-	return reg_bit_test(RTL837X_VLAN_PORT_IGR_FLTR, port);
-}
 
 // C1 bit 0: static (no aging); age at C3[4:2] must be non-zero or the
 // entry is invisible to lookup

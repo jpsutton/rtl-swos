@@ -13,7 +13,7 @@ The memory chip is `Winbond W25Q16JV` with 16M-bit size.
 
 1. 2.5G ports on all advertised speeds.
 2. SFP+ communication.
-3. Serial, Web UI.
+3. Serial console, telnet.
 4. All LEDs
 
 ## Known issues

@@ -1,6 +1,6 @@
 /*
  * env_cli.c - the cli.c / swcfg.c edges that are not the port driver:
- * the hostname, the legacy-parser fallback, the bridged actions, the PHY,
+ * the hostname, the bridged actions, the PHY,
  * IGMP, DHCP and syslog entry points, all recorded so tests can assert on
  * them. Linked by every test binary together with env_tables.c.
  */
@@ -19,8 +19,7 @@
 
 char hostname[24] = "sw";
 
-char last_fallback[CMD_BUF_SIZE];
-int n_fallback, n_save, n_reset, n_showver;
+int n_save, n_reset;
 int n_igmp_on, n_igmp_off, n_hostdef, n_dhcp_start, n_dhcp_stop;
 int n_syslog_start, n_syslog_stop;
 struct dhcp_state dhcp_state;
@@ -42,8 +41,7 @@ extern uint16_t igmp_mrouter;
 void env_cli_reset(void)
 {
 	igmp_mrouter = 0;
-	last_fallback[0] = 0;
-	n_fallback = n_save = n_reset = n_showver = n_setspeed = 0;
+	n_save = n_reset = n_setspeed = 0;
 	n_igmp_on = n_igmp_off = n_hostdef = n_dhcp_start = n_dhcp_stop = 0;
 	n_syslog_start = n_syslog_stop = 0;
 	syslog_state.enabled = 0;
@@ -66,23 +64,6 @@ void itoa_short(uint16_t v)
 		write_char(b[--n]);
 }
 
-void execute_commands(uint8_t *p)
-{
-	int i = 0;
-
-	while (p[i] && i < CMD_BUF_SIZE - 1) {
-		last_fallback[i] = p[i];
-		i++;
-	}
-	last_fallback[i] = 0;
-	n_fallback++;
-}
-
-void print_sw_version(void)
-{
-	print_string((char *)"VERSION\n");
-	n_showver++;
-}
 
 
 void reset_chip(void)

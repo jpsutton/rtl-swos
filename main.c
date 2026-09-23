@@ -347,18 +347,6 @@ void memcpy(__xdata void * __xdata dst, __xdata const void * __xdata src, uint16
 		*d++ = *s++;
 }
 
-int memcmp(__xdata const void *a, __xdata const void *b, uint16_t len)
-{
-	__xdata const uint8_t *x = a;
-	__xdata const uint8_t *y = b;
-	while (len--) {
-		if (*x != *y)
-			return *x - *y;
-		x++;
-		y++;
-	}
-	return 0;
-}
 
 void memcpyc(__xdata uint8_t *dst, __code const uint8_t *src, uint16_t len)
 {
@@ -382,14 +370,6 @@ uint16_t strtox(__xdata uint8_t *dst, __code const char *s)
 	return dst - b;
 }
 
-
-uint16_t strlen(__code const char *s)
-{
-	uint16_t l = 0;
-	while (s[l])
-		l++;
-	return l;
-}
 
 
 uint16_t strlen_x(__xdata const char *s)
@@ -416,30 +396,6 @@ char strcmp(__xdata const uint8_t *a, __code const uint8_t *b)
 }
 
 
-/*
- * True when b is a prefix of a. Unlike strcmp() the byte after the match is not
- * compared, and unlike is_word_x() it need not be a separator.
- */
-bool strstart(__xdata const uint8_t *a, __code const uint8_t *b)
-{
-	uint8_t i = 0;
-
-	while (b[i] && (b[i] == a[i]))
-		i++;
-
-	return !b[i];
-}
-
-
-bool strstart_x(__xdata const uint8_t *a, __xdata const uint8_t *b)
-{
-	uint8_t i = 0;
-
-	while (b[i] && (b[i] == a[i]))
-		i++;
-
-	return !b[i];
-}
 
 
 void print_short(uint16_t a)
@@ -668,17 +624,6 @@ void sfr_mask_data(uint8_t n, uint8_t mask, uint8_t set)
 	sfr_data[3-n] = b;
 }
 
-/*
- * This zeros all the sfr data fields
- */
-void sfr_set_zero(void) {
-	uint8_t idx = 4;
-	while (idx) {
-		idx -= 1;
-		sfr_data[idx] = 0;
-	}
-}
-
 
 /*
  * Create 32 random number in sfr_data
@@ -793,22 +738,6 @@ void nic_tx_packet(uint16_t ring_ptr)
 }
 
 
-/* Read flash using the MMIO capabilities of the DW8051 core
- * Bank is < 0x3f and is the MSB
- * addr gives the address in the bank
- * Note that the address in the flash memory is not simply 0xbbaddr, because
- * the size of a bank is merely 0xc000.
- */
-uint8_t read_flash(uint8_t bank, __code const uint8_t *addr)
-{
-	uint8_t v;
-	uint8_t current_bank = PSBANK;
-
-	PSBANK = bank;
-	v = *addr;
-	PSBANK = current_bank;
-	return v;
-}
 
 /*
  * Read a SerDes register in the SoC
@@ -892,15 +821,6 @@ void print_phys_port(uint8_t port)
 }
 
 
-/*
-// TODO: This uses 2 DSEG bytes and is not used!
-void print_sds_reg(uint8_t sds_id, uint8_t page, uint8_t reg)
-{
-	sds_read(sds_id, page, reg);
-	print_phy_data();
-}
-*/
-
 char cmp_4(__xdata uint8_t a[], __xdata uint8_t b[])
 {
 	for (uint8_t i = 0; i < 4; i++) {
@@ -920,19 +840,6 @@ void cpy_4(__xdata uint8_t dest[], __xdata uint8_t source[])
 		dest[i] = source[i];
 }
 
-
-void read_reg_timer(__xdata uint32_t * tmr)
-{
-	uint8_t * val = (uint8_t *)tmr;
-	SFR_REG_ADDR_U16 = RTL837X_REG_SEC_COUNTER;
-	SFR_EXEC_GO = SFR_EXEC_READ_REG;
-	do {
-	} while (SFR_EXEC_STATUS != 0);
-	*val++ = SFR_DATA_0;
-	*val++ = SFR_DATA_8;
-	*val++ = SFR_DATA_16;
-	*val = SFR_DATA_24;
-}
 
 
 // Delay for given number of ticks without doing housekeeping
@@ -1286,18 +1193,6 @@ void idle(void)
 	}
 }
 
-
-// Sleep the given number of ticks and perform idle tasks if initialized
-void sleep(uint16_t t)
-{
-	sleep_ticks = t;
-	while (sleep_ticks > 0) {
-		if (idle_ready)
-			idle();
-		else
-			PCON |= 1;
-	}
-}
 
 
 void reset_chip(void)

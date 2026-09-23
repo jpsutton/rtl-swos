@@ -65,7 +65,6 @@ struct cli_node {
 struct cli_state_t {
 	/* ---- per session: swapped by cli_use(), keep these first ---- */
 	uint8_t mode;
-	uint8_t await;		/* interactive sub-prompt, AWAIT_* */
 	uint8_t ctx_if;		/* user-facing port number for MODE_IF */
 	uint8_t ctx_lport;	/* logical (driver) port for MODE_IF */
 	uint16_t ctx_vlan;	/* vlan id for MODE_VLAN and MODE_SVI */
@@ -93,9 +92,6 @@ struct cli_state_t {
 #define CLI_VTY		1
 void cli_use(uint8_t who) __banked;
 
-#define CLI_AWAIT_NONE		0
-#define CLI_AWAIT_ENABLE_PW	1
-
 extern __xdata struct cli_state_t cli;
 
 void cli_init(void) __banked;
@@ -109,7 +105,6 @@ void cli_help(__xdata char *line) __banked;
  * line must have room for the completion. */
 uint8_t cli_complete(__xdata char *line, uint8_t maxlen) __banked;
 /* True while the CLI expects a password on the next line (no echo). */
-uint8_t cli_hidden_input(void) __banked;
 
 /* Boot-time startup-config replay: lines run in global config mode and
  * VLAN pushes are deferred to the end. A line that fails is reported with

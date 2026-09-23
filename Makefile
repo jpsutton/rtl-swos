@@ -91,13 +91,8 @@ SRCS += \
 	rtl837x_port.c \
 	rtl837x_stp.c
 SRCS += \
-	uip/timer.c \
 	uip/uip.c \
-	uip/uiplib.c \
-	uip/uip_arp.c \
-	uip/uip-fw.c \
-	uip/uip-neighbor.c \
-	uip/uip-split.c
+	uip/uip_arp.c
 
 OBJS = ${SRCS:%.c=$(BUILDDIR)/%.rel}
 DEPS := ${SRCS:%.c=$(BUILDDIR)/%.d}

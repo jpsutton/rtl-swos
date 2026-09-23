@@ -1,7 +1,7 @@
 /*
  * Minimal TFTP client (RFC 1350, octet mode) for firmware and
- * startup-config transfer, driving the same staged-update path the web
- * upload used: a firmware image lands in the staging area at
+ * startup-config transfer, driving the staged-update path of the
+ * firmware updater: a firmware image lands in the staging area at
  * FIRMWARE_UPLOAD_START, is CRC-verified, and the boot-time updater
  * copies it to the start of flash after reset.
  *

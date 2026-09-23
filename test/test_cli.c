@@ -3,7 +3,7 @@
  *
  * Drives cli_exec_line/cli_help/cli_complete directly with fabricated
  * lines and asserts on mode transitions, abbreviation, ambiguity and
- * error output, the legacy fallback, and the NX-OS-style exec-anywhere
+ * error output, rejection of the old flat syntax, and the NX-OS-style exec-anywhere
  * behavior.
  */
 #include "sdcc_shim.h"
@@ -28,8 +28,7 @@
 #include "rtl837x_stp.h"
 #include "tftp.h"
 #include "phy.h"
-extern char last_fallback[];
-extern int n_fallback, n_reset, n_showver, n_setspeed;
+extern int n_reset, n_setspeed;
 extern uint8_t last_speed, last_port;
 extern char port_names[9][PORT_NAME_SIZE];
 void env_cli_reset(void);
@@ -228,9 +227,9 @@ static void test_priv_gating(void)
 	CHECK(n_reset == 1, "reload works in privileged EXEC");
 }
 
-static void test_fallback(void)
+static void test_old_syntax(void)
 {
-	printf("[test] legacy fallback\n");
+	printf("[test] old flat syntax is rejected\n");
 	reset_all();
 	run("stat");
 	CHECK(out_has("^\n% Invalid input"), "an unknown first word is invalid input");
@@ -732,7 +731,6 @@ static void test_replay_legacy_and_comments(void)
 		    "   ! indented comment\n"
 		    "vlan 30\n"				/* new syntax still works */
 		    " name lab\n");
-	CHECK(n_fallback == 0, "nothing goes to a legacy parser any more");
 	CHECK(out_has("% In the startup config:\nip 192.168.10.247\n") && out_has("netmask 255.255.255.0"),
 	      "old-syntax lines are reported with the line itself");
 	CHECK(sw_vlan_exists(30) && vl_valid(30), "new-syntax lines in the same replay work");
@@ -753,7 +751,7 @@ static void test_replay_legacy_and_comments(void)
 	run("enable");
 	run("configure terminal");
 	run("ip 192.168.10.247");
-	CHECK(out_has("'^' marker") && n_fallback == 0, "interactive lines are not shimmed");
+	CHECK(out_has("'^' marker"), "interactive lines in the old syntax are invalid input");
 }
 
 static void test_physical_shadows(void)
@@ -1509,7 +1507,7 @@ int main(void)
 	test_abbreviation();
 	test_errors();
 	test_priv_gating();
-	test_fallback();
+	test_old_syntax();
 	test_exec_anywhere();
 	test_write_and_copy();
 	test_help();

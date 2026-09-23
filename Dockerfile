@@ -6,7 +6,6 @@ RUN apt-get update && apt-get install -y \
     sdcc \
     python3 \
     git \
-    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # git safe.directory for mounted repos (Makefile uses git describe)
