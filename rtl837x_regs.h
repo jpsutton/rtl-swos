@@ -271,10 +271,13 @@
 #define RTL8373_RLDP_TIMER		0x1074
 #define RTL837X_RMA0_CONF		0x4ecc
 #define RTL837X_RMA_CONF		0x4f1c
-/* Reserved-multicast action for 01:80:C2:00:00:<n>, one register per
- * address from RMA0_CONF on (found on the bench: :01 and :02 read 0x20 at
- * boot and are not delivered; 0 forwards like :00, the BPDU address) */
-#define RTL837X_RMA_CTRL(n)		(RTL837X_RMA0_CONF + ((n) << 2))
+/* Reserved-multicast action for 01:80:C2:00:00:<n>. One register per
+ * address for :00-:04 only; later ones follow a fixed list (:0E is 0x4ee8),
+ * see the vendor rtl8373_reg_definition.h. Bits 5:4 action (0 forward,
+ * 1 trap, 2 drop, 3 forward but not to the CPU), bit 1 VLAN leaky. On the
+ * bench neither trap nor leaky delivers a frame a tagged-only port drops,
+ * hence the hidden VLANs in swcfg.c. */
+#define RTL837X_RMA_CTRL(n)		(RTL837X_RMA0_CONF + ((n) << 2))	/* n <= 4 */
 #define RMA_ACT_FORWARD			0x00
 #define RMA_ACT_DISCARD			0x20
 #define RTL837X_MSTP_STATES		0x5310

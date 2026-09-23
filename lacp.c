@@ -217,7 +217,7 @@ void lacp_port_changed(uint8_t lport) __banked
 /*
  * The ASIC discards the Slow Protocols address by default. While LACP runs
  * it forwards it instead, and a static entry in every VLAN a frame can
- * classify into (the VLAN database, which holds every PVID) confines it to
+ * classify into (the VLAN database and the hidden VLANs, which hold every PVID) confines it to
  * the CPU: a bridge must not pass LACPDUs on, whichever port they come in.
  */
 void lacp_fdb_refresh(void) __banked
@@ -226,9 +226,7 @@ void lacp_fdb_refresh(void) __banked
 		REG_SET(RTL837X_RMA_CTRL(2), RMA_ACT_DISCARD);
 		return;
 	}
-	for (i_ = 0; i_ < SW_MAX_VLANS; i_++)
-		if (sw_vlans[i_])
-			port_l2mc_set(0x02, sw_vlans[i_], PMASK_CPU);
+	sw_l2mc_set(0x02, PMASK_CPU);
 	REG_SET(RTL837X_RMA_CTRL(2), RMA_ACT_FORWARD);
 }
 

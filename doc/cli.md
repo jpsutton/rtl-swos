@@ -178,7 +178,10 @@ one line at a time.
 
 A VLAN list is `10,20-30` style. Referring to a VLAN that does not exist
 creates it, with a note. A trunk whose native VLAN is not in its allowed
-list accepts tagged frames only.
+list carries no untagged traffic. Its untagged frames go to a hidden VLAN
+that holds only that port and the switch itself, so LLDP, LACP and STP
+still work on it. Hidden VLANs are numbered from 4094 down, skipping
+configured VLANs, and do not appear in `show vlan` or the configuration.
 
 `spanning-tree disable` is an alias of `spanning-tree bpdufilter enable`,
 shown in the running configuration as the latter. `ip igmp snooping mrouter`

@@ -36,6 +36,8 @@ __xdata uint16_t sw_vlans[SW_MAX_VLANS];
 __xdata struct sw_port sw_ports[SW_NPORTS];
 __xdata uint8_t sw_igmp;
 __xdata uint8_t sw_mac_boot[6];
+__xdata uint16_t sw_hidden_vid[SW_NPORTS];
+static __xdata uint16_t sw_hidden_old[SW_NPORTS];
 __xdata uint8_t sw_mon_dst;
 __xdata uint16_t sw_mon_rx, sw_mon_tx;
 static __xdata uint8_t sw_deferred, sw_dirty;
@@ -83,6 +85,7 @@ void sw_init(void) __banked
 		sw_vlans[k] = 0;
 	sw_vlans[0] = 1;
 	for (k = 0; k < SW_NPORTS; k++) {
+		sw_hidden_vid[k] = 0;
 		sw_ports[k].mode = SW_MODE_ACCESS;
 		sw_ports[k].access_vid = 1;
 		sw_ports[k].native_vid = 1;
@@ -157,6 +160,7 @@ uint8_t sw_vlan_del(uint16_t vid) __banked
 		if (sw_vlans[k] == vid) {
 			sw_vlans[k] = 0;
 			vlan_delete(vid);	/* also drops the name */
+			sw_apply();		/* a hidden VLAN may move up */
 			return SW_OK;
 		}
 	}
@@ -362,7 +366,7 @@ uint8_t sw_port_allows(uint8_t lport, __xdata uint16_t vid) __banked
 void sw_apply(void) __banked
 {
 	static __xdata uint8_t k, p;
-	static __xdata uint16_t vid, bit, members, tagged;
+	static __xdata uint16_t vid, bit, members, tagged, hid;
 	static __xdata struct sw_port * __xdata sp;
 
 	if (sw_deferred) {
@@ -393,23 +397,63 @@ void sw_apply(void) __banked
 		vlan_settings.tagged = tagged;
 		vlan_create();
 	}
+	hid = SW_VID_MAX + 1;
+	for (p = 0; p < SW_NPORTS; p++) {
+		sw_hidden_old[p] = sw_hidden_vid[p];
+		sw_hidden_vid[p] = 0;
+	}
 	for (p = machine.min_port; p <= machine.max_port; p++) {
 		sp = &sw_ports[p];
 		if (sp->mode == SW_MODE_ACCESS) {
 			port_pvid_set(p, sp->access_vid);
 			port_ingress_filter(p, VLAN_UNTAGGED);
-		} else {
-			/* A trunk whose native VLAN is not allowed carries no
-			 * untagged traffic: accept tagged frames only. */
+		} else if (sw_port_allows(p, sp->native_vid)) {
 			port_pvid_set(p, sp->native_vid);
-			port_ingress_filter(p, sw_port_allows(p, sp->native_vid)
-					    ? VLAN_ALL : VLAN_TAGGED);
+			port_ingress_filter(p, VLAN_ALL);
+		} else {
+			/* No untagged traffic: only the CPU hears the hidden
+			 * VLAN, see swcfg.h */
+			do
+				hid--;
+			while (sw_vlan_exists(hid));
+			sw_hidden_vid[p] = hid;
+			vlan_settings.vlan = hid;
+			vlan_settings.members = (uint16_t)1 << p;
+			vlan_settings.tagged = 0;
+			vlan_create();
+			port_pvid_set(p, hid);
+			port_ingress_filter(p, VLAN_ALL);
 		}
+	}
+	/* Hidden VLANs no port uses any more, unless now configured */
+	for (k = 0; k < SW_NPORTS; k++) {
+		vid = sw_hidden_old[k];
+		if (!vid || sw_vlan_exists(vid))
+			continue;
+		for (p = 0; p < SW_NPORTS; p++)
+			if (sw_hidden_vid[p] == vid)
+				break;
+		if (p == SW_NPORTS)
+			vlan_delete(vid);
 	}
 	if (lacp_ports)
 		lacp_fdb_refresh();	/* LACPDUs arrive in the PVIDs */
 	if (lldp_enabled)
 		lldp_fdb_refresh();
+}
+
+
+void sw_l2mc_set(uint8_t mac_last, __xdata uint16_t pmask) __banked
+{
+	static __xdata uint8_t k, m;
+
+	m = mac_last;
+	for (k = 0; k < SW_MAX_VLANS; k++)
+		if (sw_vlans[k])
+			port_l2mc_set(m, sw_vlans[k], pmask);
+	for (k = 0; k < SW_NPORTS; k++)
+		if (sw_hidden_vid[k])
+			port_l2mc_set(m, sw_hidden_vid[k], pmask);
 }
 
 

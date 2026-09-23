@@ -73,8 +73,17 @@ extern __xdata uint16_t sw_vlans[SW_MAX_VLANS];	/* 0 = free slot */
 extern __xdata struct sw_port sw_ports[SW_NPORTS];
 extern __xdata uint8_t sw_igmp;		/* ip igmp snooping */
 extern __xdata uint8_t sw_mac_boot[6];	/* management MAC as read at boot */
+/* A trunk whose native VLAN is not allowed has no VLAN for untagged
+ * frames, and the ASIC drops them, LLDPDUs, LACPDUs and BPDUs included.
+ * Such a port gets a hidden VLAN of its own instead (the port untagged and
+ * the CPU), numbered from SW_VID_MAX down and skipping configured VLANs,
+ * where only the CPU hears it. 0 = none. */
+extern __xdata uint16_t sw_hidden_vid[SW_NPORTS];
 
 void sw_init(void) __banked;
+/* Static entry for 01:80:C2:00:00:<mac_last> in every configured and
+ * hidden VLAN */
+void sw_l2mc_set(uint8_t mac_last, __xdata uint16_t pmask) __banked;
 /* The port's counters (as port_counters_get()) since the last clear */
 void sw_counters_get(uint8_t lport, __xdata uint32_t * __xdata c) __banked;
 /* clear counters: ports is a logical port mask */

@@ -1220,14 +1220,35 @@ static void test_l2_extensions(void)
 	to_if("ethernet 1/9");			/* logical 8 */
 	run("switchport mode trunk");
 	run("switchport trunk allowed vlan 20,30");
-	CHECK(port_ingress_filter_get(8) == VLAN_TAGGED,
-	      "trunk without its native vlan accepts tagged frames only");
-	CHECK(port_pvid_get(8) == 1 && !vl_member(1, 8), "and is no member of the native vlan");
+	CHECK(port_pvid_get(8) == 4094 && sw_hidden_vid[8] == 4094 && !vl_member(1, 8),
+	      "trunk without its native vlan puts untagged frames in hidden vlan 4094");
+	CHECK(vl_member(4094, 8) && !vl_tagged(4094, 8) && vl_tagged(4094, 9)
+	      && port_ingress_filter_get(8) == VLAN_ALL, "which holds the port untagged and the CPU");
+	for (int lp = 0; lp < 8; lp++)
+		CHECK(!vl_member(4094, lp), "and no other port");
 	run("switchport trunk native vlan 20");
-	CHECK(port_ingress_filter_get(8) == VLAN_ALL && vl_member(20, 8) && !vl_tagged(20, 8),
-	      "an allowed native vlan accepts untagged again");
+	CHECK(port_ingress_filter_get(8) == VLAN_ALL && vl_member(20, 8) && !vl_tagged(20, 8)
+	      && port_pvid_get(8) == 20, "an allowed native vlan takes untagged frames again");
+	CHECK(!sw_hidden_vid[8] && !vl_valid(4094), "and the hidden vlan goes away");
+	to_if("ethernet 1/1");			/* logical 0 */
+	run("switchport mode trunk");
+	run("switchport trunk allowed vlan 20");
+	run("switchport trunk native vlan 30");
+	to_if("ethernet 1/9");
 	run("switchport trunk native vlan 40");
-	CHECK(port_ingress_filter_get(8) == VLAN_TAGGED, "native moved out of the list: tagged only");
+	CHECK(sw_hidden_vid[0] == 4094 && sw_hidden_vid[8] == 4093 && port_pvid_get(8) == 4093
+	      && vl_member(4093, 8) && !vl_member(4093, 0), "a second one counts down");
+	run("vlan 4094");
+	run("exit");
+	CHECK(sw_hidden_vid[0] == 4093 && sw_hidden_vid[8] == 4092 && vl_member(4094, 0) == 0
+	      && vl_valid(4094) && !vl_valid(4091), "a configured vlan is skipped");
+	run("show vlan brief");
+	CHECK(!out_has("4093") && !out_has("4092"), "show vlan does not list hidden vlans");
+	run("no vlan 4094");
+	CHECK(sw_hidden_vid[0] == 4094 && sw_hidden_vid[8] == 4093 && !vl_valid(4092), "and reclaimed");
+	to_if("ethernet 1/1");
+	run("switchport mode access");
+	CHECK(!sw_hidden_vid[0] && sw_hidden_vid[8] == 4094 && !vl_valid(4093), "renumbered when one goes");
 
 	to_if("ethernet 1/2");
 	run("spanning-tree disable");
@@ -1275,7 +1296,7 @@ static void test_l2_extensions(void)
 	wipe_all();
 	replay_text(cfg);
 	CHECK(STP_PF_OUT(stp_pflags[1]) && igmp_mrouter == ((1 << 1) | (1 << 3) | (1 << 4))
-	      && port_ingress_filter_get(8) == VLAN_TAGGED, "all three replay from a saved config");
+	      && sw_hidden_vid[8] == 4094, "all three replay from a saved config");
 }
 
 static void test_default_boot(void)

@@ -35,6 +35,7 @@ First release of the rtl-swos fork.
   `copy tftp://...`, pasted-config lines ignored).
 - Telnet command history (arrow keys, ^P/^N); `copy startup-config
   running-config`; `show running-config interface ...|vlan ...`.
+- LLDP, LACP and STP work on a trunk whose native VLAN is not allowed.
 - In-band firmware update and configuration transfer over TFTP.
 - Separate CLI sessions for the serial console and telnet.
 - tools/convert-legacy-config.py converts RTLPlayground configurations.

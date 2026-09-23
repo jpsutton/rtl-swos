@@ -61,10 +61,8 @@ void lldp_init(void) __banked
 
 void lldp_fdb_refresh(void) __banked
 {
-	for (i_ = 0; i_ < SW_MAX_VLANS; i_++)
-		if (sw_vlans[i_])
-			port_l2mc_set(0x0e, sw_vlans[i_], lldp_enabled ? PMASK_CPU
-				      : PMASK_CPU | (machine_detected.isRTL8373 ? PMASK_9 : PMASK_6));
+	sw_l2mc_set(0x0e, lldp_enabled ? PMASK_CPU
+		    : PMASK_CPU | (machine_detected.isRTL8373 ? PMASK_9 : PMASK_6));
 }
 
 
