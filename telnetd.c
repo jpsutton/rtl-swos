@@ -128,12 +128,14 @@ void telnetd_init(void) __banked
 void telnet_start(void) __banked
 {
 	if (tn.enabled) {
-		print_string("Telnet is already enabled\n");
+		if (!cli_replaying)
+			print_string("Telnet is already enabled\n");
 		return;
 	}
 	tn.enabled = 1;
 	uip_listen(HTONS(TELNET_PORT));
-	print_string("Telnet enabled\n");
+	if (!cli_replaying)
+		print_string("Telnet enabled\n");
 }
 
 
@@ -141,6 +143,8 @@ void telnet_set_timeout(uint16_t secs) __banked
 {
 	tn.idle_secs = secs;
 	tn.idle_ticks = (uint32_t)secs * SYS_TICK_HZ;
+	if (cli_replaying)
+		return;
 	print_string("Telnet idle timeout: ");
 	itoa_short(secs);
 	print_string(" seconds\n");
