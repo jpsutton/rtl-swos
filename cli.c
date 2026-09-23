@@ -65,6 +65,7 @@ static __code const struct cli_node * __xdata w_node;
 static __code const struct cli_node * __code const * __xdata w_children;
 
 #include "cli_act.h"
+#include "lacp.h"
 #include "dbgcmd.h"
 #include "tftp.h"
 
@@ -125,6 +126,13 @@ SHOW_LEAF(n_sh_stp, "spanning-tree", SHOW_STP, "Spanning tree state")
 SHOW_LEAF(n_sh_tftp, "tftp", SHOW_TFTP, "State of the last TFTP transfer")
 SHOW_LEAF(n_sh_hist, "history", SHOW_HIST, "Console command history")
 SHOW_LEAF(n_sh_log, "logging", SHOW_LOG, "Remote syslog")
+SHOW_LEAF(n_sh_lacp_nb, "neighbor", SHOW_LACP, "Partners of the LACP ports")
+static __code const struct cli_node * __code const ch_sh_lacp[] = {
+	&n_sh_lacp_nb, 0
+};
+static __code const struct cli_node n_sh_lacp = {
+	"lacp", 0, 0, SHOW_LACP, 0, ch_sh_lacp, ACT_SHOW, "LACP state"
+};
 SHOW_LEAF(n_sh_igmp_snoop, "snooping", SHOW_IGMP, "IGMP snooping groups")
 SHOW_LEAF(n_sh_po_sum, "summary", SHOW_PO, "Members and hash")
 static __code const struct cli_node * __code const ch_sh_po[] = {
@@ -170,7 +178,7 @@ static __code const struct cli_node n_sh_mon = {
 	"monitor", 0, 0, SHOW_MON, 0, ch_sh_mon, ACT_SHOW, "Port mirroring"
 };
 static __code const struct cli_node * __code const ch_show[] = {
-	&n_sh_hist, &n_sh_if, &n_sh_ip, &n_sh_log, &n_sh_mac, &n_sh_mon, &n_sh_po,
+	&n_sh_hist, &n_sh_if, &n_sh_ip, &n_sh_lacp, &n_sh_log, &n_sh_mac, &n_sh_mon, &n_sh_po,
 	&n_show_run, &n_sh_stp, &n_show_start, &n_sh_tftp, &n_show_version, &n_sh_vlan, 0
 };
 
@@ -722,9 +730,54 @@ static __code const struct cli_node n_end = {
 	"Exit to privileged EXEC mode"
 };
 
+static __code const struct cli_node n_arg_lacp_sp = {
+	0, CLI_A_NUM32, 0, LACPC_SYSPRIO, 0, NO_CHILDREN, ACT_LACP, "1-65535, default 32768"
+};
+static __code const struct cli_node * __code const ch_lacp_sp[] = {
+	&n_arg_lacp_sp, 0
+};
+static __code const struct cli_node n_lacp_sysprio = {
+	"system-priority", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, LACPC_SYSPRIO, 0, ch_lacp_sp, ACT_LACP,
+	"LACP system priority"
+};
+static __code const struct cli_node * __code const ch_g_lacp[] = {
+	&n_lacp_sysprio, 0
+};
+static __code const struct cli_node n_g_lacp = {
+	"lacp", 0, CLI_F_NO_OK, 0, 0, ch_g_lacp, ACT_NONE, "LACP settings"
+};
+/* port-channel load-balance METHOD: the IOS global form, applied to every
+ * port-channel. src-port/dst-port are L4 ports here, as in IOS. */
+#define PCLB(nm, word, bits, help) \
+static __code const struct cli_node nm = { \
+	word, 0, 0, bits, 0, NO_CHILDREN, ACT_PC_LB, help \
+};
+PCLB(n_pclb_smac, "src-mac", LAG_HASH_L2_SMAC, "Source MAC")
+PCLB(n_pclb_dmac, "dst-mac", LAG_HASH_L2_DMAC, "Destination MAC")
+PCLB(n_pclb_sdmac, "src-dst-mac", LAG_HASH_L2_SMAC | LAG_HASH_L2_DMAC, "Source and destination MAC")
+PCLB(n_pclb_sip, "src-ip", LAG_HASH_L3_SIP, "Source IP")
+PCLB(n_pclb_dip, "dst-ip", LAG_HASH_L3_DIP, "Destination IP")
+PCLB(n_pclb_sdip, "src-dst-ip", LAG_HASH_L3_SIP | LAG_HASH_L3_DIP, "Source and destination IP")
+PCLB(n_pclb_sport, "src-port", LAG_HASH_L4_SPORT, "TCP/UDP source port")
+PCLB(n_pclb_dport, "dst-port", LAG_HASH_L4_DPORT, "TCP/UDP destination port")
+PCLB(n_pclb_sdport, "src-dst-port", LAG_HASH_L4_SPORT | LAG_HASH_L4_DPORT, "TCP/UDP source and destination port")
+static __code const struct cli_node * __code const ch_pclb[] = {
+	&n_pclb_dip, &n_pclb_dmac, &n_pclb_dport, &n_pclb_sdip, &n_pclb_sdmac, &n_pclb_sdport,
+	&n_pclb_sip, &n_pclb_smac, &n_pclb_sport, 0
+};
+static __code const struct cli_node n_pclb = {
+	"load-balance", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, LAG_HASH_DEFAULT, 0, ch_pclb, ACT_PC_LB,
+	"Hash for every port-channel"
+};
+static __code const struct cli_node * __code const ch_g_pc[] = {
+	&n_pclb, 0
+};
+static __code const struct cli_node n_g_pc = {
+	"port-channel", 0, CLI_F_NO_OK, 0, 0, ch_g_pc, ACT_NONE, "Port-channel defaults"
+};
 static __code const struct cli_node * __code const cli_root_config[] = {
 	&n_end, &n_exit_cfg, &n_feature, &n_hostname, &n_interface, &n_ip_cfg,
-	&n_line, &n_logging, &n_monitor, &n_stp_global, &n_vlan, 0
+	&n_g_lacp, &n_line, &n_logging, &n_monitor, &n_g_pc, &n_stp_global, &n_vlan, 0
 };
 
 /* ---- interface configuration mode ---- */
@@ -958,12 +1011,19 @@ static __code const struct cli_node n_if_rl = {
 	"rate-limit", 0, 0, 0, 0, ch_rl, ACT_NONE, "Bandwidth limit"
 };
 
-/* channel-group N [mode on] (static aggregation; there is no LACP) */
+/* channel-group N [mode on|active|passive]; ->lo carries LACP_MODE_* */
 static __code const struct cli_node n_cg_on = {
-	"on", 0, 0, 0, 0, NO_CHILDREN, ACT_CHGRP, "Static aggregation"
+	"on", 0, 0, LACP_MODE_ON, 0, NO_CHILDREN, ACT_CHGRP, "Static aggregation"
+};
+static __code const struct cli_node n_cg_active = {
+	"active", 0, 0, LACP_MODE_ACTIVE, 0, NO_CHILDREN, ACT_CHGRP, "LACP, initiating"
+};
+static __code const struct cli_node n_cg_passive = {
+	"passive", 0, 0, LACP_MODE_PASSIVE, 0, NO_CHILDREN, ACT_CHGRP,
+	"LACP, answering an active partner only"
 };
 static __code const struct cli_node * __code const ch_cg_mode[] = {
-	&n_cg_on, 0
+	&n_cg_active, &n_cg_on, &n_cg_passive, 0
 };
 static __code const struct cli_node n_cg_mode = {
 	"mode", 0, 0, 0, 0, ch_cg_mode, ACT_NONE, "Aggregation mode"
@@ -1000,6 +1060,53 @@ static __code const struct cli_node * __code const ch_if_ip[] = {
 };
 static __code const struct cli_node n_if_ip = {
 	"ip", 0, CLI_F_NO_OK, 0, 0, ch_if_ip, ACT_NONE, "IP settings"
+};
+/* lacp ... : interface rate and port priority, port-channel min-links,
+ * global system priority. Numbers are NUM32: the handler reads ->lo. */
+static __code const struct cli_node n_lacp_fast = {
+	"fast", 0, 0, LACPC_FAST, 0, NO_CHILDREN, ACT_LACP, "LACPDU every second, 3 s timeout"
+};
+static __code const struct cli_node n_lacp_normal = {
+	"normal", 0, 0, LACPC_NORMAL, 0, NO_CHILDREN, ACT_LACP, "LACPDU every 30 s, 90 s timeout (default)"
+};
+static __code const struct cli_node * __code const ch_lacp_rate[] = {
+	&n_lacp_fast, &n_lacp_normal, 0
+};
+static __code const struct cli_node n_lacp_rate = {
+	"rate", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, LACPC_NORMAL, 0, ch_lacp_rate, ACT_LACP,
+	"Rate the partner is asked to send at"
+};
+static __code const struct cli_node n_arg_lacp_pp = {
+	0, CLI_A_NUM32, 0, LACPC_PPRIO, 0, NO_CHILDREN, ACT_LACP, "1-65535, default 32768"
+};
+static __code const struct cli_node * __code const ch_lacp_pp[] = {
+	&n_arg_lacp_pp, 0
+};
+static __code const struct cli_node n_lacp_pprio = {
+	"port-priority", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, LACPC_PPRIO, 0, ch_lacp_pp, ACT_LACP,
+	"LACP port priority"
+};
+static __code const struct cli_node * __code const ch_if_lacp[] = {
+	&n_lacp_pprio, &n_lacp_rate, 0
+};
+static __code const struct cli_node n_if_lacp = {
+	"lacp", 0, CLI_F_NO_OK, 0, 0, ch_if_lacp, ACT_NONE, "LACP port settings"
+};
+static __code const struct cli_node n_arg_lacp_ml = {
+	0, CLI_A_NUM32, 0, LACPC_MINLINKS, 0, NO_CHILDREN, ACT_LACP, "1-8, default 1"
+};
+static __code const struct cli_node * __code const ch_lacp_ml[] = {
+	&n_arg_lacp_ml, 0
+};
+static __code const struct cli_node n_lacp_minlinks = {
+	"min-links", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, LACPC_MINLINKS, 0, ch_lacp_ml, ACT_LACP,
+	"Bundle only with at least this many ready LACP ports"
+};
+static __code const struct cli_node * __code const ch_po_lacp[] = {
+	&n_lacp_minlinks, 0
+};
+static __code const struct cli_node n_po_lacp = {
+	"lacp", 0, CLI_F_NO_OK, 0, 0, ch_po_lacp, ACT_NONE, "LACP settings"
 };
 static __code const struct cli_node n_if_cg = {
 	"channel-group", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_cg, ACT_CHGRP,
@@ -1111,7 +1218,7 @@ static __code const struct cli_node n_if_duplex = {
 	"Set the duplex mode"
 };
 static __code const struct cli_node * __code const cli_root_if[] = {
-	&n_end, &n_exit_cfg, &n_if_cg, &n_if_description, &n_if_duplex, &n_if_ip, &n_if_mtu,
+	&n_end, &n_exit_cfg, &n_if_cg, &n_if_description, &n_if_duplex, &n_if_ip, &n_if_lacp, &n_if_mtu,
 	&n_if_power, &n_if_rl, &n_if_shutdown, &n_if_speed, &n_if_stp, &n_if_switchport, 0
 };
 
@@ -1138,7 +1245,7 @@ static __code const struct cli_node n_po_lb = {
 	"Hash fields for member selection"
 };
 static __code const struct cli_node * __code const cli_root_po[] = {
-	&n_end, &n_exit_cfg, &n_po_lb, &n_if_stp, 0
+	&n_end, &n_exit_cfg, &n_po_lacp, &n_po_lb, &n_if_stp, 0
 };
 
 /* ---- VLAN configuration mode ---- */

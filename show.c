@@ -15,6 +15,7 @@
 #include "uip/uip.h"
 #include "swcfg.h"
 #include "show.h"
+#include "lacp.h"
 #include "syslog.h"
 #include "rtl837x_flash.h"
 #include "version.h"
@@ -361,30 +362,39 @@ void show_vlan_brief(void) __banked
 void show_po_summary(void) __banked
 {
 	static __xdata uint8_t g, lp, h, any;
-	static __xdata uint16_t m;
+	static __xdata uint16_t m, lm;
 
 	col = 0;
 	any = 0;
 	for (g = 0; g < 4; g++) {
 		m = port_lag_members_get(g);
+		lm = 0;
+		FOR_EACH_PORT(lp)
+			if (lacp_group[lp] == g + 1)
+				lm |= (uint16_t)1 << lp;
+		m |= lm;
 		if (!m)
 			continue;
 		if (!any)
-			sh_s("Port-channel  Members                     Hash\n"
-			     "------------  --------------------------  ---------------------\n");
+			sh_s("Group  Protocol  Members                        Hash\n"
+			     "-----  --------  -----------------------------  ---------------------\n");
 		any = 1;
 		sh_s("Po");
 		sh_dec(g + 1);
-		sh_to(14);
+		sh_to(7);
+		sh_s(lm ? "LACP" : "static");
+		sh_to(17);
 		FOR_EACH_PORT(lp) {
 			if (m & ((uint16_t)1 << lp)) {
 				sh_ifname(lp);
 				if (port_link_code(lp) == PORT_LINK_DOWN)
 					sh_s("(D)");
+				else if (lm & ((uint16_t)1 << lp))
+					sh_s(lacp_bundled & ((uint16_t)1 << lp) ? "(P)" : "(I)");
 				sh_c(' ');
 			}
 		}
-		sh_to(42);
+		sh_to(48);
 		reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (g << 2));
 		h = sfr_data[3];
 		if (h & LAG_HASH_SOURCE_PORT_NUMBER) sh_s("src-port ");
@@ -399,7 +409,7 @@ void show_po_summary(void) __banked
 	if (!any)
 		sh_s("No port-channels\n");
 	else
-		sh_s("(D) = member link down\n");
+		sh_s("(D) = link down, (P) = bundled by LACP, (I) = LACP port not bundled, forwarding on its own\n");
 }
 
 

@@ -865,8 +865,10 @@ uint8_t port_lag_of(uint8_t port) __banked
  */
 void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banked
 {
+#ifdef DEBUG
 	print_string("port_lag_members_set, lag: "); print_byte(lag); print_string(", members: "); print_short(members);
 	write_char('\n');
+#endif
 	if (lag > 3) {
 		print_string("Link aggregation group out of range\n");
 		return;
@@ -885,8 +887,10 @@ void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banke
  */
 void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash_bits) __banked
 {
+#ifdef DEBUG
 	print_string("port_lag_hash_set, lag: "); print_byte(lag); print_string(", hash: "); print_byte(hash_bits);
 	write_char('\n');
+#endif
 	if (lag > 3) {
 		print_string("Link aggregation group out of range\n");
 		return;

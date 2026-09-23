@@ -63,6 +63,8 @@
 #define ACT_DUPLEX	50	/* PHY_DUPLEX_* in ->lo */
 #define ACT_MACADDR	51
 #define ACT_MROUTER	52	/* interface: ip igmp snooping mrouter */
+#define ACT_LACP	53	/* LACPC_* in ->lo */
+#define ACT_PC_LB	54	/* global port-channel load-balance, hash bits in ->lo */
 
 #define SHOW_IF_STATUS	1
 #define SHOW_IF_COUNT	2
@@ -79,6 +81,7 @@
 #define SHOW_HIST	13
 #define SHOW_LOG	14
 #define SHOW_IGMP	15
+#define SHOW_LACP	16
 
 /* ACT_STP_G parameters */
 #define STPG_RSTP	1
@@ -99,6 +102,12 @@
 #define STPI_P2P	8
 #define STPI_SHARED	9
 #define STPI_DISABLE	10
+/* ACT_LACP parameters */
+#define LACPC_FAST	1	/* lacp rate fast|normal */
+#define LACPC_PPRIO	2	/* lacp port-priority N */
+#define LACPC_SYSPRIO	3	/* lacp system-priority N */
+#define LACPC_MINLINKS	4	/* lacp min-links N */
+#define LACPC_NORMAL	5	/* lacp rate normal, no lacp rate */
 
 void cli_act(uint8_t action) __banked;
 /* Run the action on every port of cli.ctx_range. */

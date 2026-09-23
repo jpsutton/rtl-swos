@@ -27,6 +27,7 @@
 #include "swcfg.h"
 #include "rtl837x_stp.h"
 #include "rtl837x_igmp.h"
+#include "lacp.h"
 #include "runcfg.h"
 
 #pragma codeseg BANK3
@@ -266,19 +267,74 @@ static void rc_hash_field(__xdata uint8_t h, __xdata uint8_t bit, __code const c
 /* Port-channels with members come first: a custom hash must be in place
  * before members join, since joining installs the default on a pristine
  * lag */
+/* Does any port run LACP in port-channel `group`? */
+static uint8_t lacp_in_group(uint8_t group)
+{
+	static __xdata uint8_t p, gr;
+
+	gr = group;
+	for (p = 0; p < LACP_PORTS; p++)
+		if (lacp_group[p] == gr)
+			return 1;
+	return 0;
+}
+
+
+/* The hash all four port-channels share when it is one of the IOS global
+ * methods, so it renders as `port-channel load-balance`; 0 otherwise */
+static __xdata uint8_t rc_pc_glob;
+static __code const uint8_t pclb_bits[] = {
+	LAG_HASH_L2_SMAC, LAG_HASH_L2_DMAC, LAG_HASH_L2_SMAC | LAG_HASH_L2_DMAC,
+	LAG_HASH_L3_SIP, LAG_HASH_L3_DIP, LAG_HASH_L3_SIP | LAG_HASH_L3_DIP,
+	LAG_HASH_L4_SPORT, LAG_HASH_L4_DPORT, LAG_HASH_L4_SPORT | LAG_HASH_L4_DPORT
+};
+static __code const char * __code const pclb_word[] = {
+	"src-mac", "dst-mac", "src-dst-mac", "src-ip", "dst-ip", "src-dst-ip",
+	"src-port", "dst-port", "src-dst-port"
+};
+
+static void rc_pc_global(void)
+{
+	static __xdata uint8_t g, h, k;
+
+	rc_pc_glob = 0;
+	for (g = 0; g < 4; g++) {
+		reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (g << 2));
+		if (!g)
+			h = sfr_data[3];
+		else if (sfr_data[3] != h)
+			return;
+	}
+	for (k = 0; k < sizeof(pclb_bits); k++) {
+		if (pclb_bits[k] == h) {
+			rc_pc_glob = h;
+			rc_s("port-channel load-balance ");
+			rc_s(pclb_word[k]);
+			rc_s("\n!\n");
+			return;
+		}
+	}
+}
+
+
 static void rc_port_channels(void)
 {
 	static __xdata uint8_t g, h;
 
 	for (g = 0; g < 4; g++) {
-		if (!port_lag_members_get(g))
+		if (!port_lag_members_get(g) && !lacp_in_group(g + 1))
 			continue;
 		rc_s("interface port-channel ");
 		rc_dec(g + 1);
 		rc_c('\n');
+		if (lacp_minlinks[g] != 1) {
+			rc_s(" lacp min-links ");
+			rc_dec(lacp_minlinks[g]);
+			rc_c('\n');
+		}
 		reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (g << 2));
 		h = sfr_data[3];
-		if (h != LAG_HASH_DEFAULT) {
+		if (h != (rc_pc_glob ? rc_pc_glob : LAG_HASH_DEFAULT)) {
 			rc_s(" load-balance");
 			rc_hash_field(h, LAG_HASH_SOURCE_PORT_NUMBER, "src-port");
 			rc_hash_field(h, LAG_HASH_L2_SMAC, "src-mac");
@@ -368,8 +424,19 @@ static void rc_interfaces(void)
 		}
 		if (igmp_mrouter & ((uint16_t)1 << lp))
 			rc_s(" ip igmp snooping mrouter\n");
+		if (lacp_fast[lp])
+			rc_s(" lacp rate fast\n");
+		if (lacp_pprio[lp] != 32768) {
+			rc_s(" lacp port-priority ");
+			rc_dec(lacp_pprio[lp]);
+			rc_c('\n');
+		}
 		g = port_lag_of(lp);
-		if (g != PORT_LAG_NONE) {
+		if (lacp_group[lp]) {
+			rc_s(" channel-group ");
+			rc_dec(lacp_group[lp]);
+			rc_s(lacp_mode[lp] == LACP_MODE_ACTIVE ? " mode active\n" : " mode passive\n");
+		} else if (g != PORT_LAG_NONE) {
 			rc_s(" channel-group ");
 			rc_dec(g + 1);
 			rc_s(" mode on\n");
@@ -490,6 +557,12 @@ static void rc_emit(void)
 	rc_s("\n!\n");
 
 	rc_vlans();
+	if (lacp_sysprio != 32768) {
+		rc_s("lacp system-priority ");
+		rc_dec(lacp_sysprio);
+		rc_s("\n!\n");
+	}
+	rc_pc_global();
 	rc_port_channels();
 	rc_interfaces();
 

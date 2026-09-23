@@ -18,6 +18,8 @@
 #include "uip/uip.h"
 #include "swcfg.h"
 
+#include "lacp.h"
+
 #pragma codeseg BANK3
 #pragma constseg BANK3
 
@@ -77,6 +79,7 @@ void sw_init(void) __banked
 	sw_igmp = 0;
 	sw_deferred = 0;
 	sw_dirty = 0;
+	lacp_init();
 	/* vlan_setup() leaves every port accepting all frames; push the
 	 * access-port defaults now, a config without switchport lines never
 	 * would. */
@@ -375,6 +378,8 @@ void sw_apply(void) __banked
 					    ? VLAN_ALL : VLAN_TAGGED);
 		}
 	}
+	if (lacp_ports)
+		lacp_fdb_refresh();	/* LACPDUs arrive in the PVIDs */
 }
 
 

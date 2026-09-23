@@ -271,6 +271,12 @@
 #define RTL8373_RLDP_TIMER		0x1074
 #define RTL837X_RMA0_CONF		0x4ecc
 #define RTL837X_RMA_CONF		0x4f1c
+/* Reserved-multicast action for 01:80:C2:00:00:<n>, one register per
+ * address from RMA0_CONF on (found on the bench: :01 and :02 read 0x20 at
+ * boot and are not delivered; 0 forwards like :00, the BPDU address) */
+#define RTL837X_RMA_CTRL(n)		(RTL837X_RMA0_CONF + ((n) << 2))
+#define RMA_ACT_FORWARD			0x00
+#define RMA_ACT_DISCARD			0x20
 #define RTL837X_MSTP_STATES		0x5310
 #define RTL837X_REG_LED_RLDP_1		0x65F8
 #define RTL837X_REG_LED_RLDP_2		0x65FC

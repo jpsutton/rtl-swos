@@ -32,6 +32,7 @@
 #include "tftp.h"
 #include "boot.h"
 #include "sfp.h"
+#include "lacp.h"
 
 extern __code const struct machine machine;
 extern __xdata uint32_t flash_size;
@@ -82,6 +83,7 @@ void crc16_bank1(__xdata uint8_t *v) __naked;
 #define SYSTICK_TIMER2_VALUE (0x10000 - TIMER2_DIV)
 
 __xdata uint8_t idle_ready;
+static __xdata uint16_t lacp_last_tick;
 
 __code const uint8_t ownIP[] = { 192, 168, 2, 2 };
 __code const uint8_t gatewayIP[] = { 192, 168, 2, 22};
@@ -1036,13 +1038,14 @@ void handle_rx(void)
 		print_byte(uip_buf[3]); print_byte(uip_buf[4]); print_byte(uip_buf[5]); write_char('\n');
 		print_string(" MGMT-VLAN: "); print_short(management_vlan); write_char('\n');
 #endif
-		if (stp_enabled && uip_buf[0] == 0x01 && uip_buf[1] == 0x80 && uip_buf[2] == 0xc2 // STP packet?
+		if (lacp_ports && uip_buf[0] == 0x01 && uip_buf[1] == 0x80 && uip_buf[2] == 0xc2 // LACPDU?
+			&& uip_buf[3] == 0x00 && uip_buf[4] == 0x00 && uip_buf[5] == 0x02) {
+			lacp_in();
+		} else if (stp_enabled && uip_buf[0] == 0x01 && uip_buf[1] == 0x80 && uip_buf[2] == 0xc2 // STP packet?
 			&& uip_buf[3] == 0x00 && uip_buf[4] == 0x00 && uip_buf[5] == 0x00) {
 			stp_in();
-			if (uip_len) {
-				print_string("STP TX\n");
+			if (uip_len)
 				tcpip_output();
-			}
 		} else if (igmpEnabled && uip_buf[0] == 0x01 && uip_buf[1] == 0x00 && uip_buf[2] == 0x5e // IPv4-MC packet?
 			&& uip_buf[3] == 0x00 && uip_buf[4] == 0x00 && uip_buf[5] == 0x16) {
 			igmp_packet_handler();
@@ -1254,6 +1257,11 @@ void idle(void)
 
 	// Check for changes with SFP modules
 	handle_sfp();
+	// LACP runs at 10 Hz while any port uses it
+	if (lacp_ports && (uint16_t)((uint16_t)ticks - lacp_last_tick) >= SYS_TICK_HZ / LACP_TICK_HZ) {
+		lacp_last_tick = (uint16_t)ticks;
+		lacp_tick();
+	}
 
 	// Check new Packets RX
 	handle_rx();

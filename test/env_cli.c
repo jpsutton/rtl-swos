@@ -6,6 +6,7 @@
  */
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "rtl837x_common.h"
 #include "rtl837x_phy.h"
@@ -252,4 +253,15 @@ void tftp_begin(uint8_t op, const uint8_t *srv, const char *fname)
 		n++;
 	}
 	last_tftp_file[n] = 0;
+}
+
+/* ---- frame I/O for lacp.c: tcpip_output() records what was sent ---- */
+uint8_t uip_buf[UIP_CONF_BUFFER_SIZE + 2];
+u16_t uip_len;
+int n_tx_frames;
+uint8_t tx_frames[16][160];	/* ring of the last frames sent, from the TX descriptor on */
+void tcpip_output(void)
+{
+	memcpy(tx_frames[n_tx_frames & 15], uip_buf, sizeof(tx_frames[0]));
+	n_tx_frames++;
 }

@@ -23,6 +23,7 @@
 #include "runcfg.h"
 #include "telnetd.h"
 #include "dhcp.h"
+#include "lacp.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_stp.h"
 #include "tftp.h"
@@ -1290,6 +1291,217 @@ static void test_default_boot(void)
 	CHECK(out_has("static"), "without the client: static");
 }
 
+/* ---- LACP: a simulated partner ---- */
+extern uint8_t uip_buf[];
+extern u16_t uip_len;
+extern int n_tx_frames;
+extern uint8_t tx_frames[16][160];
+
+static void links_up(uint16_t m)
+{
+	hw_reg_set(RTL837X_REG_LINKS_STS, ((uint32_t)(m & 0xff) << 16) | ((uint32_t)(m >> 8) << 8));
+}
+
+/* The last LACPDU sent out of logical port lp, or NULL */
+static uint8_t *last_pdu(int lp)
+{
+	for (int i = n_tx_frames - 1; i >= 0 && i >= n_tx_frames - 16; i--) {
+		uint8_t *f = tx_frames[i & 15] + RTL_FRAME_DESC_SIZE;
+		if (f[5] == 0x02 && f[20] == 0x88 && f[21] == 0x09 && ((f[18] << 8 | f[19]) == (1 << lp)))
+			return f + 22;
+	}
+	return NULL;
+}
+
+/* An LACPDU from the partner arriving on logical port lp: the partner is
+ * system 00:aa:00:00:00:<sys> with key `key`, port lp+100; its partner TLV
+ * echoes what we last sent on lp when echo is set. */
+static void partner_pdu(int lp, int sys, int key, uint8_t st, int echo)
+{
+	uint8_t *pdu = &uip_buf[26], *ours = last_pdu(lp);
+	memset(uip_buf, 0, 160);
+	uip_buf[0] = 0x01; uip_buf[1] = 0x80; uip_buf[2] = 0xc2; uip_buf[5] = 0x02;
+	uip_buf[12] = 0x88; uip_buf[13] = 0x99;
+	uip_buf[19] = lp;
+	uip_buf[24] = 0x88; uip_buf[25] = 0x09;
+	pdu[0] = 1; pdu[1] = 1;
+	pdu[2] = 1; pdu[3] = 20;
+	pdu[4] = 0x80; pdu[5] = 0x00;
+	pdu[7] = 0xaa; pdu[11] = sys;
+	pdu[12] = key >> 8; pdu[13] = key;
+	pdu[14] = 0x80; pdu[15] = 0x00;
+	pdu[16] = 0; pdu[17] = lp + 100;
+	pdu[18] = st;
+	pdu[22] = 2; pdu[23] = 20;
+	if (echo && ours)
+		memcpy(pdu + 24, ours + 4, 15);
+	pdu[42] = 3; pdu[43] = 16;
+	uip_len = 26 + 110;
+	lacp_in();
+}
+
+static void lacp_ticks(int n)
+{
+	while (n--)
+		lacp_tick();
+}
+
+#define P_ALL (LACP_ST_ACTIVITY | LACP_ST_AGGREGATION | LACP_ST_SYNC | LACP_ST_COLLECTING | LACP_ST_DISTRIBUTING)
+
+static void test_lacp(void)
+{
+	char cfg[CONFIG_LEN];
+	uint8_t *pdu;
+
+	printf("[test] LACP\n");
+	wipe_all();
+	links_up(0x1ff);
+	run("enable");
+	to_if("ethernet 1/5-6");			/* logical 4, 5 */
+	run("channel-group 1 mode active");
+	CHECK(lacp_ports == 0x30 && lacp_group[4] == 1 && lacp_mode[5] == LACP_MODE_ACTIVE,
+	      "channel-group N mode active makes LACP ports");
+	CHECK(port_lag_members_get(0) == 0, "nothing is bundled before a partner answers");
+	CHECK(hw_reg_get(RTL837X_RMA_CTRL(2)) == RMA_ACT_FORWARD, "LACPDUs are no longer discarded by the ASIC");
+	n_tx_frames = 0;
+	lacp_tick();
+	pdu = last_pdu(4);
+	CHECK(pdu && last_pdu(5), "an active port sends an LACPDU at once");
+	CHECK(pdu && pdu[0] == 1 && pdu[2] == 1 && pdu[3] == 20 && pdu[22] == 2 && pdu[42] == 3,
+	      "subtype, actor, partner and collector TLVs where the standard puts them");
+	CHECK(pdu && (pdu[18] & (LACP_ST_ACTIVITY | LACP_ST_AGGREGATION | LACP_ST_DEFAULTED))
+	      == (LACP_ST_ACTIVITY | LACP_ST_AGGREGATION | LACP_ST_DEFAULTED) && !(pdu[18] & LACP_ST_SYNC),
+	      "actor state: active, aggregatable, defaulted, not in sync");
+	CHECK(pdu && pdu[12] == 0 && pdu[13] == 1 && pdu[17] == 5 && !memcmp(pdu + 6, uip_ethaddr.addr, 6),
+	      "actor key is the port-channel, port number and system MAC");
+	CHECK(tx_frames[0][RTL_FRAME_DESC_SIZE + 12] == 0x88 && tx_frames[0][RTL_FRAME_DESC_SIZE + 13] == 0x99,
+	      "sent with a CPU tag");
+
+	/* the partner answers without having heard us yet, then in sync */
+	partner_pdu(4, 1, 7, LACP_ST_ACTIVITY | LACP_ST_AGGREGATION, 0);
+	CHECK(port_lag_members_get(0) == 0, "an unmatched partner does not bundle");
+	lacp_tick();
+	partner_pdu(4, 1, 7, P_ALL, 1);
+	CHECK(port_lag_members_get(0) == (1 << 4), "matched and in sync on both ends: bundled");
+	lacp_tick();
+	pdu = last_pdu(4);
+	CHECK(pdu && (pdu[18] & (LACP_ST_SYNC | LACP_ST_COLLECTING | LACP_ST_DISTRIBUTING))
+	      == (LACP_ST_SYNC | LACP_ST_COLLECTING | LACP_ST_DISTRIBUTING) && !(pdu[18] & LACP_ST_DEFAULTED),
+	      "and says so: sync, collecting, distributing");
+	CHECK(pdu && pdu[27] == 0xaa && pdu[31] == 1 && pdu[32] == 0 && pdu[33] == 7,
+	      "the partner TLV names the partner");
+	partner_pdu(5, 1, 7, P_ALL, 1);
+	lacp_tick();
+	partner_pdu(5, 1, 7, P_ALL, 1);
+	CHECK(port_lag_members_get(0) == 0x30, "the second port joins the same partner");
+
+	run("show port-channel summary");
+	CHECK(out_has("LACP") && out_has("Eth1/5(P)") && out_has("Eth1/6(P)"), "show port-channel summary");
+	run("show lacp neighbor");
+	CHECK(out_has("bundled") && out_has("32768,00aa.0000.0001") && out_has("Po1"), "show lacp neighbor");
+
+	/* another system on port 6 */
+	partner_pdu(5, 2, 7, P_ALL, 1);
+	CHECK(port_lag_members_get(0) == (1 << 4), "a port facing another system leaves the bundle");
+	run("show lacp");
+	CHECK(out_has("other system"), "and show lacp says why");
+
+	/* link down */
+	links_up(0x1ff & ~(1 << 4));
+	lacp_tick();
+	CHECK(!(port_lag_members_get(0) & (1 << 4)), "link down leaves the bundle");
+	links_up(0x1ff);
+	partner_pdu(5, 1, 7, P_ALL, 1);
+	lacp_tick();
+	partner_pdu(5, 1, 7, P_ALL, 1);
+	CHECK(port_lag_members_get(0) == (1 << 5), "port 6 now defines the partner and bundles");
+
+	/* timeout: long timeout is 90 s */
+	lacp_ticks(89 * LACP_TICK_HZ);
+	CHECK(port_lag_members_get(0) == (1 << 5), "the partner info holds for the long timeout");
+	lacp_ticks(2 * LACP_TICK_HZ);
+	CHECK(port_lag_members_get(0) == 0, "and expires after it");
+
+	/* fast rate: short timeout */
+	to_if("ethernet 1/6");
+	run("lacp rate fast");
+	partner_pdu(5, 1, 7, P_ALL, 1);
+	lacp_tick();
+	partner_pdu(5, 1, 7, P_ALL, 1);
+	CHECK(port_lag_members_get(0) == (1 << 5), "bundled again");
+	lacp_tick();
+	pdu = last_pdu(5);
+	CHECK(pdu && (pdu[18] & LACP_ST_TIMEOUT), "lacp rate fast asks for the short timeout");
+	lacp_ticks(4 * LACP_TICK_HZ);
+	CHECK(port_lag_members_get(0) == 0, "and times out after 3 s");
+
+	/* min-links */
+	run("interface port-channel 1");
+	run("lacp min-links 2");
+	partner_pdu(4, 1, 7, P_ALL, 1);
+	lacp_tick();
+	partner_pdu(4, 1, 7, P_ALL, 1);
+	CHECK(port_lag_members_get(0) == 0, "min-links 2 keeps a single ready port out");
+	partner_pdu(5, 1, 7, P_ALL, 1);
+	lacp_tick();
+	partner_pdu(5, 1, 7, P_ALL, 1);
+	CHECK(port_lag_members_get(0) == 0x30, "two ready ports bundle");
+
+	/* mixing static and LACP members */
+	to_if("ethernet 1/7");
+	run("channel-group 1 mode on");
+	CHECK(out_has("has LACP members") && port_lag_of(6) == PORT_LAG_NONE, "static into an LACP group refused");
+	run("channel-group 2 mode on");
+	to_if("ethernet 1/8");
+	run("channel-group 2 mode active");
+	CHECK(out_has("has static members") && !lacp_group[7], "LACP into a static group refused");
+
+	/* passive */
+	run("channel-group 3 mode passive");
+	n_tx_frames = 0;
+	lacp_ticks(5);
+	CHECK(!last_pdu(7), "a passive port stays quiet");
+	partner_pdu(7, 3, 9, LACP_ST_ACTIVITY | LACP_ST_AGGREGATION, 0);
+	lacp_tick();
+	CHECK(last_pdu(7) != NULL, "and answers an active partner");
+
+	/* globals and rendering */
+	run("lacp system-priority 100");
+	run("port-channel load-balance src-dst-ip");
+	CHECK(lacp_sysprio == 100, "lacp system-priority");
+	render_into(cfg);
+	CHECK(strstr(cfg, "lacp system-priority 100\n") && strstr(cfg, "port-channel load-balance src-dst-ip\n"),
+	      "globals render");
+	CHECK(strstr(cfg, "interface port-channel 1\n lacp min-links 2\n")
+	      && strstr(cfg, "interface port-channel 3\n"), "port-channels with LACP ports render, bundled or not");
+	CHECK(strstr(cfg, "interface ethernet 1/6\n lacp rate fast\n channel-group 1 mode active\n")
+	      && strstr(cfg, "interface ethernet 1/8\n channel-group 3 mode passive\n")
+	      && strstr(cfg, "interface ethernet 1/7\n channel-group 2 mode on\n"), "members render with their mode");
+	CHECK(!strstr(cfg, "\n load-balance"), "the global hash is not repeated per port-channel");
+
+	wipe_all();
+	links_up(0x1ff);
+	out_reset();
+	replay_text(cfg);
+	CHECK(!out_has("% "), "the LACP configuration replays without errors");
+	CHECK(lacp_group[4] == 1 && lacp_group[5] == 1 && lacp_fast[5] && lacp_mode[7] == LACP_MODE_PASSIVE
+	      && lacp_minlinks[0] == 2 && lacp_sysprio == 100 && port_lag_of(6) == 1,
+	      "and restores it");
+
+	run("enable");
+	to_if("ethernet 1/5");
+	run("no channel-group");
+	CHECK(!lacp_group[4] && lacp_ports == ((1 << 5) | (1 << 7)), "no channel-group leaves LACP");
+	run("channel-group 4");
+	CHECK(port_lag_of(4) == 3 && !lacp_group[4], "a bare channel-group N is still static");
+	to_if("ethernet 1/6");
+	run("no channel-group");
+	to_if("ethernet 1/8");
+	run("no channel-group");
+	CHECK(!lacp_ports && hw_reg_get(RTL837X_RMA_CTRL(2)) == RMA_ACT_DISCARD,
+	      "without LACP ports the ASIC discards LACPDUs again");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1327,6 +1539,7 @@ int main(void)
 	test_interface_range();
 	test_l2_extensions();
 	test_default_boot();
+	test_lacp();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

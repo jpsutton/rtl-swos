@@ -24,6 +24,7 @@
 #include "tftp.h"
 #include "dbgcmd.h"
 #include "sfp.h"
+#include "lacp.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -122,6 +123,23 @@ static void pf_warn(uint8_t flags)
 		return;
 	if ((flags & (STP_PF_ADMEDGE | STP_PF_FILTER)) == (STP_PF_ADMEDGE | STP_PF_FILTER))
 		print_string("% Warning: portfast has no effect, bpdufilter takes the port out of spanning tree\n");
+}
+
+
+/* Would port-channel `group` mix static and LACP members if the current
+ * port joined it with `mode`? */
+static uint8_t lag_mode_clash(__xdata uint16_t group, __xdata uint8_t mode)
+{
+	static __xdata uint8_t p;
+	static __xdata uint16_t m;
+
+	m = port_lag_members_get(group - 1) & ~lacp_bundled & ~((uint16_t)1 << cli.ctx_lport);
+	if (mode != LACP_MODE_ON)
+		return m != 0;		/* static members present */
+	for (p = 0; p < LACP_PORTS; p++)
+		if (lacp_group[p] == group && p != cli.ctx_lport)
+			return 1;
+	return 0;
 }
 
 
@@ -241,6 +259,9 @@ void cli_act(uint8_t action) __banked
 			break;
 		case SHOW_IGMP:
 			igmp_show();
+			break;
+		case SHOW_LACP:
+			lacp_show();
 			break;
 		}
 		break;
@@ -581,8 +602,69 @@ void cli_act(uint8_t action) __banked
 		break;
 	}
 	case ACT_CHGRP:
-		sw_lag_join(cli.ctx_lport, cli.no ? 0 : cli.args[0]);
+		d_rc = cli.lo < LACP_MODE_ON ? LACP_MODE_ON : cli.lo;	/* bare `channel-group N` */
+		d_v = cli.no ? 0 : cli.args[0];
+		if (d_v && lag_mode_clash(d_v, d_rc)) {
+			print_string(d_rc == LACP_MODE_ON
+				     ? "% The port-channel has LACP members: use mode active or passive\n"
+				     : "% The port-channel has static members: use mode on\n");
+			break;
+		}
+		if (d_v && d_rc != LACP_MODE_ON && lacp_group[cli.ctx_lport] == d_v
+		    && lacp_mode[cli.ctx_lport] == d_rc)
+			break;		/* unchanged: keep the bundle up */
+		/* leave whatever the port was in, then join the new way */
+		lacp_port_set(cli.ctx_lport, 0, 0);
+		sw_lag_join(cli.ctx_lport, 0);
+		if (d_v && d_rc == LACP_MODE_ON)
+			sw_lag_join(cli.ctx_lport, d_v);
+		else if (d_v)
+			lacp_port_set(cli.ctx_lport, d_v, d_rc);
 		sw_apply();	/* members share one PVID */
+		break;
+	case ACT_LACP:
+		d_v = cli.args[0];
+		switch (cli.lo) {
+		case LACPC_FAST:
+		case LACPC_NORMAL:
+			lacp_fast[cli.ctx_lport] = !cli.no && cli.lo == LACPC_FAST;
+			lacp_port_changed(cli.ctx_lport);
+			break;
+		case LACPC_PPRIO:
+			if (cli.no)
+				d_v = 32768;
+			else if (!d_v || cli.args[0] > 65535) {
+				bad_value();
+				break;
+			}
+			lacp_pprio[cli.ctx_lport] = d_v;
+			lacp_port_changed(cli.ctx_lport);
+			break;
+		case LACPC_SYSPRIO:
+			if (cli.no)
+				d_v = 32768;
+			else if (!d_v || cli.args[0] > 65535) {
+				bad_value();
+				break;
+			}
+			lacp_sysprio = d_v;
+			for (d_lp = 0; d_lp < LACP_PORTS; d_lp++)
+				lacp_port_changed(d_lp);
+			break;
+		case LACPC_MINLINKS:
+			if (cli.no)
+				d_v = 1;
+			else if (!d_v || cli.args[0] > 8) {
+				bad_value();
+				break;
+			}
+			lacp_minlinks[cli.ctx_po - 1] = d_v;
+			break;
+		}
+		break;
+	case ACT_PC_LB:
+		for (d_lp = 0; d_lp < 4; d_lp++)
+			port_lag_hash_set(d_lp, cli.no ? LAG_HASH_DEFAULT : cli.lo);
 		break;
 	case ACT_PO:
 		cli.ctx_po = cli.args[0];

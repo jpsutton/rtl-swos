@@ -70,6 +70,7 @@ SRCS = \
 	boot.c \
 	sfp.c \
 	swcfg.c \
+	lacp.c \
 	runcfg.c \
 	show.c \
 	tcp_app.c \
