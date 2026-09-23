@@ -130,7 +130,7 @@ static void send_echo(void)
 	cs_p[10] = c >> 8;
 	cs_p[11] = c;
 
-	uip_len = UIP_LLH_LEN + size;
+	uip_len = size;		/* the IP datagram; uip_arp_out() adds the link-level header */
 	uip_arp_out();		/* the ethernet header, or an ARP request instead */
 	tcpip_output();
 	uip_len = 0;
