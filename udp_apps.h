@@ -4,6 +4,7 @@
 #include "dhcp.h"
 #include "syslog.h"
 #include "dns.h"
+#include "ntp.h"
 #include "tftp.h"
 
 void udp_callbacks(void);

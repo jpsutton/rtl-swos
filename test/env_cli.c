@@ -264,3 +264,12 @@ void print_ip(uint8_t *a)
 	snprintf(b, sizeof(b), "%d.%d.%d.%d", a[0], a[1], a[2], a[3]);
 	print_string_x(b);
 }
+
+/* ---- ntp.c is not linked: its state and entry points ---- */
+#include "ntp.h"
+struct ntp_state ntp_state = { .tz_name = "UTC" };
+int n_ntp_start, n_ntp_stop;
+void ntp_start(void) { n_ntp_start++; ntp_state.enabled = 1; }
+void ntp_stop(void) { n_ntp_stop++; ntp_state.enabled = 0; }
+void ntp_show(void) { print_string("NTP\n"); }
+void ntp_show_time(void) { print_string("CLOCK\n"); }

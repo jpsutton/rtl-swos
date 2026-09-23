@@ -25,6 +25,7 @@
 #include "dhcp.h"
 #include "lacp.h"
 #include "dns.h"
+#include "ntp.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_stp.h"
 #include "tftp.h"
@@ -1550,6 +1551,65 @@ static void test_dns(void)
 	dns_state.status = DNS_IDLE;
 }
 
+static void test_ntp(void)
+{
+	char cfg[CONFIG_LEN];
+	extern int n_ntp_start, n_ntp_stop;
+
+	printf("[test] NTP client and clock settings\n");
+	wipe_all();
+	memset(&ntp_state, 0, sizeof(ntp_state));
+	strcpy(ntp_state.tz_name, "UTC");
+	run("enable");
+	run("configure terminal");
+	render_into(cfg);
+	CHECK(!strstr(cfg, "clock ") && !strstr(cfg, "ntp "), "defaults render nothing");
+	run("ntp server pool.ntp.org");
+	CHECK(n_ntp_start == 1 && !strcmp(ntp_state.server, "pool.ntp.org"), "ntp server starts the client");
+	run("clock timezone EST -5 0");
+	CHECK(ntp_state.offset == -300 && !strcmp(ntp_state.tz_name, "EST"), "clock timezone EST -5 0");
+	run("clock timezone IST 5 30");
+	CHECK(ntp_state.offset == 330, "half-hour zones");
+	run("clock timezone X 5 20");
+	CHECK(out_has("% Value out of range") && ntp_state.offset == 330, "odd minutes refused");
+	run("clock timezone X -13");
+	CHECK(out_has("% Value out of range"), "beyond -12 refused");
+	run("clock timezone TOOLONGNAME 1");
+	CHECK(out_has("Invalid zone name"), "long names refused");
+	run("clock timezone CET 1");
+	run("clock summer-time CEST recurring eu");
+	CHECK(ntp_state.offset == 60 && ntp_state.dst == NTP_DST_EU && !strcmp(ntp_state.dst_name, "CEST"),
+	      "EU summer time");
+	render_into(cfg);
+	CHECK(strstr(cfg, "clock timezone CET 1 0\nclock summer-time CEST recurring eu\nntp server pool.ntp.org\n") != NULL,
+	      "clock and ntp render");
+	run("clock timezone EST -5 0");
+	run("clock summer-time EDT recurring");
+	CHECK(ntp_state.dst == NTP_DST_US, "plain recurring is the US rule");
+	render_into(cfg);
+	CHECK(strstr(cfg, "clock timezone EST -5 0\nclock summer-time EDT recurring\n") != NULL, "negative offsets render");
+
+	wipe_all();
+	memset(&ntp_state, 0, sizeof(ntp_state));
+	strcpy(ntp_state.tz_name, "UTC");
+	out_reset();
+	replay_text(cfg);
+	CHECK(!out_has("% ") && ntp_state.offset == -300 && ntp_state.dst == NTP_DST_US
+	      && !strcmp(ntp_state.server, "pool.ntp.org"), "and replay");
+	run("enable");
+	run("configure terminal");
+	run("no ntp server");
+	run("no clock summer-time");
+	run("no clock timezone");
+	CHECK(n_ntp_stop >= 1 && !ntp_state.server[0] && ntp_state.dst == NTP_DST_OFF && !ntp_state.offset
+	      && !strcmp(ntp_state.tz_name, "UTC"), "no forms restore the defaults");
+	run("end");
+	run("show clock");
+	CHECK(out_has("CLOCK"), "show clock");
+	run("show ntp status");
+	CHECK(out_has("NTP"), "show ntp status");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1589,6 +1649,7 @@ int main(void)
 	test_default_boot();
 	test_lacp();
 	test_dns();
+	test_ntp();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

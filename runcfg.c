@@ -29,6 +29,7 @@
 #include "rtl837x_igmp.h"
 #include "lacp.h"
 #include "dns.h"
+#include "ntp.h"
 #include "runcfg.h"
 
 #pragma codeseg BANK3
@@ -318,6 +319,36 @@ static void rc_pc_global(void)
 }
 
 
+/* clock timezone / clock summer-time / ntp server */
+static void rc_clock(void)
+{
+	static __xdata uint16_t a;
+
+	if (ntp_state.offset || strcmp((__xdata uint8_t *)ntp_state.tz_name, "UTC")) {
+		rc_s("clock timezone ");
+		rc_x(ntp_state.tz_name, 0);
+		rc_c(' ');
+		a = ntp_state.offset < 0 ? -ntp_state.offset : ntp_state.offset;
+		if (ntp_state.offset < 0)
+			rc_c('-');
+		rc_dec(a / 60);
+		rc_c(' ');
+		rc_dec(a % 60);
+		rc_c('\n');
+	}
+	if (ntp_state.dst != NTP_DST_OFF) {
+		rc_s("clock summer-time ");
+		rc_x(ntp_state.dst_name, 0);
+		rc_s(ntp_state.dst == NTP_DST_EU ? " recurring eu\n" : " recurring\n");
+	}
+	if (ntp_state.server[0]) {
+		rc_s("ntp server ");
+		rc_x(ntp_state.server, 0);
+		rc_c('\n');
+	}
+}
+
+
 static void rc_port_channels(void)
 {
 	static __xdata uint8_t g, h;
@@ -603,6 +634,7 @@ static void rc_emit(void)
 	}
 	if (sw_igmp)
 		rc_s("ip igmp snooping\n");
+	rc_clock();
 	if (syslog_state.enabled) {
 		rc_s("logging host ");
 		rc_ip(syslog_state.server_ip);

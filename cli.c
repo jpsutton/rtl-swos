@@ -66,6 +66,7 @@ static __code const struct cli_node * __code const * __xdata w_children;
 
 #include "cli_act.h"
 #include "lacp.h"
+#include "ntp.h"
 #include "dbgcmd.h"
 #include "tftp.h"
 
@@ -126,6 +127,14 @@ SHOW_LEAF(n_sh_stp, "spanning-tree", SHOW_STP, "Spanning tree state")
 SHOW_LEAF(n_sh_tftp, "tftp", SHOW_TFTP, "State of the last TFTP transfer")
 SHOW_LEAF(n_sh_hist, "history", SHOW_HIST, "Command history of this session")
 SHOW_LEAF(n_sh_hosts, "hosts", SHOW_HOSTS, "Name servers and the last lookup")
+SHOW_LEAF(n_sh_clock, "clock", SHOW_CLOCK, "Local date and time")
+SHOW_LEAF(n_sh_ntp_st, "status", SHOW_NTP, "Server and synchronisation")
+static __code const struct cli_node * __code const ch_sh_ntp[] = {
+	&n_sh_ntp_st, 0
+};
+static __code const struct cli_node n_sh_ntp = {
+	"ntp", 0, 0, SHOW_NTP, 0, ch_sh_ntp, ACT_SHOW, "NTP client"
+};
 SHOW_LEAF(n_sh_log, "logging", SHOW_LOG, "Remote syslog")
 SHOW_LEAF(n_sh_lacp_nb, "neighbor", SHOW_LACP, "Partners of the LACP ports")
 static __code const struct cli_node * __code const ch_sh_lacp[] = {
@@ -179,7 +188,7 @@ static __code const struct cli_node n_sh_mon = {
 	"monitor", 0, 0, SHOW_MON, 0, ch_sh_mon, ACT_SHOW, "Port mirroring"
 };
 static __code const struct cli_node * __code const ch_show[] = {
-	&n_sh_hist, &n_sh_hosts, &n_sh_if, &n_sh_ip, &n_sh_lacp, &n_sh_log, &n_sh_mac, &n_sh_mon, &n_sh_po,
+	&n_sh_clock, &n_sh_hist, &n_sh_hosts, &n_sh_if, &n_sh_ip, &n_sh_lacp, &n_sh_log, &n_sh_mac, &n_sh_mon, &n_sh_ntp, &n_sh_po,
 	&n_show_run, &n_sh_stp, &n_show_start, &n_sh_tftp, &n_show_version, &n_sh_vlan, 0
 };
 
@@ -802,9 +811,80 @@ static __code const struct cli_node * __code const ch_g_pc[] = {
 static __code const struct cli_node n_g_pc = {
 	"port-channel", 0, CLI_F_NO_OK, 0, 0, ch_g_pc, ACT_NONE, "Port-channel defaults"
 };
+/* ntp server HOST */
+static __code const struct cli_node n_arg_ntps = {
+	0, CLI_A_WORD, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_NTP_SERVER, "Host name or address"
+};
+static __code const struct cli_node * __code const ch_ntps[] = {
+	&n_arg_ntps, 0
+};
+static __code const struct cli_node n_ntp_server = {
+	"server", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_ntps, ACT_NTP_SERVER,
+	"Synchronise the clock with this server"
+};
+static __code const struct cli_node * __code const ch_ntp[] = {
+	&n_ntp_server, 0
+};
+static __code const struct cli_node n_ntp = {
+	"ntp", 0, CLI_F_NO_OK, 0, 0, ch_ntp, ACT_NONE, "NTP client"
+};
+/* clock timezone NAME HOURS [MINUTES] */
+static __code const struct cli_node n_arg_tzm = {
+	0, CLI_A_NUM32, 0, 0, 0, NO_CHILDREN, ACT_CLOCK_TZ, "Minutes (0, 30 or 45)"
+};
+static __code const struct cli_node * __code const ch_tzm[] = {
+	&n_arg_tzm, 0
+};
+static __code const struct cli_node n_arg_tzh = {
+	0, CLI_A_WORD, 0, 0, 0, ch_tzm, ACT_CLOCK_TZ, "Hours offset from UTC, -12 to +14"
+};
+static __code const struct cli_node * __code const ch_tzh[] = {
+	&n_arg_tzh, 0
+};
+static __code const struct cli_node n_arg_tzn = {
+	0, CLI_A_WORD, 0, 0, 0, ch_tzh, ACT_NONE, "Zone name, up to 7 characters"
+};
+static __code const struct cli_node * __code const ch_tzn[] = {
+	&n_arg_tzn, 0
+};
+static __code const struct cli_node n_clk_tz = {
+	"timezone", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_tzn, ACT_CLOCK_TZ, "Time zone"
+};
+/* clock summer-time NAME recurring [eu|us] */
+static __code const struct cli_node n_st_eu = {
+	"eu", 0, 0, NTP_DST_EU, 0, NO_CHILDREN, ACT_CLOCK_ST, "Last Sunday of March to last Sunday of October, 01:00 UTC"
+};
+static __code const struct cli_node n_st_us = {
+	"us", 0, 0, NTP_DST_US, 0, NO_CHILDREN, ACT_CLOCK_ST, "Second Sunday of March to first Sunday of November (default)"
+};
+static __code const struct cli_node * __code const ch_st_rule[] = {
+	&n_st_eu, &n_st_us, 0
+};
+static __code const struct cli_node n_st_rec = {
+	"recurring", 0, 0, NTP_DST_US, 0, ch_st_rule, ACT_CLOCK_ST, "Every year, by a rule"
+};
+static __code const struct cli_node * __code const ch_st_rec[] = {
+	&n_st_rec, 0
+};
+static __code const struct cli_node n_arg_stn = {
+	0, CLI_A_WORD, 0, 0, 0, ch_st_rec, ACT_NONE, "Summer time zone name, up to 7 characters"
+};
+static __code const struct cli_node * __code const ch_stn[] = {
+	&n_arg_stn, 0
+};
+static __code const struct cli_node n_clk_st = {
+	"summer-time", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, NTP_DST_OFF, 0, ch_stn, ACT_CLOCK_ST, "Daylight saving time"
+};
+static __code const struct cli_node * __code const ch_clock[] = {
+	&n_clk_st, &n_clk_tz, 0
+};
+static __code const struct cli_node n_clock = {
+	"clock", 0, CLI_F_NO_OK, 0, 0, ch_clock, ACT_NONE, "Time zone and summer time"
+};
+
 static __code const struct cli_node * __code const cli_root_config[] = {
-	&n_end, &n_exit_cfg, &n_feature, &n_hostname, &n_interface, &n_ip_cfg,
-	&n_g_lacp, &n_line, &n_logging, &n_monitor, &n_g_pc, &n_stp_global, &n_vlan, 0
+	&n_clock, &n_end, &n_exit_cfg, &n_feature, &n_hostname, &n_interface, &n_ip_cfg,
+	&n_g_lacp, &n_line, &n_logging, &n_monitor, &n_ntp, &n_g_pc, &n_stp_global, &n_vlan, 0
 };
 
 /* ---- interface configuration mode ---- */

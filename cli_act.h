@@ -65,6 +65,9 @@
 #define ACT_PC_LB	54	/* global port-channel load-balance, hash bits in ->lo */
 #define ACT_NAMESERVER	55
 #define ACT_NSLOOKUP	56
+#define ACT_NTP_SERVER	57
+#define ACT_CLOCK_TZ	58	/* clock timezone NAME HOURS [MINUTES] */
+#define ACT_CLOCK_ST	59	/* clock summer-time NAME recurring [eu|us]; NTP_DST_* in ->lo */
 
 #define SHOW_IF_STATUS	1
 #define SHOW_IF_COUNT	2
@@ -83,6 +86,8 @@
 #define SHOW_IGMP	15
 #define SHOW_LACP	16
 #define SHOW_HOSTS	17
+#define SHOW_CLOCK	18
+#define SHOW_NTP	19
 
 /* ACT_STP_G parameters */
 #define STPG_RSTP	1

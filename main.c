@@ -34,6 +34,7 @@
 #include "sfp.h"
 #include "lacp.h"
 #include "dns.h"
+#include "ntp.h"
 
 extern __code const struct machine machine;
 extern __xdata uint32_t flash_size;
@@ -1617,6 +1618,7 @@ void main(void)
 
 	syslog_init();
 	dns_init();
+	ntp_init();
 
 #ifdef DEBUG
 	// This register seems to work on the RTL8373 only if also the SDS

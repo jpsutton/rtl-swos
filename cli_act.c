@@ -26,6 +26,7 @@
 #include "sfp.h"
 #include "lacp.h"
 #include "dns.h"
+#include "ntp.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -141,6 +142,28 @@ static uint8_t lag_mode_clash(__xdata uint16_t group, __xdata uint8_t mode)
 		if (lacp_group[p] == group && p != cli.ctx_lport)
 			return 1;
 	return 0;
+}
+
+
+/* Copy the word at argument offset `arg` into dst (size bytes); 0 if it
+ * does not fit or is not a name */
+static __xdata char * __xdata cw_dst;
+static __xdata uint8_t cw_size;
+static uint8_t copy_word(uint8_t arg)
+{
+	static __xdata char * __xdata s;
+	static __xdata uint8_t n;
+
+	s = cli.line + cli.argoff[arg];
+	if (!name_ok(s))
+		return 0;
+	for (n = 0; s[n] && s[n] != ' '; n++) {
+		if (n == cw_size - 1)
+			return 0;
+		cw_dst[n] = s[n];
+	}
+	cw_dst[n] = 0;
+	return 1;
 }
 
 
@@ -266,6 +289,12 @@ void cli_act(uint8_t action) __banked
 			break;
 		case SHOW_HOSTS:
 			dns_show();
+			break;
+		case SHOW_CLOCK:
+			ntp_show_time();
+			break;
+		case SHOW_NTP:
+			ntp_show();
 			break;
 		}
 		break;
@@ -707,6 +736,73 @@ void cli_act(uint8_t action) __banked
 		}
 		break;
 	}
+	case ACT_NTP_SERVER:
+		if (cli.no) {
+			ntp_stop();
+			ntp_state.server[0] = 0;
+			break;
+		}
+		cw_dst = ntp_state.server;
+		cw_size = DNS_NAME_LEN;
+		if (!copy_word(0)) {
+			print_string("% Invalid host name\n");
+			break;
+		}
+		ntp_start();
+		break;
+	case ACT_CLOCK_TZ:
+	{
+		static __xdata char * __xdata h;
+		static __xdata uint8_t neg;
+		if (cli.no) {
+			ntp_state.offset = 0;
+			ntp_state.tz_name[0] = 'U'; ntp_state.tz_name[1] = 'T';
+			ntp_state.tz_name[2] = 'C'; ntp_state.tz_name[3] = 0;
+			break;
+		}
+		/* hours: [+|-]0-14; minutes: 0, 30, 45 */
+		h = cli.line + cli.argoff[1];
+		neg = 0;
+		if (*h == '+' || *h == '-')
+			neg = *h++ == '-';
+		d_v = 0;
+		for (d_lp = 0; h[d_lp] >= '0' && h[d_lp] <= '9' && d_lp < 3; d_lp++)
+			d_v = d_v * 10 + h[d_lp] - '0';
+		if (!d_lp || (h[d_lp] && h[d_lp] != ' ') || d_v > (neg ? 12 : 14)) {
+			bad_value();
+			break;
+		}
+		d_v *= 60;
+		if (cli.nargs >= 3) {
+			if (cli.args[2] != 0 && cli.args[2] != 30 && cli.args[2] != 45) {
+				bad_value();
+				break;
+			}
+			d_v += cli.args[2];
+		}
+		cw_dst = ntp_state.tz_name;
+		cw_size = sizeof(ntp_state.tz_name);
+		if (!copy_word(0)) {
+			print_string("% Invalid zone name (up to 7 characters)\n");
+			break;
+		}
+		ntp_state.offset = neg ? -(int16_t)d_v : (int16_t)d_v;
+		break;
+	}
+	case ACT_CLOCK_ST:
+		if (cli.no) {
+			ntp_state.dst = NTP_DST_OFF;
+			ntp_state.dst_name[0] = 0;
+			break;
+		}
+		cw_dst = ntp_state.dst_name;
+		cw_size = sizeof(ntp_state.dst_name);
+		if (!copy_word(0)) {
+			print_string("% Invalid zone name (up to 7 characters)\n");
+			break;
+		}
+		ntp_state.dst = cli.lo;
+		break;
 	case ACT_PC_LB:
 		for (d_lp = 0; d_lp < 4; d_lp++)
 			port_lag_hash_set(d_lp, cli.no ? LAG_HASH_DEFAULT : cli.lo);
