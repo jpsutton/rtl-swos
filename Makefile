@@ -81,6 +81,7 @@ SRCS = \
 	ntp.c \
 	totp.c \
 	ping.c \
+	bank4.c \
 	udp_apps.c
 
 # RTL837x
@@ -131,7 +132,7 @@ $(BUILDDIR)/%.rel: %.asm | create_build_dir
 #	mv -f $(addprefix $(basename $^), .lst .rel .sym) .
 
 $(BUILDDIR)/rtl-swos.ihx: $(OBJS) $(BUILDDIR)/crtbank.rel $(BUILDDIR)/crc16.rel
-	$(CC) $(CC_FLAGS) -Wl-bHOME=0x00000 -Wl-bBANK1=0x14000 -Wl-bBANK2=0x24000 -Wl-bBANK3=0x34000 -Wl-r -o $@ $^
+	$(CC) $(CC_FLAGS) -Wl-bHOME=0x00000 -Wl-bBANK1=0x14000 -Wl-bBANK2=0x24000 -Wl-bBANK3=0x34000 -Wl-bBANK4=0x44000 -Wl-r -o $@ $^
 
 # Ordinary __xdata must stay below 0x4000: the startup XRAM clear does
 # not reach above it (see XRAM_LOW_LIMIT in rtl837x_common.h).

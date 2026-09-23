@@ -72,4 +72,6 @@ internal RAM for area OSEG`. External RAM above 0x4000 is not cleared at
 boot, and the build refuses ordinary `__xdata` above that limit; see
 [XRAM](xram.md). Code is banked (HOME plus three 48 KB banks); a call into
 another bank must go to a `__banked` function, and a string must be read
-from the bank it lives in.
+from the bank it lives in. There are four banks (BANK1 to BANK4, linked at
+0x14000 to 0x44000 and packed at 0x4000 + (n - 1) * 0xc000 in the image);
+`debug bank4` checks on a switch that the fourth is mapped.

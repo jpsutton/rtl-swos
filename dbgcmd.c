@@ -10,6 +10,7 @@
 #include "rtl837x_flash.h"
 #include "cli.h"
 #include "dbgcmd.h"
+#include "bank4.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -134,6 +135,11 @@ void debug_run(uint8_t op) __banked
 		break;
 	case DBG_GPIO:
 		dbg_gpio();
+		break;
+	case DBG_BANK4:
+		print_string("Calling into BANK4... ");
+		print_short(bank4_probe());
+		write_char('\n');
 		break;
 	case DBG_RND:
 		/* the enable bit has to be set again for every new number */
