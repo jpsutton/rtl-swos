@@ -32,6 +32,7 @@
 #include "ntp.h"
 #include "totp.h"
 #include "log.h"
+#include "lldp.h"
 #include "runcfg.h"
 
 #pragma codeseg BANK3
@@ -498,6 +499,10 @@ static void rc_interfaces(void)
 		}
 		if (igmp_mrouter & ((uint16_t)1 << lp))
 			rc_s(" ip igmp snooping mrouter\n");
+		if (lldp_no_tx & ((uint16_t)1 << lp))
+			rc_s(" no lldp transmit\n");
+		if (lldp_no_rx & ((uint16_t)1 << lp))
+			rc_s(" no lldp receive\n");
 		if (lacp_fast[lp])
 			rc_s(" lacp rate fast\n");
 		if (lacp_pprio[lp] != 32768) {
@@ -692,6 +697,8 @@ static void rc_emit(void)
 	}
 	rc_monitor();
 	rc_stp_global();
+	if (lldp_enabled)
+		rc_s("feature lldp\n");
 	if (telnet_state.enabled)
 		rc_s("feature telnet\n");
 

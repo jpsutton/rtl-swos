@@ -94,6 +94,7 @@ runs once for each port, in port order.
 | `show spanning-tree` | Bridge and port STP state |
 | `show port-channel [summary]` | Port-channels, protocol, members, hash fields |
 | `show lacp [neighbor]` | LACP ports: state, partner, counters |
+| `show lldp neighbors [detail]` | Devices heard on each port (LLDP) |
 | `show ip interface brief` | Management address, mask, method, gateway |
 | `show ip igmp snooping` | IGMP snooping state |
 | `show monitor [session 1]` | Port mirroring |
@@ -143,6 +144,7 @@ Everything except `show`, `enable` and `exit` needs privileged EXEC.
 | `spanning-tree priority N` | 32768 |
 | `spanning-tree hello-time N`, `forward-time N`, `max-age N`, `transmit hold-count N` | 2, 15, 20, 6 |
 | `feature telnet` | off |
+| `feature lldp`, `lldp run` | off; LLDP every 30 s, hold time 120 s |
 | `line vty` | |
 
 The hardware has one mirror session; several sources may be added to it
@@ -166,6 +168,7 @@ one line at a time.
 | `rate-limit input KBPS [drop]`, `rate-limit output KBPS` | none; input sends pause frames unless `drop` |
 | `channel-group N [mode on\|active\|passive]` | none; `on` is static, `active`/`passive` run LACP |
 | `lacp rate fast\|normal`, `lacp port-priority N` | normal, 32768 |
+| `lldp transmit`, `lldp receive` | both on (with `feature lldp`) |
 | `spanning-tree portfast [disable]`, `bpduguard enable`, `bpdufilter enable`, `guard root`, `cost N`, `port-priority N`, `link-type point-to-point\|shared` | |
 | `spanning-tree bpdufilter enable`, alias `spanning-tree disable` | takes part in STP; the port leaves STP (no BPDUs) and always forwards |
 | `ip igmp snooping mrouter` | off; static multicast router port (one mask for all VLANs) |

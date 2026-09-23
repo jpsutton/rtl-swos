@@ -28,6 +28,7 @@
 #include "ntp.h"
 #include "totp.h"
 #include "log.h"
+#include "lldp.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_stp.h"
 #include "tftp.h"
@@ -1806,6 +1807,83 @@ static void test_log(void)
 	log_clear();
 }
 
+/* An LLDPDU from a neighbour, as the CPU receives it on logical port lp */
+static void lldp_rx(int lp)
+{
+	static const uint8_t tlv[] = {
+		0x02, 0x07, 0x04, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,	/* chassis: MAC */
+		0x04, 0x07, 0x05, 'g', 'i', '1', '/', '2', '4',		/* port: name */
+		0x06, 0x02, 0x00, 0x78,					/* TTL 120 */
+		0x08, 0x06, 'u', 'p', 'l', 'i', 'n', 'k',		/* port description */
+		0x0a, 0x04, 'c', 'o', 'r', 'e',				/* system name */
+		0x0e, 0x04, 0x00, 0x14, 0x00, 0x14,			/* caps: bridge, router */
+		0x10, 0x0c, 0x05, 0x01, 10, 0, 0, 1, 0x01, 0, 0, 0, 0, 0,	/* mgmt 10.0.0.1 */
+		0x00, 0x00 };
+	memset(uip_buf, 0, 200);
+	uip_buf[0] = 0x01; uip_buf[1] = 0x80; uip_buf[2] = 0xc2; uip_buf[5] = 0x0e;
+	uip_buf[19] = lp;
+	uip_buf[24] = 0x88; uip_buf[25] = 0xcc;
+	memcpy(&uip_buf[26], tlv, sizeof(tlv));
+	uip_len = 26 + sizeof(tlv);
+	lldp_in();
+}
+
+static void test_lldp(void)
+{
+	char cfg[CONFIG_LEN];
+	uint8_t *f;
+
+	printf("[test] LLDP\n");
+	wipe_all();
+	links_up(1 << 8);			/* port 1/9 up */
+	run("enable");
+	run("show lldp neighbors");
+	CHECK(out_has("LLDP is not enabled"), "off by default");
+	run("configure terminal");
+	run("feature lldp");
+	CHECK(lldp_enabled, "feature lldp");
+	n_tx_frames = 0;
+	lldp_tick();
+	f = tx_frames[0] + RTL_FRAME_DESC_SIZE;
+	CHECK(n_tx_frames == 1 && f[5] == 0x0e && f[20] == 0x88 && f[21] == 0xcc && f[19] == (1 << 8 & 0xff) + 0
+	      && f[18] == 0x01, "an LLDPDU out of the one port that is up");
+	CHECK(f[22] == 0x02 && f[23] == 7 && f[24] == 4 && !memcmp(f + 25, uip_ethaddr.addr, 6),
+	      "chassis ID TLV: the MAC");
+	CHECK(f[31] == 0x04 && f[33] == 5 && !memcmp(f + 34, "Ethernet1/9", 11), "port ID TLV: the interface name");
+	lldp_tick();
+	CHECK(n_tx_frames == 1, "not again until the interval is over");
+	lldp_rx(8);
+	run("show lldp neighbors");
+	CHECK(out_has("core") && out_has("Eth1/9") && out_has("120") && out_has("B,R") && out_has("gi1/24")
+	      && out_has("Total entries displayed: 1"), "the neighbour in the table");
+	run("show lldp neighbors detail");
+	CHECK(out_has("Chassis ID: 0011.2233.4455") && out_has("Port description: uplink")
+	      && out_has("Management address: 10.0.0.1"), "and in detail");
+	for (int i = 0; i < 121; i++)
+		lldp_tick();
+	run("show lldp neighbors");
+	CHECK(out_has("Total entries displayed: 0"), "forgotten after the hold time");
+	run("interface ethernet 1/9");
+	run("no lldp receive");
+	lldp_rx(8);
+	CHECK(!lldp_nb[8].ttl, "no lldp receive ignores it");
+	run("no lldp transmit");
+	n_tx_frames = 0;
+	for (int i = 0; i < 31; i++)
+		lldp_tick();
+	CHECK(n_tx_frames == 0, "no lldp transmit stays quiet");
+	render_into(cfg);
+	CHECK(strstr(cfg, "feature lldp\n") && strstr(cfg, " no lldp transmit\n no lldp receive\n"), "renders");
+	wipe_all();
+	out_reset();
+	replay_text(cfg);
+	CHECK(!out_has("% ") && lldp_enabled && (lldp_no_tx & (1 << 8)), "and replays");
+	run("enable");
+	run("configure terminal");
+	run("no lldp run");
+	CHECK(!lldp_enabled, "no lldp run turns it off");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1852,6 +1930,7 @@ int main(void)
 	test_show_if_detail();
 	test_ping_cli();
 	test_log();
+	test_lldp();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

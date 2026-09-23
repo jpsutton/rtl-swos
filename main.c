@@ -38,6 +38,7 @@
 #include "totp.h"
 #include "ping.h"
 #include "log.h"
+#include "lldp.h"
 #include "version.h"
 
 extern __code const struct machine machine;
@@ -91,6 +92,7 @@ void crc16_bank1(__xdata uint8_t *v) __naked;
 __xdata uint8_t idle_ready;
 static __xdata uint16_t lacp_last_tick;
 static __xdata uint8_t log_links_due;
+static __xdata uint16_t lldp_last_tick;
 
 __code const uint8_t ownIP[] = { 192, 168, 2, 2 };
 __code const uint8_t gatewayIP[] = { 192, 168, 2, 22};
@@ -955,6 +957,9 @@ void handle_rx(void)
 		if (lacp_ports && uip_buf[0] == 0x01 && uip_buf[1] == 0x80 && uip_buf[2] == 0xc2 // LACPDU?
 			&& uip_buf[3] == 0x00 && uip_buf[4] == 0x00 && uip_buf[5] == 0x02) {
 			lacp_in();
+		} else if (lldp_enabled && uip_buf[0] == 0x01 && uip_buf[1] == 0x80 && uip_buf[2] == 0xc2 // LLDPDU?
+			&& uip_buf[3] == 0x00 && uip_buf[4] == 0x00 && uip_buf[5] == 0x0e) {
+			lldp_in();
 		} else if (stp_enabled && uip_buf[0] == 0x01 && uip_buf[1] == 0x80 && uip_buf[2] == 0xc2 // STP packet?
 			&& uip_buf[3] == 0x00 && uip_buf[4] == 0x00 && uip_buf[5] == 0x00) {
 			stp_in();
@@ -1168,6 +1173,11 @@ void idle(void)
 	if (log_links_due) {
 		log_links_due = 0;
 		log_links();
+		lldp_link_up();
+	}
+	if (lldp_enabled && (uint16_t)((uint16_t)ticks - lldp_last_tick) >= SYS_TICK_HZ) {
+		lldp_last_tick = (uint16_t)ticks;
+		lldp_tick();
 	}
 	// LACP runs at 10 Hz while any port uses it
 	if (lacp_ports && (uint16_t)((uint16_t)ticks - lacp_last_tick) >= SYS_TICK_HZ / LACP_TICK_HZ) {

@@ -76,6 +76,10 @@
 #define ACT_SRUN_VLAN	65
 #define ACT_PING	66	/* options in cli.acc: 1 repeat, 2 size */
 #define ACT_CLEAR_LOG	67
+#define ACT_LLDP	68	/* LLDPC_* in ->lo */
+#define LLDPC_FEATURE	1
+#define LLDPC_TX	2
+#define LLDPC_RX	3
 #define TOTPC_SECRET	1
 #define TOTPC_LOGIN	2
 
@@ -100,6 +104,8 @@
 #define SHOW_NTP	19
 #define SHOW_TOTP	20
 #define SHOW_IF_DETAIL	21
+#define SHOW_LLDP	22
+#define SHOW_LLDP_D	23
 
 /* ACT_STP_G parameters */
 #define STPG_RSTP	1

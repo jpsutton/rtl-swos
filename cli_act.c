@@ -30,6 +30,7 @@
 #include "totp.h"
 #include "ping.h"
 #include "log.h"
+#include "lldp.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -253,6 +254,10 @@ void cli_act(uint8_t action) __banked
 		case SHOW_IF_STATUS:
 			show_if_status();
 			break;
+		case SHOW_LLDP:
+		case SHOW_LLDP_D:
+			lldp_show(cli.lo == SHOW_LLDP_D);
+			break;
 		case SHOW_IF_DETAIL:
 			show_if_detail(cli.args[0]);
 			break;
@@ -316,6 +321,28 @@ void cli_act(uint8_t action) __banked
 			break;
 		case SHOW_TOTP:
 			totp_status_print();
+			break;
+		}
+		break;
+	case ACT_LLDP:
+		d_mask = (uint16_t)1 << cli.ctx_lport;
+		switch (cli.lo) {
+		case LLDPC_FEATURE:
+			lldp_enable(!cli.no);
+			break;
+		case LLDPC_TX:
+			if (cli.no)
+				lldp_no_tx |= d_mask;
+			else
+				lldp_no_tx &= ~d_mask;
+			break;
+		case LLDPC_RX:
+			if (cli.no) {
+				lldp_no_rx |= d_mask;
+				lldp_nb[cli.ctx_lport].ttl = 0;
+			} else {
+				lldp_no_rx &= ~d_mask;
+			}
 			break;
 		}
 		break;

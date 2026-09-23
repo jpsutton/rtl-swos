@@ -84,6 +84,7 @@ SRCS = \
 	bank4.c \
 	log.c \
 	log_links.c \
+	lldp.c \
 	udp_apps.c
 
 # RTL837x

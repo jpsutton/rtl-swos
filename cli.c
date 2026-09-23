@@ -67,6 +67,7 @@ static __code const struct cli_node * __code const * __xdata w_children;
 #include "cli_act.h"
 #include "lacp.h"
 #include "ntp.h"
+#include "lldp.h"
 #include "dbgcmd.h"
 #include "tftp.h"
 
@@ -197,6 +198,19 @@ static __code const struct cli_node n_sh_ntp = {
 };
 SHOW_LEAF(n_sh_log, "logging", SHOW_LOG, "Remote syslog")
 SHOW_LEAF(n_sh_lacp_nb, "neighbor", SHOW_LACP, "Partners of the LACP ports")
+SHOW_LEAF(n_sh_lldp_det, "detail", SHOW_LLDP_D, "Everything each neighbour announced")
+static __code const struct cli_node * __code const ch_sh_lldp_nb[] = {
+	&n_sh_lldp_det, 0
+};
+static __code const struct cli_node n_sh_lldp_nb = {
+	"neighbors", 0, 0, SHOW_LLDP, 0, ch_sh_lldp_nb, ACT_SHOW, "Neighbours heard on each port"
+};
+static __code const struct cli_node * __code const ch_sh_lldp[] = {
+	&n_sh_lldp_nb, 0
+};
+static __code const struct cli_node n_sh_lldp = {
+	"lldp", 0, 0, 0, 0, ch_sh_lldp, ACT_NONE, "LLDP"
+};
 static __code const struct cli_node * __code const ch_sh_lacp[] = {
 	&n_sh_lacp_nb, 0
 };
@@ -248,7 +262,7 @@ static __code const struct cli_node n_sh_mon = {
 	"monitor", 0, 0, SHOW_MON, 0, ch_sh_mon, ACT_SHOW, "Port mirroring"
 };
 static __code const struct cli_node * __code const ch_show[] = {
-	&n_sh_clock, &n_sh_hist, &n_sh_hosts, &n_sh_if, &n_sh_ip, &n_sh_lacp, &n_sh_log, &n_sh_mac, &n_sh_mon, &n_sh_ntp, &n_sh_po,
+	&n_sh_clock, &n_sh_hist, &n_sh_hosts, &n_sh_if, &n_sh_ip, &n_sh_lacp, &n_sh_lldp, &n_sh_log, &n_sh_mac, &n_sh_mon, &n_sh_ntp, &n_sh_po,
 	&n_show_run, &n_sh_stp, &n_show_start, &n_sh_tftp, &n_sh_totp, &n_show_version, &n_sh_vlan, 0
 };
 
@@ -827,8 +841,21 @@ static __code const struct cli_node n_feat_stp = {
 	"spanning-tree", 0, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_FEAT_STP,
 	"Spanning tree protocol"
 };
+static __code const struct cli_node n_feat_lldp = {
+	"lldp", 0, CLI_F_NO_OK, LLDPC_FEATURE, 0, NO_CHILDREN, ACT_LLDP, "LLDP neighbour discovery"
+};
 static __code const struct cli_node * __code const ch_feature[] = {
-	&n_feat_stp, &n_feat_telnet, 0
+	&n_feat_lldp, &n_feat_stp, &n_feat_telnet, 0
+};
+/* lldp run: the IOS spelling of feature lldp */
+static __code const struct cli_node n_lldp_run = {
+	"run", 0, CLI_F_NO_OK, LLDPC_FEATURE, 0, NO_CHILDREN, ACT_LLDP, "Enable LLDP"
+};
+static __code const struct cli_node * __code const ch_g_lldp[] = {
+	&n_lldp_run, 0
+};
+static __code const struct cli_node n_g_lldp = {
+	"lldp", 0, CLI_F_NO_OK, 0, 0, ch_g_lldp, ACT_NONE, "LLDP settings"
 };
 static __code const struct cli_node n_feature = {
 	"feature", 0, 0, 0, 0, ch_feature, ACT_NONE,
@@ -986,7 +1013,7 @@ static __code const struct cli_node n_clock = {
 
 static __code const struct cli_node * __code const cli_root_config[] = {
 	&n_clock, &n_end, &n_exit_cfg, &n_feature, &n_hostname, &n_interface, &n_ip_cfg,
-	&n_g_lacp, &n_line, &n_logging, &n_monitor, &n_ntp, &n_g_pc, &n_stp_global, &n_vlan, 0
+	&n_g_lacp, &n_line, &n_g_lldp, &n_logging, &n_monitor, &n_ntp, &n_g_pc, &n_stp_global, &n_vlan, 0
 };
 
 /* ---- interface configuration mode ---- */
@@ -1295,6 +1322,18 @@ static __code const struct cli_node n_lacp_pprio = {
 	"port-priority", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, LACPC_PPRIO, 0, ch_lacp_pp, ACT_LACP,
 	"LACP port priority"
 };
+static __code const struct cli_node n_lldp_tx = {
+	"transmit", 0, CLI_F_NO_OK, LLDPC_TX, 0, NO_CHILDREN, ACT_LLDP, "Send LLDPDUs on this port (default)"
+};
+static __code const struct cli_node n_lldp_rx = {
+	"receive", 0, CLI_F_NO_OK, LLDPC_RX, 0, NO_CHILDREN, ACT_LLDP, "Accept LLDPDUs on this port (default)"
+};
+static __code const struct cli_node * __code const ch_if_lldp[] = {
+	&n_lldp_rx, &n_lldp_tx, 0
+};
+static __code const struct cli_node n_if_lldp = {
+	"lldp", 0, CLI_F_NO_OK, 0, 0, ch_if_lldp, ACT_NONE, "LLDP port settings"
+};
 static __code const struct cli_node * __code const ch_if_lacp[] = {
 	&n_lacp_pprio, &n_lacp_rate, 0
 };
@@ -1427,7 +1466,7 @@ static __code const struct cli_node n_if_duplex = {
 	"Set the duplex mode"
 };
 static __code const struct cli_node * __code const cli_root_if[] = {
-	&n_end, &n_exit_cfg, &n_if_cg, &n_if_description, &n_if_duplex, &n_if_ip, &n_if_lacp, &n_if_mtu,
+	&n_end, &n_exit_cfg, &n_if_cg, &n_if_description, &n_if_duplex, &n_if_ip, &n_if_lacp, &n_if_lldp, &n_if_mtu,
 	&n_if_power, &n_if_rl, &n_if_shutdown, &n_if_speed, &n_if_stp, &n_if_switchport, 0
 };
 

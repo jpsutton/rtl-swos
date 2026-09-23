@@ -28,6 +28,8 @@ First release of the rtl-swos fork.
   `show ntp`), from RTLPlayground #446 and #447.
 - TOTP second factor for telnet logins (`totp secret`, `login totp`).
 - `ping HOST [repeat N] [size N]`; `show interfaces ethernet LIST` detail.
+- LLDP (`feature lldp`, `show lldp neighbors [detail]`); local event log
+  (`show logging`, `clear logging`); a fourth code bank.
 - Telnet command history (arrow keys, ^P/^N); `copy startup-config
   running-config`; `show running-config interface ...|vlan ...`.
 - In-band firmware update and configuration transfer over TFTP.
