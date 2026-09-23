@@ -25,6 +25,7 @@ struct telnet_state_t {
 	uint8_t crseen;			/* swallow the LF/NUL that follows a CR */
 	uint8_t close_pending;		/* close once pending output is ACKed */
 	uint8_t ll;			/* filled length of the line buffer */
+	uint8_t esc;			/* cursor-key escape sequence parser state */
 	uint32_t last_rx;
 	uint16_t idle_secs;		/* `telnet timeout <secs>`: idle close */
 	uint32_t idle_ticks;		/* idle_secs in ticks, converted at set time */
@@ -42,5 +43,7 @@ void telnetd_appcall(void) __banked;
 void telnet_start(void) __banked;
 void telnet_stop(void) __banked;
 void telnet_set_timeout(uint16_t secs) __banked;
+/* show history for the telnet session */
+void telnet_history_show(void) __banked;
 
 #endif

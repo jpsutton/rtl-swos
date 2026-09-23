@@ -63,6 +63,8 @@
 #define ACT_MROUTER	52	/* interface: ip igmp snooping mrouter */
 #define ACT_LACP	53	/* LACPC_* in ->lo */
 #define ACT_PC_LB	54	/* global port-channel load-balance, hash bits in ->lo */
+#define ACT_NAMESERVER	55
+#define ACT_NSLOOKUP	56
 
 #define SHOW_IF_STATUS	1
 #define SHOW_IF_COUNT	2
@@ -80,6 +82,7 @@
 #define SHOW_LOG	14
 #define SHOW_IGMP	15
 #define SHOW_LACP	16
+#define SHOW_HOSTS	17
 
 /* ACT_STP_G parameters */
 #define STPG_RSTP	1

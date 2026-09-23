@@ -77,6 +77,7 @@ SRCS = \
 	telnetd.c \
 	tftp.c \
 	syslog.c \
+	dns.c \
 	udp_apps.c
 
 # RTL837x

@@ -13,6 +13,7 @@
 #include "dhcp.h"
 #include "sfp.h"
 #include "uip/uip.h"
+#include "telnetd.h"
 #include "swcfg.h"
 #include "show.h"
 #include "lacp.h"
@@ -524,6 +525,10 @@ void show_history(void) __banked
 	static __xdata uint16_t p;
 	static __xdata uint8_t begun, c;
 
+	if (telnet_capture) {	/* running for the telnet session: its own history */
+		telnet_history_show();
+		return;
+	}
 	p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
 	begun = 0;
 	while (p != cmd_history_ptr) {

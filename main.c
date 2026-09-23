@@ -33,6 +33,7 @@
 #include "boot.h"
 #include "sfp.h"
 #include "lacp.h"
+#include "dns.h"
 
 extern __code const struct machine machine;
 extern __xdata uint32_t flash_size;
@@ -1615,6 +1616,7 @@ void main(void)
 	check_and_flash_update_image();
 
 	syslog_init();
+	dns_init();
 
 #ifdef DEBUG
 	// This register seems to work on the RTL8373 only if also the SDS

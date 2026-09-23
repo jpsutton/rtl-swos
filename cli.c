@@ -124,7 +124,8 @@ static __code const struct cli_node n_sh_mac = {
 };
 SHOW_LEAF(n_sh_stp, "spanning-tree", SHOW_STP, "Spanning tree state")
 SHOW_LEAF(n_sh_tftp, "tftp", SHOW_TFTP, "State of the last TFTP transfer")
-SHOW_LEAF(n_sh_hist, "history", SHOW_HIST, "Console command history")
+SHOW_LEAF(n_sh_hist, "history", SHOW_HIST, "Command history of this session")
+SHOW_LEAF(n_sh_hosts, "hosts", SHOW_HOSTS, "Name servers and the last lookup")
 SHOW_LEAF(n_sh_log, "logging", SHOW_LOG, "Remote syslog")
 SHOW_LEAF(n_sh_lacp_nb, "neighbor", SHOW_LACP, "Partners of the LACP ports")
 static __code const struct cli_node * __code const ch_sh_lacp[] = {
@@ -178,7 +179,7 @@ static __code const struct cli_node n_sh_mon = {
 	"monitor", 0, 0, SHOW_MON, 0, ch_sh_mon, ACT_SHOW, "Port mirroring"
 };
 static __code const struct cli_node * __code const ch_show[] = {
-	&n_sh_hist, &n_sh_if, &n_sh_ip, &n_sh_lacp, &n_sh_log, &n_sh_mac, &n_sh_mon, &n_sh_po,
+	&n_sh_hist, &n_sh_hosts, &n_sh_if, &n_sh_ip, &n_sh_lacp, &n_sh_log, &n_sh_mac, &n_sh_mon, &n_sh_po,
 	&n_show_run, &n_sh_stp, &n_show_start, &n_sh_tftp, &n_show_version, &n_sh_vlan, 0
 };
 
@@ -294,6 +295,16 @@ static __code const struct cli_node n_copy = {
 	"copy", 0, CLI_F_PRIV, 0, 0, ch_copy, ACT_NONE,
 	"Copy configuration or image data"
 };
+/* nslookup NAME: starts a lookup; the result is in show hosts */
+static __code const struct cli_node n_arg_nsl = {
+	0, CLI_A_WORD, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_NSLOOKUP, "Host name"
+};
+static __code const struct cli_node * __code const ch_nsl[] = {
+	&n_arg_nsl, 0
+};
+static __code const struct cli_node n_nslookup = {
+	"nslookup", 0, CLI_F_PRIV, 0, 0, ch_nsl, ACT_NONE, "Resolve a host name"
+};
 static __code const struct cli_node n_reload = {
 	"reload", 0, CLI_F_PRIV, 0, 0, NO_CHILDREN, ACT_RELOAD,
 	"Halt and perform a cold restart"
@@ -398,7 +409,7 @@ static __code const struct cli_node n_debug = {
 
 static __code const struct cli_node * __code const cli_root_exec[] = {
 	&n_clear, &n_configure, &n_copy, &n_debug, &n_disable, &n_enable,
-	&n_exit_exec, &n_reload, &n_show, &n_write, 0
+	&n_exit_exec, &n_nslookup, &n_reload, &n_show, &n_write, 0
 };
 
 /* ---- global configuration mode ---- */
@@ -501,8 +512,25 @@ static __code const struct cli_node n_ip_igmp = {
 	"igmp", 0, 0, 0, 0, ch_igmp, ACT_NONE,
 	"IGMP configuration"
 };
+/* ip name-server A.B.C.D [A.B.C.D] */
+static __code const struct cli_node n_arg_ns2 = {
+	0, CLI_A_IP, CLI_F_NO_OK, 0, 0, NO_CHILDREN, ACT_NAMESERVER, "Second name server"
+};
+static __code const struct cli_node * __code const ch_ns2[] = {
+	&n_arg_ns2, 0
+};
+static __code const struct cli_node n_arg_ns1 = {
+	0, CLI_A_IP, CLI_F_NO_OK, 0, 0, ch_ns2, ACT_NAMESERVER, "Name server address"
+};
+static __code const struct cli_node * __code const ch_ns1[] = {
+	&n_arg_ns1, 0
+};
+static __code const struct cli_node n_ip_ns = {
+	"name-server", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, 0, 0, ch_ns1, ACT_NAMESERVER,
+	"DNS servers (default: the one from DHCP)"
+};
 static __code const struct cli_node * __code const ch_ip_cfg[] = {
-	&n_ip_defgw, &n_ip_igmp, 0
+	&n_ip_defgw, &n_ip_igmp, &n_ip_ns, 0
 };
 static __code const struct cli_node n_ip_cfg = {
 	"ip", 0, 0, 0, 0, ch_ip_cfg, ACT_NONE,

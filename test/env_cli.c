@@ -246,3 +246,21 @@ void tcpip_output(void)
 	memcpy(tx_frames[n_tx_frames & 15], uip_buf, sizeof(tx_frames[0]));
 	n_tx_frames++;
 }
+
+/* ---- telnetd.c is not linked: its session history ---- */
+uint8_t telnet_capture;
+int n_tn_hist_show;
+void telnet_history_show(void) { n_tn_hist_show++; }
+
+/* ---- dns.c is not linked: its state and entry points ---- */
+#include "dns.h"
+struct dns_state dns_state;
+int n_dns_lookup, n_dns_show;
+void dns_lookup(void) { n_dns_lookup++; dns_state.status = DNS_PENDING; }
+void dns_show(void) { n_dns_show++; }
+void print_ip(uint8_t *a)
+{
+	char b[20];
+	snprintf(b, sizeof(b), "%d.%d.%d.%d", a[0], a[1], a[2], a[3]);
+	print_string_x(b);
+}

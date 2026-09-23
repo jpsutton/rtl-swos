@@ -28,6 +28,7 @@
 #include "rtl837x_stp.h"
 #include "rtl837x_igmp.h"
 #include "lacp.h"
+#include "dns.h"
 #include "runcfg.h"
 
 #pragma codeseg BANK3
@@ -589,6 +590,15 @@ static void rc_emit(void)
 	if (dhcp_state.state == DHCP_OFF && !ip_is_zero((__xdata uint8_t *)uip_draddr)) {
 		rc_s("ip default-gateway ");
 		rc_ip((__xdata uint8_t *)uip_draddr);
+		rc_c('\n');
+	}
+	if (!ip_is_zero(dns_state.server[0]) || !ip_is_zero(dns_state.server[1])) {
+		rc_s("ip name-server ");
+		rc_ip(dns_state.server[0]);
+		if (!ip_is_zero(dns_state.server[1])) {
+			rc_c(' ');
+			rc_ip(dns_state.server[1]);
+		}
 		rc_c('\n');
 	}
 	if (sw_igmp)

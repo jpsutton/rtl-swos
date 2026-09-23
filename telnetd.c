@@ -38,6 +38,19 @@ static __xdata uint16_t tn_sent;
 static __xdata uint8_t tline[CMD_BUF_SIZE];
 static __xdata uip_ipaddr_t tn_bindaddr;
 
+/* Command history of the session, recalled with the up/down cursor keys
+ * or ^P/^N as in the established CLIs. A ring of the last TN_HIST lines;
+ * tn_hb counts how far back the line being edited was recalled from
+ * (0: a new line). */
+#define TN_HIST 8
+static __xdata uint8_t tn_hist[TN_HIST][CMD_BUF_SIZE];
+static __xdata uint8_t tn_hn, tn_hh, tn_hb, tn_hi, tn_hj;
+
+/* ESC sequence parser states (tn.esc) */
+#define ESC_NONE	0
+#define ESC_SEEN	1	/* ESC */
+#define ESC_CSI		2	/* ESC [ or ESC O: parameters until a final byte */
+
 #define tn telnet_state
 
 /* Login window: password plus a TOTP code from a phone takes a while */
@@ -252,6 +265,68 @@ static void tn_denied(void)
 }
 
 
+static void tn_hist_add(void)
+{
+	/* not the same line twice in a row */
+	if (tn_hn) {
+		tn_hj = (tn_hh + TN_HIST - 1) % TN_HIST;
+		for (tn_hi = 0; tn_hist[tn_hj][tn_hi] == tline[tn_hi]; tn_hi++)
+			if (!tline[tn_hi])
+				return;
+	}
+	for (tn_hi = 0; tn_hi < CMD_BUF_SIZE; tn_hi++)
+		if (!(tn_hist[tn_hh][tn_hi] = tline[tn_hi]))
+			break;
+	tn_hh = (tn_hh + 1) % TN_HIST;
+	if (tn_hn < TN_HIST)
+		tn_hn++;
+}
+
+
+/* Replace the line being edited with history entry tn_hb back (0: empty)
+ * and redraw it */
+static void tn_hist_recall(void)
+{
+	tn.ll = 0;
+	if (tn_hb) {
+		tn_hi = (tn_hh + TN_HIST - tn_hb) % TN_HIST;
+		while (tn_hist[tn_hi][tn.ll] && tn.ll < CMD_BUF_SIZE - 1) {
+			tline[tn.ll] = tn_hist[tn_hi][tn.ll];
+			tn.ll++;
+		}
+	}
+	tline[tn.ll] = 0;
+	tn_puts("\r");
+	tn_prompt();
+	tn_puts_x((__xdata char *)tline);
+	tn_puts("\x1b[K");	/* clear what is left of a longer line */
+}
+
+
+static void tn_hist_key(uint8_t up)
+{
+	if (up) {
+		if (tn_hb >= tn_hn)
+			return;
+		tn_hb++;
+	} else {
+		if (!tn_hb)
+			return;
+		tn_hb--;
+	}
+	tn_hist_recall();
+}
+
+
+void telnet_history_show(void) __banked
+{
+	for (tn_hi = tn_hn; tn_hi; tn_hi--) {
+		print_string_x((__xdata char *)tn_hist[(tn_hh + TN_HIST - tn_hi) % TN_HIST]);
+		write_char('\n');
+	}
+}
+
+
 static void tn_welcome(void)
 {
 	tn.authed = 2;
@@ -268,6 +343,7 @@ static void tn_line_done(void)
 {
 	tline[tn.ll] = 0;
 	tn.ll = 0;
+	tn_hb = 0;
 
 	if (tn.authed == 0) {
 		tn_puts("\r\n");
@@ -301,6 +377,7 @@ static void tn_line_done(void)
 		return;
 	}
 
+	tn_hist_add();
 	telnet_capture = 1;
 	cli_use(CLI_VTY);
 	cli_exec_line((__xdata char *)tline);
@@ -345,6 +422,29 @@ static void tn_input(uint8_t c)
 		tn.crseen = 0;
 		if (c == '\n' || c == 0)
 			return;
+	}
+
+	/* Cursor keys arrive as ESC [ A..D (or ESC O A..D); only up and
+	 * down mean something here, the rest of any sequence is dropped */
+	if (tn.esc == ESC_SEEN) {
+		tn.esc = (c == '[' || c == 'O') ? ESC_CSI : ESC_NONE;
+		return;
+	}
+	if (tn.esc == ESC_CSI) {
+		if (c >= 0x40 && c <= 0x7e) {
+			tn.esc = ESC_NONE;
+			if (tn.authed == 2 && (c == 'A' || c == 'B'))
+				tn_hist_key(c == 'A');
+		}
+		return;
+	}
+	if (c == 0x1b) {
+		tn.esc = ESC_SEEN;
+		return;
+	}
+	if ((c == 0x10 || c == 0x0e) && tn.authed == 2) {	/* ^P, ^N */
+		tn_hist_key(c == 0x10);
+		return;
 	}
 
 	if (c == '\r' || c == '\n') {
@@ -420,6 +520,8 @@ void telnetd_appcall(void) __banked
 		tn.crseen = 0;
 		tn.close_pending = 0;
 		tn.ll = 0;
+		tn.esc = ESC_NONE;
+		tn_hn = tn_hh = tn_hb = 0;	/* history belongs to the session */
 		tn.last_rx = ticks_now();
 		telnet_slen = 0;
 		tn_oidx = 0;

@@ -25,6 +25,7 @@
 #include "dbgcmd.h"
 #include "sfp.h"
 #include "lacp.h"
+#include "dns.h"
 
 #pragma codeseg BANK3
 #pragma constseg BANK3
@@ -262,6 +263,9 @@ void cli_act(uint8_t action) __banked
 			break;
 		case SHOW_LACP:
 			lacp_show();
+			break;
+		case SHOW_HOSTS:
+			dns_show();
 			break;
 		}
 		break;
@@ -662,6 +666,47 @@ void cli_act(uint8_t action) __banked
 			break;
 		}
 		break;
+	case ACT_NAMESERVER:
+		for (d_lp = 0; d_lp < 8; d_lp++)
+			dns_state.server[d_lp >> 2][d_lp & 3] = 0;
+		if (cli.no)
+			break;
+		for (d_lp = 0; d_lp < cli.nargs && d_lp < 2; d_lp++) {
+			dns_state.server[d_lp][0] = cli.args[d_lp] >> 24;
+			dns_state.server[d_lp][1] = cli.args[d_lp] >> 16;
+			dns_state.server[d_lp][2] = cli.args[d_lp] >> 8;
+			dns_state.server[d_lp][3] = cli.args[d_lp];
+		}
+		break;
+	case ACT_NSLOOKUP:
+	{
+		static __xdata char * __xdata s;
+		if (dns_state.status == DNS_PENDING) {
+			print_string("% A lookup is already running\n");
+			break;
+		}
+		s = cli.line + cli.argoff[0];
+		for (d_lp = 0; s[d_lp] && s[d_lp] != ' '; d_lp++) {
+			if (d_lp == DNS_NAME_LEN - 1) {
+				print_string("% Name too long\n");
+				d_lp = 0xff;
+				break;
+			}
+			dns_state.name[d_lp] = s[d_lp];
+		}
+		if (d_lp == 0xff)
+			break;
+		dns_state.name[d_lp] = 0;
+		dns_state.verbose = 0;
+		dns_lookup();
+		if (dns_state.status == DNS_DONE) {
+			print_ip(dns_state.addr);
+			write_char('\n');
+		} else if (dns_state.status == DNS_PENDING) {
+			print_string("Looking up; the result will be in show hosts\n");
+		}
+		break;
+	}
 	case ACT_PC_LB:
 		for (d_lp = 0; d_lp < 4; d_lp++)
 			port_lag_hash_set(d_lp, cli.no ? LAG_HASH_DEFAULT : cli.lo);

@@ -24,6 +24,7 @@
 #include "telnetd.h"
 #include "dhcp.h"
 #include "lacp.h"
+#include "dns.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_stp.h"
 #include "tftp.h"
@@ -1516,6 +1517,39 @@ static void test_lacp(void)
 	      "without LACP ports the ASIC discards LACPDUs again");
 }
 
+static void test_dns(void)
+{
+	char cfg[CONFIG_LEN];
+	extern int n_dns_lookup, n_dns_show;
+
+	printf("[test] DNS resolver settings\n");
+	wipe_all();
+	memset(&dns_state, 0, sizeof(dns_state));
+	run("enable");
+	run("configure terminal");
+	run("ip name-server 192.168.0.1 9.9.9.9");
+	CHECK(dns_state.server[0][0] == 192 && dns_state.server[0][3] == 1 && dns_state.server[1][0] == 9,
+	      "ip name-server takes two servers");
+	render_into(cfg);
+	CHECK(strstr(cfg, "ip name-server 192.168.0.1 9.9.9.9\n") != NULL, "and renders them");
+	run("ip name-server 1.1.1.1");
+	CHECK(dns_state.server[0][0] == 1 && !dns_state.server[1][0], "one server replaces both");
+	run("no ip name-server");
+	CHECK(!dns_state.server[0][0], "no ip name-server clears them");
+	render_into(cfg);
+	CHECK(!strstr(cfg, "name-server"), "and nothing renders");
+	run("end");
+	n_dns_lookup = 0;
+	run("nslookup pool.ntp.org");
+	CHECK(n_dns_lookup == 1 && !strcmp(dns_state.name, "pool.ntp.org") && out_has("show hosts"),
+	      "nslookup starts a lookup");
+	run("nslookup other.example");
+	CHECK(out_has("already running") && n_dns_lookup == 1, "one lookup at a time");
+	run("show hosts");
+	CHECK(n_dns_show == 1, "show hosts");
+	dns_state.status = DNS_IDLE;
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1554,6 +1588,7 @@ int main(void)
 	test_l2_extensions();
 	test_default_boot();
 	test_lacp();
+	test_dns();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }
