@@ -70,6 +70,10 @@
 #define ACT_CLOCK_ST	59	/* clock summer-time NAME recurring [eu|us]; NTP_DST_* in ->lo */
 #define ACT_TOTP	60	/* TOTPC_* in ->lo */
 #define ACT_COPY_SR	61	/* copy startup-config running-config */
+#define ACT_SHOW_RUNF	62	/* filtered show running-config, RCF_* in ->lo */
+#define ACT_SRUN_PO	63
+#define ACT_SRUN_SVI	64
+#define ACT_SRUN_VLAN	65
 #define TOTPC_SECRET	1
 #define TOTPC_LOGIN	2
 

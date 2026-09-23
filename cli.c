@@ -87,8 +87,55 @@ static __code const struct cli_node n_show_version = {
 	"version", 0, 0, SHOW_VER, 0, NO_CHILDREN, ACT_SHOW,
 	"Software, hardware and uptime"
 };
+/* show running-config [interface [ethernet LIST|port-channel N|vlan N|LIST]
+ * | vlan [N]]: only those blocks, as NX-OS does */
+static __code const struct cli_node n_srun_ethl = {
+	0, CLI_A_IFLIST, 0, RCF_ETH, 0, NO_CHILDREN, ACT_SHOW_RUNF, "Port or list, e.g. 1/3 or 1/1-4"
+};
+static __code const struct cli_node * __code const ch_srun_ethl[] = {
+	&n_srun_ethl, 0
+};
+static __code const struct cli_node n_srun_eth = {
+	"ethernet", 0, 0, 0, 0, ch_srun_ethl, ACT_NONE, "Ethernet interfaces"
+};
+static __code const struct cli_node n_srun_pon = {
+	0, CLI_A_NUM, 0, 1, 4, NO_CHILDREN, ACT_SRUN_PO, "Port-channel number"
+};
+static __code const struct cli_node * __code const ch_srun_po[] = {
+	&n_srun_pon, 0
+};
+static __code const struct cli_node n_srun_po = {
+	"port-channel", 0, 0, 0, 0, ch_srun_po, ACT_NONE, "Port-channel"
+};
+static __code const struct cli_node n_srun_sviid = {
+	0, CLI_A_NUM, 0, 1, 4094, NO_CHILDREN, ACT_SRUN_SVI, "VLAN interface number"
+};
+static __code const struct cli_node * __code const ch_srun_svi[] = {
+	&n_srun_sviid, 0
+};
+static __code const struct cli_node n_srun_svi = {
+	"vlan", 0, 0, 0, 0, ch_srun_svi, ACT_NONE, "Management interface"
+};
+static __code const struct cli_node * __code const ch_srun_if[] = {
+	&n_srun_eth, &n_srun_po, &n_srun_svi, &n_srun_ethl, 0
+};
+static __code const struct cli_node n_srun_if = {
+	"interface", 0, 0, RCF_IF, 0, ch_srun_if, ACT_SHOW_RUNF, "Interface blocks"
+};
+static __code const struct cli_node n_srun_vid = {
+	0, CLI_A_NUM, 0, 1, 4094, NO_CHILDREN, ACT_SRUN_VLAN, "VLAN id"
+};
+static __code const struct cli_node * __code const ch_srun_vlan[] = {
+	&n_srun_vid, 0
+};
+static __code const struct cli_node n_srun_vlan = {
+	"vlan", 0, 0, RCF_VLAN, 0, ch_srun_vlan, ACT_SHOW_RUNF, "VLAN blocks"
+};
+static __code const struct cli_node * __code const ch_srun[] = {
+	&n_srun_if, &n_srun_vlan, 0
+};
 static __code const struct cli_node n_show_run = {
-	"running-config", 0, 0, 0, 0, NO_CHILDREN, ACT_SHOW_RUN,
+	"running-config", 0, 0, 0, 0, ch_srun, ACT_SHOW_RUN,
 	"Current operating configuration"
 };
 static __code const struct cli_node n_show_start = {

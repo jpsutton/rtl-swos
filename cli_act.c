@@ -234,6 +234,18 @@ void cli_act(uint8_t action) __banked
 	case ACT_SHOW_RUN:
 		runcfg_show();
 		break;
+	case ACT_SHOW_RUNF:
+		rcf_kind = cli.lo;
+		rcf_id = cli.nargs ? cli.args[0] : 0;
+		runcfg_show();
+		break;
+	case ACT_SRUN_PO:
+	case ACT_SRUN_SVI:
+	case ACT_SRUN_VLAN:
+		rcf_kind = action == ACT_SRUN_PO ? RCF_PO : action == ACT_SRUN_SVI ? RCF_SVI : RCF_VLAN;
+		rcf_id = cli.args[0];
+		runcfg_show();
+		break;
 	case ACT_SHOW:
 		switch (cli.lo) {
 		case SHOW_IF_STATUS:

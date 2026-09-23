@@ -18,6 +18,17 @@ extern __xdata __at(XRAM_CFG_BUF) uint8_t cfg_buf[CONFIG_LEN];
 #endif
 
 void runcfg_show(void) __banked;	/* show running-config */
+
+/* show running-config interface ... / vlan ...: runcfg_show() prints only
+ * the blocks the filter names, then clears it. Saving never filters. */
+#define RCF_ALL		0
+#define RCF_IF		1	/* every interface block */
+#define RCF_ETH		2	/* ethernet ports in rcf_id (bit N = port 1/N) */
+#define RCF_PO		3	/* port-channel rcf_id */
+#define RCF_SVI		4	/* interface vlan rcf_id */
+#define RCF_VLAN	5	/* vlan rcf_id, 0 = all */
+extern __xdata uint8_t rcf_kind;
+extern __xdata uint16_t rcf_id;
 void runcfg_save(void) __banked;	/* write memory */
 void startup_show(void) __banked;	/* show startup-config */
 

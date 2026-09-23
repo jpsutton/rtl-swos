@@ -1680,6 +1680,53 @@ static void test_copy_forms(void)
 	      "full spelling from config mode, which stays config mode");
 }
 
+static void test_show_run_filters(void)
+{
+	printf("[test] show running-config interface / vlan\n");
+	wipe_all();
+	run("enable");
+	run("configure terminal");
+	run("vlan 10");
+	run("name home");
+	run("vlan 20");
+	run("interface ethernet 1/3");
+	run("description desk");
+	run("switchport access vlan 10");
+	run("interface ethernet 1/5-6");
+	run("channel-group 2 mode on");
+	run("interface vlan 1");
+	run("ip address 10.0.0.2 255.255.255.0");
+	run("end");
+
+	run("show running-config interface ethernet 1/3");
+	CHECK(out_has("interface ethernet 1/3\n description desk\n switchport access vlan 10\n!\n"),
+	      "one interface block");
+	CHECK(!out_has("hostname") && !out_has("ethernet 1/4") && !out_has("vlan 10\n name")
+	      && !out_has("feature") && !out_has("end"), "and nothing else");
+	run("show run int eth1/3");
+	CHECK(out_has("interface ethernet 1/3\n description desk") && !out_has("1/4"), "abbreviated, NX-OS spelling");
+	run("show run int 1/1-3");
+	CHECK(out_has("ethernet 1/1\n") && out_has("ethernet 1/2\n") && out_has("ethernet 1/3\n")
+	      && !out_has("ethernet 1/4\n"), "a list");
+	run("show running-config interface port-channel 2");
+	CHECK(out_has("interface port-channel 2\n") && !out_has("ethernet 1/5"), "a port-channel");
+	run("show running-config interface vlan 1");
+	CHECK(out_has("interface vlan 1\n ip address 10.0.0.2 255.255.255.0\n") && !out_has("ethernet"),
+	      "the management interface");
+	run("show running-config interface");
+	CHECK(out_has("interface port-channel 2") && out_has("interface ethernet 1/9") && out_has("interface vlan 1")
+	      && !out_has("hostname") && !out_has("\nvlan 10\n"), "every interface block");
+	run("show running-config vlan");
+	CHECK(out_has("vlan 10\n name home\n") && out_has("vlan 20\n") && !out_has("interface"), "the VLAN blocks");
+	run("show running-config vlan 20");
+	CHECK(out_has("vlan 20\n") && !out_has("vlan 10"), "one VLAN");
+	run("show running-config");
+	CHECK(out_has("hostname") && out_has("interface ethernet 1/3") && out_has("end"),
+	      "the unfiltered form is unchanged afterwards");
+	run("write memory");
+	CHECK(saved_ok() && strstr((char *)fake_cfg, "hostname"), "and saving never filters");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1722,6 +1769,7 @@ int main(void)
 	test_ntp();
 	test_totp_cfg();
 	test_copy_forms();
+	test_show_run_filters();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

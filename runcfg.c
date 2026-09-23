@@ -52,11 +52,48 @@ __xdata __at(XRAM_CFG_BUF) uint8_t cfg_buf[CONFIG_LEN];
 static __xdata uint8_t rc_tobuf;	/* 1: render into cfg_buf */
 static __xdata uint16_t rc_len;
 static __xdata uint8_t rc_over;
+__xdata uint8_t rcf_kind;
+__xdata uint16_t rcf_id;
+static __xdata uint8_t rc_mute;		/* outside the filtered blocks */
+
+/* Section kinds the emitter announces with rc_sec() */
+#define SEC_GLOBAL	0
+#define SEC_ETH		1
+#define SEC_PO		2
+#define SEC_SVI		3
+#define SEC_VLAN	4
+
+static __xdata uint8_t rs_kind;
+static void rc_sec(uint8_t kind, __xdata uint16_t id)
+{
+	rs_kind = kind;
+	if (rc_tobuf || rcf_kind == RCF_ALL) {
+		rc_mute = 0;
+		return;
+	}
+	switch (rs_kind) {
+	case SEC_ETH:
+		rc_mute = !(rcf_kind == RCF_IF || (rcf_kind == RCF_ETH && (rcf_id & (1 << id))));
+		break;
+	case SEC_PO:
+		rc_mute = !(rcf_kind == RCF_IF || (rcf_kind == RCF_PO && rcf_id == id));
+		break;
+	case SEC_SVI:
+		rc_mute = !(rcf_kind == RCF_IF || (rcf_kind == RCF_SVI && rcf_id == id));
+		break;
+	case SEC_VLAN:
+		rc_mute = !(rcf_kind == RCF_VLAN && (!rcf_id || rcf_id == id));
+		break;
+	default:
+		rc_mute = 1;
+	}
+}
 
 static void rc_c(__xdata char c)
 {
 	if (!rc_tobuf) {
-		write_char(c);
+		if (!rc_mute)
+			write_char(c);
 		return;
 	}
 	if (rc_len < CONFIG_LEN - 1)
@@ -190,6 +227,7 @@ static void rc_vlans(void)
 		n = vlan_name(next);
 		if (next == 1 && n == 0xffff)
 			continue;	/* the default VLAN, unnamed */
+		rc_sec(SEC_VLAN, next);
 		rc_s("vlan ");
 		rc_dec(next);
 		rc_c('\n');
@@ -200,6 +238,7 @@ static void rc_vlans(void)
 		}
 		any = 1;
 	}
+	rc_sec(SEC_GLOBAL, 0);
 	if (any)
 		rc_s("!\n");
 }
@@ -357,6 +396,7 @@ static void rc_port_channels(void)
 	for (g = 0; g < 4; g++) {
 		if (!port_lag_members_get(g) && !lacp_in_group(g + 1))
 			continue;
+		rc_sec(SEC_PO, g + 1);
 		rc_s("interface port-channel ");
 		rc_dec(g + 1);
 		rc_c('\n');
@@ -394,6 +434,7 @@ static void rc_interfaces(void)
 		if (lp < machine.min_port || lp > machine.max_port)
 			continue;
 		sp = &sw_ports[lp];
+		rc_sec(SEC_ETH, up);
 		rc_s("interface ethernet 1/");
 		rc_dec(up);
 		rc_c('\n');
@@ -584,6 +625,7 @@ static void rc_mac(void)
 
 static void rc_emit(void)
 {
+	rc_sec(SEC_GLOBAL, 0);
 	rc_s("!\nhostname ");
 	rc_x(hostname, 0);
 	rc_s("\n!\n");
@@ -599,6 +641,7 @@ static void rc_emit(void)
 	rc_interfaces();
 
 	if (management_vlan) {
+		rc_sec(SEC_SVI, management_vlan);
 		rc_s("interface vlan ");
 		rc_dec(management_vlan);
 		rc_c('\n');
@@ -618,6 +661,7 @@ static void rc_emit(void)
 		}
 		rc_s("!\n");
 	}
+	rc_sec(SEC_GLOBAL, 0);
 
 	if (dhcp_state.state == DHCP_OFF && !ip_is_zero((__xdata uint8_t *)uip_draddr)) {
 		rc_s("ip default-gateway ");
@@ -682,6 +726,8 @@ void runcfg_show(void) __banked
 {
 	rc_tobuf = 0;
 	rc_emit();
+	rc_mute = 0;
+	rcf_kind = RCF_ALL;
 }
 
 
