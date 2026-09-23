@@ -35,7 +35,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
 # generates.
 CORE_ENV = support.c hw_mock.c env_tables.c env_cli.c \
            $(SRCROOT)/cmd_editor.c $(SRCROOT)/cli.c $(SRCROOT)/cli_act.c $(SRCROOT)/dbgcmd.c $(SRCROOT)/swcfg.c \
-           $(SRCROOT)/runcfg.c $(SRCROOT)/show.c $(SRCROOT)/lacp.c \
+           $(SRCROOT)/runcfg.c $(SRCROOT)/show.c $(SRCROOT)/lacp.c $(SRCROOT)/bank4.c \
            $(SRCROOT)/rtl837x_port.c
 
 all: run
