@@ -35,8 +35,8 @@
 #include "lldp.h"
 #include "runcfg.h"
 
-#pragma codeseg BANK3
-#pragma constseg BANK3
+#pragma codeseg BANK1
+#pragma constseg BANK1
 
 extern __code const struct machine machine;
 extern __xdata uint16_t management_vlan;
@@ -697,6 +697,13 @@ static void rc_emit(void)
 	}
 	rc_monitor();
 	rc_stp_global();
+	if (stp_errdis_on)
+		rc_s("errdisable recovery cause bpduguard\n");
+	if (stp_errdis_int != 300) {
+		rc_s("errdisable recovery interval ");
+		rc_dec(stp_errdis_int);
+		rc_c('\n');
+	}
 	if (lldp_enabled)
 		rc_s("feature lldp\n");
 	if (telnet_state.enabled)

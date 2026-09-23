@@ -258,6 +258,9 @@ void cli_act(uint8_t action) __banked
 		case SHOW_LLDP_D:
 			lldp_show(cli.lo == SHOW_LLDP_D);
 			break;
+		case SHOW_IF_ERRDIS:
+			show_if_errdis();
+			break;
 		case SHOW_IF_DETAIL:
 			show_if_detail(cli.args[0]);
 			break;
@@ -345,6 +348,21 @@ void cli_act(uint8_t action) __banked
 			}
 			break;
 		}
+		break;
+	case ACT_ERRDIS:
+		if (cli.lo == ERRDIS_CAUSE) {
+			stp_errdis_on = !cli.no;
+			break;
+		}
+		if (cli.no) {
+			stp_errdis_int = 300;
+			break;
+		}
+		if (cli.args[0] < 30 || cli.args[0] > 65535) {
+			bad_value();
+			break;
+		}
+		stp_errdis_int = cli.args[0];
 		break;
 	case ACT_CLEAR_CNT:
 		/* user ports to logical ones */
@@ -492,6 +510,8 @@ void cli_act(uint8_t action) __banked
 		}
 		/* no shutdown brings the port back at its configured speed */
 		sw_ports[cli.ctx_lport].shut = !cli.no;
+		if (cli.no)	/* also out of a BPDU guard err-disable */
+			stp_err_clear(stp_cfg_entity(cli.ctx_lport));
 		phy_settings.port = cli.ctx_lport;
 		phy_settings.duplex = sw_ports[cli.ctx_lport].duplex;
 		phy_settings.speed = cli.no ? sw_ports[cli.ctx_lport].speed : PHY_OFF;

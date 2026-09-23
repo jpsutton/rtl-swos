@@ -147,7 +147,13 @@ static __code const struct cli_node n_show_start = {
 static __code const struct cli_node nm = { \
 	word, 0, 0, code, 0, NO_CHILDREN, ACT_SHOW, help \
 };
-SHOW_LEAF(n_sh_if_status, "status", SHOW_IF_STATUS, "Link, VLAN and speed per port")
+SHOW_LEAF(n_sh_if_errdis, "err-disabled", SHOW_IF_ERRDIS, "Ports disabled by BPDU guard")
+static __code const struct cli_node * __code const ch_sh_if_st[] = {
+	&n_sh_if_errdis, 0
+};
+static __code const struct cli_node n_sh_if_status = {
+	"status", 0, 0, SHOW_IF_STATUS, 0, ch_sh_if_st, ACT_SHOW, "Link, VLAN and speed per port"
+};
 SHOW_LEAF(n_sh_if_count, "counters", SHOW_IF_COUNT, "Packet and error counters")
 SHOW_LEAF(n_sh_if_trunk, "trunk", SHOW_IF_TRUNK, "Trunk ports")
 SHOW_LEAF(n_sh_if_xcvr, "transceiver", SHOW_IF_XCVR, "SFP modules and diagnostics")
@@ -1033,8 +1039,41 @@ static __code const struct cli_node n_clock = {
 	"clock", 0, CLI_F_NO_OK, 0, 0, ch_clock, ACT_NONE, "Time zone and summer time"
 };
 
+/* errdisable recovery cause bpduguard | errdisable recovery interval N */
+static __code const struct cli_node n_erc_bpdu = {
+	"bpduguard", 0, CLI_F_NO_OK, ERRDIS_CAUSE, 0, NO_CHILDREN, ACT_ERRDIS, "Ports disabled by BPDU guard"
+};
+static __code const struct cli_node * __code const ch_erc[] = {
+	&n_erc_bpdu, 0
+};
+static __code const struct cli_node n_er_cause = {
+	"cause", 0, CLI_F_NO_OK, 0, 0, ch_erc, ACT_NONE, "Recover automatically from"
+};
+static __code const struct cli_node n_arg_eri = {
+	0, CLI_A_NUM32, 0, ERRDIS_INTERVAL, 0, NO_CHILDREN, ACT_ERRDIS, "Seconds, 30-86400 (default 300)"
+};
+static __code const struct cli_node * __code const ch_eri[] = {
+	&n_arg_eri, 0
+};
+static __code const struct cli_node n_er_int = {
+	"interval", 0, CLI_F_NO_OK | CLI_F_NO_EXEC, ERRDIS_INTERVAL, 0, ch_eri, ACT_ERRDIS,
+	"Time before a recovery"
+};
+static __code const struct cli_node * __code const ch_er[] = {
+	&n_er_cause, &n_er_int, 0
+};
+static __code const struct cli_node n_er_rec = {
+	"recovery", 0, CLI_F_NO_OK, 0, 0, ch_er, ACT_NONE, "Automatic recovery"
+};
+static __code const struct cli_node * __code const ch_errdis[] = {
+	&n_er_rec, 0
+};
+static __code const struct cli_node n_errdis = {
+	"errdisable", 0, CLI_F_NO_OK, 0, 0, ch_errdis, ACT_NONE, "Error-disabled ports"
+};
+
 static __code const struct cli_node * __code const cli_root_config[] = {
-	&n_clock, &n_end, &n_exit_cfg, &n_feature, &n_hostname, &n_interface, &n_ip_cfg,
+	&n_clock, &n_end, &n_errdis, &n_exit_cfg, &n_feature, &n_hostname, &n_interface, &n_ip_cfg,
 	&n_g_lacp, &n_line, &n_g_lldp, &n_logging, &n_monitor, &n_ntp, &n_g_pc, &n_stp_global, &n_vlan, 0
 };
 

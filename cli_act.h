@@ -78,6 +78,9 @@
 #define ACT_CLEAR_LOG	67
 #define ACT_LLDP	68	/* LLDPC_* in ->lo */
 #define ACT_CLEAR_CNT	69	/* args[0]: user-port mask, or all when absent */
+#define ACT_ERRDIS	70
+#define ERRDIS_CAUSE	1
+#define ERRDIS_INTERVAL	2
 #define LLDPC_FEATURE	1
 #define LLDPC_TX	2
 #define LLDPC_RX	3
@@ -107,6 +110,7 @@
 #define SHOW_IF_DETAIL	21
 #define SHOW_LLDP	22
 #define SHOW_LLDP_D	23
+#define SHOW_IF_ERRDIS	24
 
 /* ACT_STP_G parameters */
 #define STPG_RSTP	1

@@ -85,6 +85,7 @@ runs once for each port, in port order.
 | `show startup-config` | The configuration replayed at boot |
 | `show version` | Software, build, board, flash size, MAC, uptime |
 | `show interfaces [status]` | Link, VLAN, speed and type per port |
+| `show interfaces status err-disabled` | Ports disabled by BPDU guard, and the recovery setting |
 | `show interfaces [ethernet] LIST` | Detail per port, e.g. `show int eth1/3`: link, speed, MTU, VLANs, port-channel, EEE, rate limits, STP, counters |
 | `show interfaces counters` | Packet and error counters |
 | `show interfaces trunk` | Trunk ports, native and allowed VLANs |
@@ -145,6 +146,7 @@ Everything except `show`, `enable` and `exit` needs privileged EXEC.
 | `spanning-tree priority N` | 32768 |
 | `spanning-tree hello-time N`, `forward-time N`, `max-age N`, `transmit hold-count N` | 2, 15, 20, 6 |
 | `feature telnet` | off |
+| `errdisable recovery cause bpduguard`, `errdisable recovery interval N` | off, 300 s; `no shutdown` also recovers a port |
 | `feature lldp`, `lldp run` | off; LLDP every 30 s, hold time 120 s |
 | `line vty` | |
 

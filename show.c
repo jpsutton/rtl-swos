@@ -195,7 +195,9 @@ void show_if_status(void) __banked
 		sh_x(port_names[lp], 0, 16);
 		sh_to(28);
 		lc = port_link_code(lp);
-		if (sp->shut)
+		if (stp_pflags[stp_ent_of[lp]] & STP_PF_TRIPPED)
+			sh_s("err-disabled");
+		else if (sp->shut)
 			sh_s("disabled");
 		else if (lc == PORT_LINK_DOWN)
 			sh_s("notconnect");
@@ -365,6 +367,38 @@ void show_if_detail(uint16_t ports) __banked
 		sh_s(" errors");
 		sh_nl();
 	}
+}
+
+
+/* show interfaces status err-disabled */
+void show_if_errdis(void) __banked
+{
+	static __xdata uint8_t lp, any;
+
+	col = 0;
+	any = 0;
+	FOR_EACH_PORT(lp) {
+		if (!(stp_pflags[stp_ent_of[lp]] & STP_PF_TRIPPED))
+			continue;
+		if (!any)
+			sh_s("Port      Name              Status        Reason\n"
+			     "--------  ----------------  ------------  ---------\n");
+		any = 1;
+		sh_ifname(lp);
+		sh_to(10);
+		sh_x(port_names[lp], 0, 16);
+		sh_to(28);
+		sh_s("err-disabled  bpduguard\n");
+		col = 0;
+	}
+	if (!any)
+		sh_s("No err-disabled ports\n");
+	sh_s(stp_errdis_on ? "Recovery: bpduguard, after " : "Recovery: off (errdisable recovery cause bpduguard)");
+	if (stp_errdis_on) {
+		sh_dec(stp_errdis_int);
+		sh_s(" s");
+	}
+	sh_c('\n');
 }
 
 

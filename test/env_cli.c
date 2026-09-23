@@ -331,3 +331,8 @@ void ping_start(char *host, uint16_t n, uint16_t len)
 uint8_t ntp_local_now(void) { return 0; }
 uint16_t ntp_year;
 uint8_t ntp_mon, ntp_mday, ntp_hour, ntp_min, ntp_sec;
+
+/* ---- errdisable recovery (rtl837x_stp.c is not linked) ---- */
+uint8_t stp_errdis_on;
+uint16_t stp_errdis_int = 300;
+void stp_err_clear(uint8_t ent) { stp_pflags[ent] &= ~STP_PF_TRIPPED; }

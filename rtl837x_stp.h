@@ -15,6 +15,10 @@ void stp_cfg_prio(uint8_t prio) __banked;
 /* After a per-port flag change: move the entity in or out of STP if
  * STP_PF_OUT() changed from was_out */
 void stp_cfg_sync(uint8_t ent, __xdata uint8_t was_out) __banked;
+/* Clear a BPDU guard trip: `no shutdown`, or errdisable recovery */
+void stp_err_clear(uint8_t ent) __banked;
+extern __xdata uint8_t stp_errdis_on;
+extern __xdata uint16_t stp_errdis_int;
 
 /* Tick rate of stp_timers() */
 #define STP_HZ 50

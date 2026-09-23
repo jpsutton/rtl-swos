@@ -1908,6 +1908,37 @@ static void test_clear_counters(void)
 	sw_counters_clear(0xffff);
 }
 
+static void test_errdisable(void)
+{
+	char cfg[CONFIG_LEN];
+
+	printf("[test] errdisable recovery and err-disabled ports\n");
+	wipe_all();
+	run("enable");
+	run("show interfaces status err-disabled");
+	CHECK(out_has("No err-disabled ports") && out_has("Recovery: off"), "none by default");
+	stp_pflags[3] |= STP_PF_TRIPPED;	/* BPDU guard tripped on 1/4 */
+	run("show interfaces status");
+	CHECK(out_has("err-disabled"), "status shows err-disabled");
+	run("show interfaces status err-disabled");
+	CHECK(out_has("Eth1/4") && out_has("bpduguard"), "the err-disabled list");
+	run("configure terminal");
+	run("errdisable recovery cause bpduguard");
+	run("errdisable recovery interval 60");
+	CHECK(stp_errdis_on && stp_errdis_int == 60, "recovery settings");
+	run("errdisable recovery interval 5");
+	CHECK(out_has("% Value out of range") && stp_errdis_int == 60, "at least 30 s");
+	render_into(cfg);
+	CHECK(strstr(cfg, "errdisable recovery cause bpduguard\nerrdisable recovery interval 60\n") != NULL, "renders");
+	run("interface ethernet 1/4");
+	run("no shutdown");
+	CHECK(!(stp_pflags[3] & STP_PF_TRIPPED), "no shutdown clears the trip");
+	run("exit");
+	run("no errdisable recovery cause bpduguard");
+	run("no errdisable recovery interval");
+	CHECK(!stp_errdis_on && stp_errdis_int == 300, "no forms restore the defaults");
+}
+
 int main(void)
 {
 	printf("== cli.c modal engine tests ==\n");
@@ -1956,6 +1987,7 @@ int main(void)
 	test_log();
 	test_lldp();
 	test_clear_counters();
+	test_errdisable();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

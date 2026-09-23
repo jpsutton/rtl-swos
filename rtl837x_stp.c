@@ -34,6 +34,9 @@ extern __xdata uint8_t uip_buf[UIP_CONF_BUFFER_SIZE + 2];
 extern __xdata uint8_t atoi_results_u8;
 
 /* ---- Configuration ---- */
+__xdata uint8_t  stp_errdis_on;		/* errdisable recovery cause bpduguard */
+__xdata uint16_t stp_errdis_int;	/* errdisable recovery interval, seconds */
+static __xdata uint16_t stp_trip_age[STP_ENTITIES];	/* seconds since BPDU guard tripped */
 __xdata uint8_t  stp_prio;	/* bridge priority high byte (0x80 = 32768) */
 __xdata uint8_t  stp_hello_s;		/* 1-10 s */
 __xdata uint8_t  stp_maxage_s;		/* 6-40 s */
@@ -582,6 +585,7 @@ void stp_in(void) __banked
 		log_s(" with BPDU guard enabled, disabling it");
 		log_end();
 		stp_pflags[port] |= STP_PF_TRIPPED;
+		stp_trip_age[port] = 0;
 		stp_state_set(port, STP_ST_DISABLED);
 		stp_tc_count++;
 		return;
@@ -701,8 +705,24 @@ void stp_timers(void) __banked
 	/* Refill the per-port tx budgets once per second (tx hold count) */
 	if (++stp_sec_tick >= STP_HZ) {
 		stp_sec_tick = 0;
-		for (stp_i = 0; stp_i < STP_ENTITIES; stp_i++)
+		for (stp_i = 0; stp_i < STP_ENTITIES; stp_i++) {
 			stp_tx_budget[stp_i] = stp_txhold;
+			/* errdisable recovery cause bpduguard */
+			if ((stp_pflags[stp_i] & STP_PF_TRIPPED) && stp_errdis_on
+			    && ++stp_trip_age[stp_i] >= stp_errdis_int) {
+				log_begin("PM-4-ERR_RECOVER");
+				log_s("Recovering ");
+				if (stp_i < STP_LAG_BASE) {
+					log_if(stp_i);
+				} else {
+					log_s("port-channel ");
+					log_dec(stp_i - STP_LAG_BASE + 1);
+				}
+				log_s(" from the bpduguard err-disable state");
+				log_end();
+				stp_err_clear(stp_i);
+			}
+		}
 
 		stp_lag_map();
 		if (stp_map_dirty) {
@@ -835,8 +855,25 @@ void stp_timers(void) __banked
 
 /* Reset all configuration to the 802.1D/802.1w defaults. Called once at boot
  * (before the startup config replays "stp ..." commands over it). */
+/* Bring an entity disabled by BPDU guard back: listening first */
+void stp_err_clear(uint8_t ent) __banked
+{
+	static __xdata uint8_t e;
+
+	e = ent;
+	if (!(stp_pflags[e] & STP_PF_TRIPPED))
+		return;
+	stp_pflags[e] &= ~STP_PF_TRIPPED;
+	port_timers[e] = (uint16_t)stp_fwddelay_s * STP_HZ;
+	if (stp_enabled)
+		stp_ent_apply(e);
+}
+
+
 void stp_defaults(void) __banked
 {
+	stp_errdis_on = 0;
+	stp_errdis_int = 300;
 	stp_prio = 0x80;	/* high byte of the priority: 0x8000 is 32768 */
 	stp_hello_s = 2;
 	stp_maxage_s = 20;
