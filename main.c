@@ -93,6 +93,13 @@ __xdata uint8_t idle_ready;
 static __xdata uint16_t lacp_last_tick;
 static __xdata uint8_t log_links_due;
 static __xdata uint16_t lldp_last_tick;
+/* uIP's TCP timers (retransmission, TIME_WAIT) count uip_periodic() calls.
+ * Called on every pass of the main loop, 200 times a second or more, the
+ * 8 retransmissions were spent within a second and any short outage, such
+ * as STP listening, reset telnet. They run at UIP_TCP_HZ instead; the other
+ * passes only poll, so output still goes out at once. */
+#define UIP_TCP_HZ	10
+static __xdata uint16_t tcp_last_tick;
 
 __code const uint8_t ownIP[] = { 192, 168, 2, 2 };
 __code const uint8_t gatewayIP[] = { 192, 168, 2, 22};
@@ -997,8 +1004,15 @@ void handle_rx(void)
 
 void handle_tx(void)
 {
+	__xdata uint8_t tcp_timer = (uint16_t)((uint16_t)ticks - tcp_last_tick) >= SYS_TICK_HZ / UIP_TCP_HZ;
+
+	if (tcp_timer)
+		tcp_last_tick = (uint16_t)ticks;
 	for(uint8_t i = 0; i < UIP_CONNS; i++) {
-		uip_periodic(i);
+		if (tcp_timer)
+			uip_periodic(i);
+		else
+			uip_poll_conn(&uip_conns[i]);
 		if(uip_len > 0) {
 #ifdef RXTXDBG
 			write_char('.'); print_short(i);

@@ -40,6 +40,13 @@ First release of the rtl-swos fork.
 - Separate CLI sessions for the serial console and telnet.
 - tools/convert-legacy-config.py converts RTLPlayground configurations.
 
+## Fixed
+
+- Telnet sessions no longer reset after a short outage, such as the ports
+  listening when `feature spanning-tree` turns on: uIP's TCP timers ran on
+  every pass of the main loop, 200 times a second or more, and spent all
+  retransmissions within a second. They now run at 10 Hz.
+
 ## Breaking changes
 
 - The web interface and its HTTP server are removed.
