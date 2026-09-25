@@ -52,7 +52,7 @@ static __xdata uint8_t tok_off[CLI_MAX_TOKS];
 static __xdata uint8_t tok_len[CLI_MAX_TOKS];
 static __xdata uint8_t ntok;
 static __xdata uint8_t trailing_space;
-static __xdata char *cli_line;
+static __xdata char * __xdata cli_line;
 
 /* ---- walk result ---- */
 static __xdata uint8_t w_status;
@@ -1857,7 +1857,7 @@ static void cli_tokenize(__xdata char *line)
 
 
 /* Is token t a prefix of the code-space word? 2 = exact match. */
-static __xdata char *tm_p;
+static __xdata char * __xdata tm_p;
 static __xdata uint8_t tm_n;
 
 static uint8_t tok_matches(uint8_t t, __code const char *word)
