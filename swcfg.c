@@ -169,7 +169,7 @@ uint8_t sw_vlan_del(uint16_t vid) __banked
 
 
 /* Names share the packed "VVVname " table with the legacy vlan command */
-uint8_t sw_vlan_name_set(uint16_t vid, __xdata const char * __xdata name) __banked
+uint8_t sw_vlan_name_set(__xdata uint16_t vid, __xdata const char * __xdata name) __banked
 {
 	static __xdata uint8_t n, k;
 	static __xdata uint8_t * __xdata d;

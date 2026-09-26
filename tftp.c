@@ -356,7 +356,7 @@ static void tftp_fw_finish(void)
 
 static void tftp_rx_data(void)
 {
-	__xdata uint8_t *p = uip_appdata;
+	__xdata uint8_t * __xdata p = uip_appdata;
 	__xdata uint16_t blkno = ((uint16_t)p[2] << 8) | p[3];
 	__xdata uint16_t len = uip_datalen() - 4;
 

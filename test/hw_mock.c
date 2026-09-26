@@ -330,12 +330,6 @@ void reg_bit_clear(uint16_t addr, char bit)
 	reg_write_m(addr);
 }
 
-uint8_t reg_bit_test(uint16_t addr, char bit)
-{
-	reg_read_m(addr);
-	return (sfr_data[3 - (bit >> 3)] >> (bit & 7)) & 1;
-}
-
 void sfr_mask_data(uint8_t n, uint8_t mask, uint8_t set)
 {
 	sfr_data[3 - n] = (sfr_data[3 - n] & ~mask) | set;

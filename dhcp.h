@@ -38,6 +38,8 @@ struct dhcp_state {
 	__xdata struct uip_udp_conn *conn;
 };
 
-typedef struct dhcp_state uip_udp_appstate_t;
+/* Every UDP application keeps its own state, so uIP's per-connection
+ * appstate is unused: keep it to one byte. */
+typedef uint8_t uip_udp_appstate_t;
 
 #endif

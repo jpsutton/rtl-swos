@@ -261,13 +261,13 @@ void totp_init(void) __banked
 }
 
 
-uint8_t totp_set_secret(__xdata uint8_t *b32) __banked
+uint8_t totp_set_secret(__xdata uint8_t * __xdata b32) __banked
 {
-	uint16_t bits = 0;
-	uint8_t nbits = 0;
-	uint8_t len = 0;
-	uint8_t c;
-	__xdata uint8_t *p;
+	__xdata uint16_t bits = 0;
+	__xdata uint8_t nbits = 0;
+	__xdata uint8_t len = 0;
+	__xdata uint8_t c;
+	__xdata uint8_t * __xdata p;
 
 	/* validate first, so a bad secret leaves the current key intact */
 	for (p = b32; *p && *p != '='; p++) {
@@ -307,9 +307,9 @@ uint8_t totp_set_secret(__xdata uint8_t *b32) __banked
 }
 
 
-uint8_t totp_verify(__xdata uint8_t *code) __banked
+uint8_t totp_verify(__xdata uint8_t * __xdata code) __banked
 {
-	uint8_t i, c;
+	__xdata uint8_t i, c;
 
 	if (!totp_enabled || !totp_keylen)
 		return 0;

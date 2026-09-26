@@ -92,7 +92,7 @@ uint8_t sw_vlan_exists(uint16_t vid) __banked;
 uint8_t sw_vlan_add(uint16_t vid) __banked;
 uint8_t sw_vlan_del(uint16_t vid) __banked;
 /* name == 0 removes the name */
-uint8_t sw_vlan_name_set(uint16_t vid, __xdata const char * __xdata name) __banked;
+uint8_t sw_vlan_name_set(__xdata uint16_t vid, __xdata const char * __xdata name) __banked;
 uint8_t sw_allowed_edit(uint8_t lport, __xdata uint8_t op, __xdata const char * __xdata list) __banked;
 uint8_t sw_port_allows(uint8_t lport, __xdata uint16_t vid) __banked;
 /* Push the whole state to the hardware. While deferred (boot-time config

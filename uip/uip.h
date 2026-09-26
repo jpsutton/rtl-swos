@@ -187,13 +187,6 @@ typedef uip_ip4addr_t uip_ipaddr_t;
  */
 void uip_init(void) __banked;
 
-/**
- * uIP initialization function.
- *
- * This function may be used at boot time to set the initial ip_id.
- */
-void uip_setipid(u16_t id);
-
 /** @} */
 
 /**

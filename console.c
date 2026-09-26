@@ -66,7 +66,7 @@ static __xdata uint8_t cfg_line[CMD_BUF_SIZE];
  * EXEC; `copy startup-config running-config` merges it into the running
  * configuration of the session that asked (merge = 1).
  */
-static void config_replay(uint8_t merge)
+static void config_replay(__xdata uint8_t merge)
 {
 	__xdata uint32_t pos = CONFIG_START;
 	__xdata uint8_t pages_left = CONFIG_LEN / FLASH_READ_BURST_SIZE;

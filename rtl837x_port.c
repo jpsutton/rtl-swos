@@ -26,7 +26,6 @@ extern __xdata uint16_t vlan_ptr;
 extern __xdata uint8_t vlan_names[VLAN_NAMES_SIZE];
 extern __xdata struct machine_runtime machine_detected;
 
-__xdata	uint32_t l2_head;
 
 __xdata struct vlan_settings vlan_settings;
 

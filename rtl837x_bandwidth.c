@@ -62,15 +62,6 @@ void bandwidth_ingress_drop(uint8_t port) __banked
 }
 
 
-void bandwidth_ingress_fc(uint8_t port) __banked
-{
-	reg_bit_set(RTL837X_IGBW_PORT_FC_CTRL, port);
-#ifdef DEBUG
-	print_string("RTL837X_IGBW_PORT_FC_CTRL:"); print_reg(RTL837X_IGBW_PORT_FC_CTRL); write_char('\n');
-#endif
-}
-
-
 void bandwidth_ingress_disable(uint8_t port) __banked
 {
 #ifdef DEBUG
@@ -101,38 +92,4 @@ void bandwidth_egress_disable(uint8_t port) __banked
 	print_string("Egress bandwidth limit disabled, port "); print_byte(port); write_char('\n');
 #endif
 	REG_SET(RTL837X_EGBW_PORT_CTRL + port * 1024, 0x0fffff);
-}
-
-
-void bandwidth_status(uint8_t port) __banked
-{
-	print_string("ingress: ");
-	reg_read_m(RTL837X_IGBW_PORT_CTRL + port * 4);
-	if (sfr_data[1] & 0x10) {
-		print_string("enabled: ");
-		sfr_data[1] &= 0xef;
-		print_string("0x");
-		print_byte(sfr_data[1]);
-		print_byte(sfr_data[2]);
-		print_byte(sfr_data[3]);
-		write_char('0');
-		write_char('\n');
-	} else {
-		print_string("disabled\n");
-	}
-
-	print_string("egress: ");
-	reg_read_m(RTL837X_EGBW_PORT_CTRL + port * 1024);
-	if (sfr_data[1] & 0x10) {
-		print_string("enabled: ");
-		sfr_data[1] &= 0xef;
-		print_string("0x");
-		print_byte(sfr_data[1]);
-		print_byte(sfr_data[2]);
-		print_byte(sfr_data[3]);
-		write_char('0');
-		write_char('\n');
-	} else {
-		print_string("disabled\n");
-	}
 }

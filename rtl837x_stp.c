@@ -541,7 +541,7 @@ void stp_cnf_send(uint8_t port) __reentrant
 
 void stp_in(void) __banked
 {
-	uint8_t port;
+	__xdata uint8_t port;
 
 	if (uip_len < BPDU_LEN_MIN_HEADER) {
 		uip_len = 0;

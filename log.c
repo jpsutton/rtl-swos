@@ -61,16 +61,6 @@ void log_s(__code const char *s)
 }
 
 
-void log_x(__xdata const char *s)
-{
-	static __xdata const char * __xdata p;
-
-	p = s;
-	while (*p)
-		log_c(*p++);
-}
-
-
 void log_dec(uint16_t v)
 {
 	static __xdata uint16_t d, n;

@@ -194,10 +194,8 @@ uint8_t bw_in_drop[10];
 void bandwidth_ingress_set(uint8_t p, uint32_t bw) { bw_in[p] = bw; bw_in_drop[p] = 0; }
 void bandwidth_ingress_disable(uint8_t p) { bw_in[p] = 0; }
 void bandwidth_ingress_drop(uint8_t p) { bw_in_drop[p] = 1; }
-void bandwidth_ingress_fc(uint8_t p) { bw_in_drop[p] = 0; }
 void bandwidth_egress_set(uint8_t p, uint32_t bw) { bw_out[p] = bw; }
 void bandwidth_egress_disable(uint8_t p) { bw_out[p] = 0; }
-void bandwidth_status(uint8_t p) { (void)p; }
 
 /* ---- show hooks into modules not linked here ---- */
 int n_sfp_info, n_stp_status;

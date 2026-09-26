@@ -105,7 +105,7 @@ void cli_prompt(void) __banked;
 void cli_help(__xdata char *line) __banked;
 /* Tab pressed: returns completion suffix chars appended to line, 0 if none.
  * line must have room for the completion. */
-uint8_t cli_complete(__xdata char *line, uint8_t maxlen) __banked;
+uint8_t cli_complete(__xdata char * __xdata line, __xdata uint8_t maxlen) __banked;
 /* True while the CLI expects a password on the next line (no echo). */
 
 /* Boot-time startup-config replay: lines run in global config mode and

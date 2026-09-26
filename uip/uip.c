@@ -184,7 +184,6 @@ __xdata static u16_t ipid;           /* Ths ipid variable is an increasing
 				number that is used for the IP ID
 				field. */
 
-void uip_setipid(u16_t id) { ipid = id; }
 
 __xdata static u8_t iss[4];          /* The iss variable is used for the TCP
 				initial sequence number. */

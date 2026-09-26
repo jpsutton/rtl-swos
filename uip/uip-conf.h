@@ -102,6 +102,16 @@ typedef unsigned short uip_stats_t;
 #define UIP_CONF_MAX_CONNECTIONS 2
 
 /**
+ * Maximum number of UDP connections.
+ *
+ * One each for DHCP, DNS, NTP, syslog and TFTP. uip_udp_new() returns
+ * 0 when no slot is free.
+ *
+ * \hideinitializer
+ */
+#define UIP_CONF_UDP_CONNS 5
+
+/**
  * How many times uip_periodic() runs per second: handle_tx() runs the
  * TCP timers at this rate and polls in between.
  *
@@ -198,7 +208,7 @@ typedef unsigned short uip_stats_t;
  *
  * \hideinitializer
  */
-#define UIP_CONF_STATISTICS      1
+#define UIP_CONF_STATISTICS      0
 
 /* Here we include the header file for the application(s) we use in
    our project. */

@@ -2665,7 +2665,7 @@ static void cplt_scan(__code const struct cli_node * __code const * __xdata root
 }
 
 
-uint8_t cli_complete(__xdata char *line, uint8_t maxlen) __banked
+uint8_t cli_complete(__xdata char * __xdata line, __xdata uint8_t maxlen) __banked
 {
 	__code const struct cli_node * __xdata cand = 0;
 	__xdata uint8_t ncand = 0;

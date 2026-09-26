@@ -14,7 +14,7 @@
  * again, as by an unmanaged switch.
  */
 
-#define LLDP_PORTS	10	/* indexed by logical port */
+#define LLDP_PORTS	9	/* indexed by logical port, 0..8 */
 #define LLDP_TXT	24	/* chars kept of each text field, NUL included */
 #define LLDP_TX_INTERVAL 30
 #define LLDP_HOLD	120

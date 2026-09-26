@@ -21,7 +21,6 @@ extern __xdata uint8_t log_wrapped;	/* the buffer has been filled once */
 
 void log_begin(__code const char *tag);
 void log_s(__code const char *s);
-void log_x(__xdata const char *s);
 void log_dec(uint16_t v);
 void log_ip(__xdata const uint8_t *a);
 void log_if(uint8_t lport);		/* "Ethernet1/N" */
