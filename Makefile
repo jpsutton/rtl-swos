@@ -139,8 +139,17 @@ $(BUILDDIR)/rtl-swos.ihx: $(OBJS) $(BUILDDIR)/crtbank.rel $(BUILDDIR)/crc16.rel
 
 # Ordinary __xdata must stay below 0x4000: the startup XRAM clear does
 # not reach above it (see XRAM_LOW_LIMIT in rtl837x_common.h).
+# The stack gets the internal RAM the linker leaves; the deepest path
+# found needs about 120 bytes, and an overflow fails silently at run time
+# (see STACK_PAINT in rtl837x_common.h), so the build fails first.
+STACK_MIN ?= 128
 $(BUILDDIR)/rtl-swos.img: $(BUILDDIR)/rtl-swos.ihx
-	@end=$$(awk '/ s_XISEG /{s=strtonum("0x"$$2)} / l_XISEG /{l=strtonum("0x"$$2)} END{printf "%d", s+l}' $(BUILDDIR)/rtl-swos.map); \
+	@stack=$$(sed -n 's/.*with \([0-9]*\) bytes available.*/\1/p' $(BUILDDIR)/rtl-swos.mem); \
+	if [ -z "$$stack" ] || [ $$stack -lt $(STACK_MIN) ]; then \
+		echo "ERROR: $${stack:-unknown} bytes of stack, below STACK_MIN $(STACK_MIN)"; exit 1; \
+	else echo "stack $$stack bytes (minimum $(STACK_MIN))"; fi
+	@end=$$(awk '/ s_XISEG /{s=$$2} / l_XISEG /{l=$$2} END{print "0x" s "+0x" l}' $(BUILDDIR)/rtl-swos.map); \
+	end=$$(($$end)); \
 	if [ $$end -gt 16384 ]; then \
 		echo "ERROR: xdata ends at $$(printf 0x%x $$end), above XRAM_LOW_LIMIT 0x4000"; exit 1; \
 	else echo "xdata ends at $$(printf 0x%x $$end) (limit 0x4000)"; fi

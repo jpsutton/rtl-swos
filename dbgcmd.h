@@ -15,6 +15,7 @@
 #define DBG_GPIO	9
 #define DBG_RND		10
 #define DBG_BANK4	14	/* call the BANK4 probe */
+#define DBG_STACK	15	/* deepest stack use since boot */
 #define DBG_FL_ID	11
 #define DBG_FL_UID	12
 #define DBG_FL_SEC	13

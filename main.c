@@ -1508,8 +1508,26 @@ void check_and_flash_update_image(void)
 
 
 
+/* Fill the internal RAM above SP with STACK_PAINT (0xa5); it uses no
+ * RAM of its own. */
+void stack_paint(void) __naked
+{
+	__asm
+	mov	a,sp
+	inc	a
+	mov	r0,a
+00001$:
+	mov	@r0,#0xa5
+	inc	r0
+	cjne	r0,#0,00001$
+	ret
+	__endasm;
+}
+
+
 void main(void)
 {
+	stack_paint();	/* first, so `debug stack` sees the boot-time replay */
 	ticks = 0;
 	stp_clock = STP_TICK_DIVIDER;
 	dhcp_state.state = DHCP_OFF;

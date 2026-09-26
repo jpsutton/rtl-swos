@@ -39,6 +39,8 @@ First release of the rtl-swos fork.
 - In-band firmware update and configuration transfer over TFTP.
 - Separate CLI sessions for the serial console and telnet.
 - tools/convert-legacy-config.py converts RTLPlayground configurations.
+- `debug stack` reports the deepest stack use since boot; the build fails
+  when less than `STACK_MIN` (128) bytes of stack remain.
 
 ## Fixed
 
@@ -47,6 +49,8 @@ First release of the rtl-swos fork.
   every pass of the main loop, 200 times a second or more, and spent all
   retransmissions within a second. They now run at 10 Hz, and the reaper
   for abandoned connections still ages them out after 30 s.
+- The build's XRAM limit check works with awk implementations other than
+  gawk; with Debian's mawk it passed whatever the size.
 
 ## Breaking changes
 

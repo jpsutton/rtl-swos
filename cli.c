@@ -574,7 +574,8 @@ DBG_WORD(n_d_flash, "flash", ch_dflash, "SPI flash")
 DBG_LEAF(n_d_gpio, "gpio", DBG_GPIO, "GPIO inputs and changes")
 DBG_LEAF(n_d_rnd, "random", DBG_RND, "Hardware random number")
 DBG_LEAF(n_d_bank4, "bank4", DBG_BANK4, "Call the BANK4 probe")
-DBG_KIDS(ch_debug, &n_d_bank4, &n_d_flash, &n_d_gpio, &n_d_phy, &n_d_rnd, &n_d_reg, &n_d_sds, &n_d_xram)
+DBG_LEAF(n_d_stack, "stack", DBG_STACK, "Deepest stack use since boot")
+DBG_KIDS(ch_debug, &n_d_bank4, &n_d_flash, &n_d_gpio, &n_d_phy, &n_d_rnd, &n_d_reg, &n_d_sds, &n_d_stack, &n_d_xram)
 static __code const struct cli_node n_debug = {
 	"debug", 0, CLI_F_PRIV, 0, 0, ch_debug, ACT_NONE, "Raw hardware access"
 };

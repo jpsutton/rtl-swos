@@ -96,6 +96,13 @@ struct vlan_tag {
 #define XRAM_CFG_BUF		0x4000	/* cfg_buf, CONFIG_LEN bytes */
 #define XRAM_TELNET_OUTBUF	0x5000	/* telnet_outbuf, TELNET_OUTBUF bytes */
 
+/* The stack takes the internal RAM the linker leaves, up to 0xff, and
+ * overflowing it corrupts the register banks at 0x00 silently. The build
+ * fails below STACK_MIN bytes (see the Makefile); main() fills it with
+ * STACK_PAINT at boot so `debug stack` can report the deepest use. */
+#define STACK_PAINT		0xa5
+void stack_paint(void) __naked;
+
 // Store update image after running image
 #define FIRMWARE_UPLOAD_START 0x80000
 

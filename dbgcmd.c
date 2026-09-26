@@ -29,6 +29,32 @@ extern __xdata struct flash_region_t flash_region;
 
 static __xdata uint8_t dbg_gpio_last[8];
 
+#ifndef SWOS_HOST_TEST
+extern __idata uint8_t _start__stack[];
+#endif
+
+/* The highest stack byte that no longer holds STACK_PAINT marks the
+ * deepest the stack has reached since boot. */
+static void dbg_stack(void)
+{
+#ifdef SWOS_HOST_TEST
+	print_string("No stack on the host build\n");
+#else
+	static __xdata uint8_t start, top;
+
+	start = (uint8_t)_start__stack;
+	for (top = 0xff; top >= start && *(__idata uint8_t *)top == STACK_PAINT; top--)
+		;
+	print_string("Stack: ");
+	itoa_short((uint8_t)(top + 1 - start));
+	print_string(" of ");
+	itoa_short(0x100 - start);
+	print_string(" bytes used at most since boot (0x");
+	print_byte(start);
+	print_string("-0xff)\n");
+#endif
+}
+
 static void dbg_gpio(void)
 {
 	static __xdata uint8_t idx, k, v;
@@ -135,6 +161,9 @@ void debug_run(uint8_t op) __banked
 		break;
 	case DBG_GPIO:
 		dbg_gpio();
+		break;
+	case DBG_STACK:
+		dbg_stack();
 		break;
 	case DBG_BANK4:
 		print_string("Calling into BANK4... ");
