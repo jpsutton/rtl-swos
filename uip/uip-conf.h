@@ -102,17 +102,24 @@ typedef unsigned short uip_stats_t;
 #define UIP_CONF_MAX_CONNECTIONS 2
 
 /**
+ * How many times uip_periodic() runs per second: handle_tx() runs the
+ * TCP timers at this rate and polls in between.
+ *
+ * \hideinitializer
+ */
+#define UIP_TCP_HZ 10
+
+/**
  * Age out ESTABLISHED connections that stay idle: a peer that died or
  * never sent anything would otherwise hold a connection slot until the
  * next power cycle.
  *
- * uip_periodic() runs from idle() once per system tick; interrupt
- * wake-ups only add sweeps, so the timeout can fire early but never
- * late.
+ * uip_periodic() runs UIP_TCP_HZ times per second, so the timeout is
+ * in seconds.
  *
  * \hideinitializer
  */
-#define UIP_CONF_IDLE_PERIODS 200
+#define UIP_CONF_IDLE_PERIODS UIP_TCP_HZ
 #define UIP_CONF_IDLE_TIMEOUT 30
 
 /*

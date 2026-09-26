@@ -96,9 +96,8 @@ static __xdata uint16_t lldp_last_tick;
 /* uIP's TCP timers (retransmission, TIME_WAIT) count uip_periodic() calls.
  * Called on every pass of the main loop, 200 times a second or more, the
  * 8 retransmissions were spent within a second and any short outage, such
- * as STP listening, reset telnet. They run at UIP_TCP_HZ instead; the other
- * passes only poll, so output still goes out at once. */
-#define UIP_TCP_HZ	10
+ * as STP listening, reset telnet. They run at UIP_TCP_HZ (uip-conf.h)
+ * instead; the other passes only poll, so output still goes out at once. */
 static __xdata uint16_t tcp_last_tick;
 
 __code const uint8_t ownIP[] = { 192, 168, 2, 2 };
